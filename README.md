@@ -17,6 +17,16 @@ If you do not have Go installed yet, use the official installer or instructions 
 
 - https://go.dev/doc/install
 
+On macOS with Homebrew:
+
+```bash
+brew install go
+```
+
+If you do not have Homebrew yet:
+
+- https://brew.sh/
+
 Check that Go is available:
 
 ```bash
