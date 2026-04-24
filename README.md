@@ -40,13 +40,64 @@ git clone <YOUR_REPO_URL>
 cd vectos
 ```
 
-### 3. Build Vectos
+### 3. Install Vectos
+
+Recommended install path:
+
+```bash
+./scripts/install.sh
+```
+
+By default, this installs `vectos` into `~/.local/bin`.
+
+If you want a different install directory:
+
+```bash
+DEST_DIR=/your/bin/dir ./scripts/install.sh
+```
+
+Make sure the chosen install directory is in your `PATH`.
+
+### 4. Verify the CLI
+
+```bash
+vectos
+```
+
+### 5. Index a project
+
+```bash
+cd /path/to/your/project
+vectos index .
+```
+
+### 6. Search code
+
+```bash
+vectos search "checkout payment"
+```
+
+### 7. Check index status
+
+```bash
+vectos status
+```
+
+### First-run note
+
+The first time Vectos uses the embedded provider, it downloads the local model assets and ONNX runtime into `~/.vectos/models/`.
+
+## Manual Install
+
+If you prefer not to use the install script, you can still build and install manually.
+
+### Build Vectos
 
 ```bash
 go build -o vectos ./cmd/vectos
 ```
 
-### 4. Install the binary globally
+### Install the binary globally
 
 System-wide install:
 
@@ -62,35 +113,6 @@ install -m 0755 vectos ~/.local/bin/vectos
 ```
 
 If you use the user-local install, make sure `~/.local/bin` is in your `PATH`.
-
-### 5. Verify the CLI
-
-```bash
-vectos
-```
-
-### 6. Index a project
-
-```bash
-cd /path/to/your/project
-vectos index .
-```
-
-### 7. Search code
-
-```bash
-vectos search "checkout payment"
-```
-
-### 8. Check index status
-
-```bash
-vectos status
-```
-
-### First-run note
-
-The first time Vectos uses the embedded provider, it downloads the local model assets and ONNX runtime into `~/.vectos/models/`.
 
 ## What It Does
 
