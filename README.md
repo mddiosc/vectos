@@ -4,6 +4,14 @@ Vectos is a local-first code context engine for AI agents.
 
 It indexes source code into project-scoped SQLite databases, generates embeddings for code chunks, and exposes search and indexing tools over MCP so clients like OpenCode can use the indexed codebase as structured context.
 
+## Project Status
+
+Vectos is still an evolving project under active development. Supported file types, setup flows, indexing behavior, and CLI/MCP details may change as the project matures.
+
+## Usage Disclaimer
+
+Use Vectos at your own responsibility. Review generated configuration changes, validate search/indexing results before relying on them, and avoid assuming the tool is production-hardened for every repository shape or workflow.
+
 ## Quick Start
 
 ### 1. Install prerequisites
@@ -305,6 +313,13 @@ Supported extensions:
 - `.tsx`
 - `.py`
 - `.java`
+- `.json`
+- `.sh`
+- `.md`
+- `.toml`
+- `.ini`
+- `.xml`
+- `.properties`
 - `Dockerfile`
 - `docker-compose*.yml`
 - `*.yml`
@@ -315,6 +330,8 @@ Supported extensions:
 - `MODULE.bazel`
 - `*.bzl`
 
+Secret-prone `.env` files are intentionally excluded in the current phase.
+
 ## How Retrieval Works
 
 Vectos stores:
@@ -323,6 +340,7 @@ Vectos stores:
 - file path and line ranges
 - language
 - file category (`source` or `infra_config`)
+- file category (`source`, `infra_config`, `scripts`, `docs`, or `dependency_metadata`)
 - embedding vector
 
 When a search query arrives:

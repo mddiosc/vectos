@@ -13,6 +13,8 @@ var goFuncPattern = regexp.MustCompile(`^func\s+`)
 var jsFuncPattern = regexp.MustCompile(`^(export\s+)?(async\s+)?function\s+|^(export\s+)?(const|let|var)\s+\w+\s*=\s*(async\s*)?\(`)
 var pyBlockPattern = regexp.MustCompile(`^(def|class)\s+`)
 var javaBlockPattern = regexp.MustCompile(`^(public|protected|private|static|final|abstract|class|interface|enum|record)\s+`)
+var shellBlockPattern = regexp.MustCompile(`^(function\s+\w+|\w+\s*\(\)\s*\{|if\s|for\s|while\s|case\s)`)
+var markdownBlockPattern = regexp.MustCompile(`^(#{1,4}\s|[-*]\s|\d+\.\s|~~~)`) 
 
 // ChunkConfig define los parámetros para la segmentación del código.
 type ChunkConfig struct {
@@ -60,7 +62,7 @@ func (s *SimpleChunker) ChunkFile(filePath string, language string) ([]ChunkResu
 		return s.chunkGoFile(filePath, language, lines)
 	}
 
-	if language == "dockerfile" || strings.HasPrefix(language, "yaml") || strings.HasPrefix(language, "bazel") {
+	if language == "dockerfile" || strings.HasPrefix(language, "yaml") || strings.HasPrefix(language, "bazel") || isLineChunkedLanguage(language) {
 		return s.chunkByLines(filePath, language, lines), nil
 	}
 
@@ -73,7 +75,16 @@ func (s *SimpleChunker) ChunkFile(filePath string, language string) ([]ChunkResu
 
 func supportsStructuredChunking(language string) bool {
 	switch language {
-	case "javascript", "typescript", "tsx", "jsx", "python", "java":
+	case "javascript", "typescript", "tsx", "jsx", "python", "java", "shell", "markdown":
+		return true
+	default:
+		return false
+	}
+}
+
+func isLineChunkedLanguage(language string) bool {
+	switch language {
+	case "json", "toml", "ini", "xml", "properties", "makefile", "gitignore":
 		return true
 	default:
 		return false
@@ -199,6 +210,10 @@ func isStructuredBoundary(language, trimmedLine string) bool {
 		return pyBlockPattern.MatchString(trimmedLine)
 	case "java":
 		return javaBlockPattern.MatchString(trimmedLine)
+	case "shell":
+		return shellBlockPattern.MatchString(trimmedLine)
+	case "markdown":
+		return markdownBlockPattern.MatchString(trimmedLine)
 	default:
 		return false
 	}
@@ -270,6 +285,37 @@ func inferPurpose(language, chunkContent string) string {
 	if language != "go" {
 		lower := strings.ToLower(chunkContent)
 		var tags []string
+		category := classifyCategory(language)
+		if category == "docs" {
+			if strings.Contains(lower, "install") || strings.Contains(lower, "usage") {
+				tags = append(tags, "documentation or usage instructions")
+			}
+			if len(tags) == 0 {
+				return "documentation content"
+			}
+			return strings.Join(tags, "; ")
+		}
+		if category == "scripts" {
+			if strings.Contains(lower, "#!/bin/") {
+				tags = append(tags, "shell script entrypoint")
+			}
+			if strings.Contains(lower, "export ") || strings.Contains(lower, "set -") {
+				tags = append(tags, "environment or execution setup")
+			}
+			if len(tags) == 0 {
+				return "script or automation block"
+			}
+			return strings.Join(tags, "; ")
+		}
+		if category == "dependency_metadata" {
+			if strings.Contains(lower, "dependencies") || strings.Contains(lower, "require") {
+				tags = append(tags, "dependency or project metadata")
+			}
+			if len(tags) == 0 {
+				return "project or dependency metadata"
+			}
+			return strings.Join(tags, "; ")
+		}
 		if classifyCategory(language) == "infra_config" {
 			if strings.Contains(lower, "image:") || strings.Contains(lower, "docker") {
 				tags = append(tags, "container or image configuration")
@@ -332,6 +378,14 @@ func inferPurpose(language, chunkContent string) string {
 func classifyCategory(language string) string {
 	switch {
 	case language == "dockerfile", strings.HasPrefix(language, "yaml"), strings.HasPrefix(language, "bazel"):
+		return "infra_config"
+	case language == "shell":
+		return "scripts"
+	case language == "markdown", language == "gitignore":
+		return "docs"
+	case language == "json", language == "toml", language == "properties", language == "xml", language == "makefile":
+		return "dependency_metadata"
+	case language == "ini":
 		return "infra_config"
 	default:
 		return "source"

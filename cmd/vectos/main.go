@@ -665,6 +665,10 @@ func detectLanguage(path string) (string, error) {
 	switch {
 	case baseName == "Dockerfile" || strings.HasPrefix(baseName, "Dockerfile."):
 		return "dockerfile", nil
+	case baseName == "Makefile":
+		return "makefile", nil
+	case baseName == ".gitignore":
+		return "gitignore", nil
 	case strings.HasPrefix(lowerBase, "docker-compose") && (strings.HasSuffix(lowerBase, ".yml") || strings.HasSuffix(lowerBase, ".yaml")):
 		return "yaml.compose", nil
 	case baseName == "BUILD":
@@ -692,6 +696,20 @@ func detectLanguage(path string) (string, error) {
 		return "python", nil
 	case ".java":
 		return "java", nil
+	case ".json":
+		return "json", nil
+	case ".sh":
+		return "shell", nil
+	case ".md":
+		return "markdown", nil
+	case ".toml":
+		return "toml", nil
+	case ".ini":
+		return "ini", nil
+	case ".xml":
+		return "xml", nil
+	case ".properties":
+		return "properties", nil
 	case ".yml":
 		return "yaml", nil
 	case ".yaml":
@@ -705,9 +723,24 @@ func detectLanguage(path string) (string, error) {
 
 func classifyCategory(language string) string {
 	switch {
+	case language == "shell":
+		return "scripts"
+	case language == "markdown", language == "gitignore":
+		return "docs"
+	case language == "json", language == "toml", language == "ini", language == "xml", language == "properties", language == "makefile":
+		return classifyMetadataCategory(language)
 	case language == "dockerfile", strings.HasPrefix(language, "yaml"), strings.HasPrefix(language, "bazel"):
 		return "infra_config"
 	default:
 		return "source"
+	}
+}
+
+func classifyMetadataCategory(language string) string {
+	switch language {
+	case "json", "toml", "properties", "xml", "makefile":
+		return "dependency_metadata"
+	default:
+		return "infra_config"
 	}
 }
