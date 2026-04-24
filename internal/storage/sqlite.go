@@ -203,10 +203,12 @@ func (s *SQLiteStorage) SearchText(query string) ([]CodeChunk, error) {
 	var results []CodeChunk
 	for rows.Next() {
 		var c CodeChunk
-		err := rows.Scan(&c.ID, &c.FilePath, &c.Content, &c.StartLine, &c.EndLine, &c.Language, &c.Category, &c.CreatedAt)
+		var category sql.NullString
+		err := rows.Scan(&c.ID, &c.FilePath, &c.Content, &c.StartLine, &c.EndLine, &c.Language, &category, &c.CreatedAt)
 		if err != nil {
 			return nil, err
 		}
+		c.Category = categoryOrDefault(category, c.Language)
 		results = append(results, c)
 	}
 	return results, nil
@@ -307,10 +309,12 @@ func (s *SQLiteStorage) SearchSemantic(queryVector []float32, limit int) ([]Code
 	var results []CodeChunk
 	for rows.Next() {
 		var c CodeChunk
+		var category sql.NullString
 		var embeddingBlob []byte
-		if err := rows.Scan(&c.ID, &c.FilePath, &c.Content, &c.StartLine, &c.EndLine, &c.Language, &c.Category, &c.CreatedAt, &embeddingBlob); err != nil {
+		if err := rows.Scan(&c.ID, &c.FilePath, &c.Content, &c.StartLine, &c.EndLine, &c.Language, &category, &c.CreatedAt, &embeddingBlob); err != nil {
 			return nil, err
 		}
+		c.Category = categoryOrDefault(category, c.Language)
 
 		vector := decodeVector(embeddingBlob)
 		if len(vector) == 0 || len(vector) != len(queryVector) {
@@ -348,6 +352,19 @@ func decodeVector(blob []byte) []float32 {
 	}
 
 	return vector
+}
+
+func categoryOrDefault(category sql.NullString, language string) string {
+	if category.Valid && strings.TrimSpace(category.String) != "" {
+		return category.String
+	}
+
+	switch {
+	case language == "dockerfile", strings.HasPrefix(language, "yaml"), strings.HasPrefix(language, "bazel"):
+		return "infra_config"
+	default:
+		return "source"
+	}
 }
 
 func cosineSimilarity(a, b []float32) float64 {

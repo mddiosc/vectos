@@ -646,6 +646,9 @@ func resolveRuntimeScope(projectName string) (*workspace.Scope, error) {
 
 func resolveToolScope(path string, projectName string) (*workspace.Scope, error) {
 	if strings.TrimSpace(path) == "" {
+		if strings.TrimSpace(projectName) != "" {
+			return &workspace.Scope{Name: projectName}, nil
+		}
 		return resolveRuntimeScope(projectName)
 	}
 
