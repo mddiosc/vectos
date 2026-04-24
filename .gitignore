@@ -1,0 +1,14 @@
+vectos
+vectos_mcp
+dist/
+
+.vectos/
+
+.DS_Store
+
+.opencode/node_modules/
+.opencode/
+
+*.db
+*.db-shm
+*.db-wal
