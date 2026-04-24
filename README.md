@@ -71,22 +71,13 @@ install -m 0755 vectos /usr/local/bin/vectos
 
 After that, use `vectos` directly instead of `./vectos`.
 
-Optional release-oriented helpers:
+The currently supported installation path is still: clone, build, install globally from source.
+
+Minimal helper:
 
 ```bash
 make build
-make release-layout
-make release-snapshot
 ```
-
-The currently supported installation path is still: clone, build, install globally from source.
-
-Homebrew-compatible metadata and release scaffolding may exist as future-oriented packaging groundwork, but they are not the primary supported installation path right now.
-
-Current packaging constraint:
-
-- cross-platform release builds are not yet fully self-contained from a single host because the embedded ONNX runtime dependency is platform-specific
-- if you later choose to publish binaries, use native per-platform CI/release jobs for final packaged artifacts
 
 ## CLI Commands
 
