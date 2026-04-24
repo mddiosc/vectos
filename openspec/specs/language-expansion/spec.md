@@ -13,3 +13,10 @@ Vectos SHALL distinguish source code files from infrastructure/config files duri
 #### Scenario: Report indexed file types
 - **WHEN** indexing or status output is generated
 - **THEN** Vectos SHALL preserve enough metadata to identify the language or file category of indexed chunks
+
+### Requirement: Vectos SHALL expand supported non-source project file types
+Vectos SHALL support additional common non-source project file types beyond the current source and infra/config baseline.
+
+#### Scenario: Index common script and config files
+- **WHEN** a project contains supported `.json`, `.sh`, `.md`, `.toml`, `.ini`, `.xml`, `.properties`, `Makefile`, or `.gitignore` files
+- **THEN** Vectos SHALL include those files in indexing and search for the project scope
