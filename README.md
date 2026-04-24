@@ -4,6 +4,84 @@ Vectos is a local-first code context engine for AI agents.
 
 It indexes source code into project-scoped SQLite databases, generates embeddings for code chunks, and exposes search and indexing tools over MCP so clients like OpenCode can use the indexed codebase as structured context.
 
+## Quick Start
+
+### 1. Install prerequisites
+
+You need:
+
+- `git`
+- `go`
+
+If you do not have Go installed yet, use the official installer or instructions for your platform:
+
+- https://go.dev/doc/install
+
+Check that Go is available:
+
+```bash
+go version
+```
+
+### 2. Clone the repository
+
+```bash
+git clone <YOUR_REPO_URL>
+cd vectos
+```
+
+### 3. Build Vectos
+
+```bash
+go build -o vectos ./cmd/vectos
+```
+
+### 4. Install the binary globally
+
+System-wide install:
+
+```bash
+sudo install -m 0755 vectos /usr/local/bin/vectos
+```
+
+User-local install:
+
+```bash
+mkdir -p ~/.local/bin
+install -m 0755 vectos ~/.local/bin/vectos
+```
+
+If you use the user-local install, make sure `~/.local/bin` is in your `PATH`.
+
+### 5. Verify the CLI
+
+```bash
+vectos
+```
+
+### 6. Index a project
+
+```bash
+cd /path/to/your/project
+vectos index .
+```
+
+### 7. Search code
+
+```bash
+vectos search "checkout payment"
+```
+
+### 8. Check index status
+
+```bash
+vectos status
+```
+
+### First-run note
+
+The first time Vectos uses the embedded provider, it downloads the local model assets and ONNX runtime into `~/.vectos/models/`.
+
 ## What It Does
 
 - Indexes source files into per-project SQLite databases under `~/.vectos/projects/`
