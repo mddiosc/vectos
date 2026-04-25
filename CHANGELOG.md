@@ -18,6 +18,33 @@ Format per release:
 
 ---
 
+## v0.1.1 — 2026-04-25
+
+Patch release focused on CLI usability and installation lifecycle polish.
+
+### Added
+
+- Centralized CLI help with support for `vectos help`, `vectos --help`, `vectos -h`, and per-subcommand help
+- `--uninstall` support in `scripts/install.sh` to remove the installed binary cleanly
+- Manual cleanup guidance after uninstall for cached models, indexes, and OpenCode config
+
+### Changed
+
+- All user-visible CLI output in the main CLI layer is now in English
+- OpenCode managed guidance text is now written in English
+
+### Fixed
+
+- Release installation UX now includes a documented uninstall path for installed binaries
+
+### Known Limitations
+
+- This remains an experimental/internal release. Stability and compatibility are not guaranteed.
+- `--uninstall` removes only the installed binary. It does not automatically delete `~/.vectos/` data or agent configuration files.
+- Supported download platforms remain `darwin/arm64` and `linux/amd64` only.
+
+---
+
 ## v0.1.0 — 2026-04-25
 
 First experimental/internal GitHub release.
