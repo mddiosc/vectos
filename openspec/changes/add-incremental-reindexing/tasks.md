@@ -1,5 +1,5 @@
-- [ ] Define the minimal incremental indexing contract for CLI and internal indexing flows
-- [ ] Implement targeted chunk refresh for changed files
-- [ ] Implement cleanup for deleted files and files excluded by current indexing policy
-- [ ] Validate that full indexing and MCP indexing continue to work correctly
-- [ ] Document the standalone incremental workflow and any optional automation hooks separately
+- [x] Define the minimal incremental indexing contract for CLI and internal indexing flows
+- [x] Implement targeted chunk refresh for changed files
+- [x] Implement cleanup for deleted files and files excluded by current indexing policy
+- [x] Validate that full indexing and MCP indexing continue to work correctly
+- [x] Document the standalone incremental workflow and any optional automation hooks separately

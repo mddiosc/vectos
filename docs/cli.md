@@ -15,6 +15,12 @@ vectos index .
 vectos index sample_code.go
 ```
 
+Refresh only changed files within the selected project scope:
+
+```bash
+vectos index . --changed src/App.tsx,src/hooks/useAuth.ts
+```
+
 Inside an Nx workspace:
 
 ```bash
