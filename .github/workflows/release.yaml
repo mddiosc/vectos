@@ -127,6 +127,5 @@ jobs:
             dist/*.tar.gz
             dist/checksums.txt
             dist/install.sh
-          prerelease: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
