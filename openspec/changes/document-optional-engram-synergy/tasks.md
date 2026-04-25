@@ -1,0 +1,4 @@
+- [ ] Expand the OpenSpec contract for optional Engram synergy without making Engram a dependency
+- [ ] Update product/docs guidance to describe standalone-first usage and optional combined workflows
+- [ ] Review agent guidance so Vectos and Engram complement each other when both are available
+- [ ] Validate that all guidance still works sensibly when Engram is not installed
