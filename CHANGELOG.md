@@ -18,6 +18,33 @@ Format per release:
 
 ---
 
+## v0.1.4 — 2026-04-25
+
+Patch release focused on indexing command visibility and progress feedback.
+
+### Added
+
+- `vectos index` now reports the resolved project name and root before indexing starts
+- `vectos index` now reports how many supported files were found in the selected scope
+- `vectos index` now prints periodic file/chunk progress updates during long indexing runs
+
+### Changed
+
+- Indexing output now makes Nx workspace resolution more visible by showing workspace context when applicable
+- Indexing output now announces the excluded-directory cleanup phase before finishing
+
+### Fixed
+
+- Long-running `vectos index .` sessions no longer appear idle after the initial `Indexing:` line
+
+### Known Limitations
+
+- This remains an experimental/internal release. Stability and compatibility are not guaranteed.
+- Supported download platforms remain `darwin/arm64` and `linux/amd64` only.
+- Progress reporting is line-based and periodic; it is not yet a real-time progress bar with per-phase timing.
+
+---
+
 ## v0.1.3 — 2026-04-25
 
 Patch release focused on broader indexing coverage and a more structured documentation experience.
