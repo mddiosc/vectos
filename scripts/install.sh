@@ -47,6 +47,33 @@ if [ "${1:-}" = "--from-source" ]; then
   install_from_source
 fi
 
+# ── uninstall ─────────────────────────────────────────────────────────────────
+
+uninstall() {
+  BIN_PATH="${DEST_DIR}/${BIN_NAME}"
+
+  if [ ! -f "$BIN_PATH" ]; then
+    printf 'Nothing to remove: %s not found.\n' "$BIN_PATH"
+    printf 'If you installed to a custom directory, set DEST_DIR and retry:\n'
+    printf '  DEST_DIR=/usr/local/bin %s --uninstall\n' "$0"
+    exit 1
+  fi
+
+  rm -f "$BIN_PATH"
+  ok "Removed $BIN_PATH"
+
+  printf '\n'
+  printf 'Optional manual cleanup:\n'
+  printf '  Cached models and index data:  rm -rf ~/.vectos/\n'
+  printf '  OpenCode MCP config:           Edit ~/.config/opencode/opencode.json\n'
+  printf '  OpenCode global guidance:      Edit ~/.config/opencode/AGENTS.md\n'
+  exit 0
+}
+
+if [ "${1:-}" = "--uninstall" ]; then
+  uninstall
+fi
+
 # ── platform detection ────────────────────────────────────────────────────────
 
 detect_os() {

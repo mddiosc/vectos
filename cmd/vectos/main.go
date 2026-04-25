@@ -19,8 +19,103 @@ import (
 	"vectos/internal/workspace"
 )
 
+// printHelp prints global usage for all subcommands.
+func printHelp() {
+	fmt.Printf("vectos %s\n\n", buildinfo.Version)
+	fmt.Println("Local-first code context engine for AI agents.")
+	fmt.Println()
+	fmt.Println("Usage:")
+	fmt.Println("  vectos <command> [arguments]")
+	fmt.Println()
+	fmt.Println("Commands:")
+	fmt.Println("  index   <path>   Index a file or directory with semantic embeddings")
+	fmt.Println("  search  <query>  Search the index using semantic or keyword search")
+	fmt.Println("  status           Show index status for the current project")
+	fmt.Println("  mcp              Start the MCP server for agent clients")
+	fmt.Println("  setup   <agent>  Configure Vectos for a supported agent client")
+	fmt.Println("  version          Show version, commit, and build date")
+	fmt.Println("  help             Show this help message")
+	fmt.Println()
+	fmt.Println("Use 'vectos help <command>' or 'vectos <command> --help' for command details.")
+}
+
+// printSubcommandHelp prints help for a specific subcommand.
+func printSubcommandHelp(cmd string) {
+	switch cmd {
+	case "index":
+		fmt.Println("Usage:")
+		fmt.Println("  vectos index <path> [flags]")
+		fmt.Println()
+		fmt.Println("Index a file or directory. Generates semantic embeddings for all supported")
+		fmt.Println("files and stores them in a project-scoped SQLite database.")
+		fmt.Println()
+		fmt.Println("Flags:")
+		fmt.Println("  --project <name>   Nx project name to scope the index (optional)")
+		fmt.Println()
+		fmt.Println("Examples:")
+		fmt.Println("  vectos index .")
+		fmt.Println("  vectos index ./src --project my-app")
+	case "search":
+		fmt.Println("Usage:")
+		fmt.Println("  vectos search <query> [flags]")
+		fmt.Println()
+		fmt.Println("Search the index using semantic similarity. Falls back to keyword search")
+		fmt.Println("when semantic search is unavailable or returns no results.")
+		fmt.Println()
+		fmt.Println("Flags:")
+		fmt.Println("  --project <name>   Nx project name to scope the search (optional)")
+		fmt.Println()
+		fmt.Println("Examples:")
+		fmt.Println("  vectos search \"checkout payment flow\"")
+		fmt.Println("  vectos search \"auth middleware\" --project api")
+	case "status":
+		fmt.Println("Usage:")
+		fmt.Println("  vectos status [flags]")
+		fmt.Println()
+		fmt.Println("Show index stats, embedding provider health, and reindex status for")
+		fmt.Println("the current project.")
+		fmt.Println()
+		fmt.Println("Flags:")
+		fmt.Println("  --project <name>   Nx project name to inspect (optional)")
+		fmt.Println()
+		fmt.Println("Examples:")
+		fmt.Println("  vectos status")
+		fmt.Println("  vectos status --project my-app")
+	case "mcp":
+		fmt.Println("Usage:")
+		fmt.Println("  vectos mcp")
+		fmt.Println()
+		fmt.Println("Start the MCP server over stdio. Exposes vectos_index_project and")
+		fmt.Println("vectos_search_code tools to compatible agent clients (e.g. OpenCode).")
+		fmt.Println()
+		fmt.Println("Logs are written to ~/.vectos/vectos-mcp.log to avoid polluting stdio.")
+	case "setup":
+		fmt.Println("Usage:")
+		fmt.Println("  vectos setup <agent>")
+		fmt.Println()
+		fmt.Println("Configure Vectos MCP integration for a supported agent client.")
+		fmt.Println("Optionally installs global guidance so the agent prefers Vectos")
+		fmt.Println("search tools before falling back to generic file-search tools.")
+		fmt.Println()
+		fmt.Println("Supported agents:")
+		fmt.Println("  opencode")
+		fmt.Println()
+		fmt.Println("Examples:")
+		fmt.Println("  vectos setup opencode")
+	case "version":
+		fmt.Println("Usage:")
+		fmt.Println("  vectos version")
+		fmt.Println()
+		fmt.Println("Print the release version, git commit, and build date.")
+	default:
+		fmt.Printf("unknown command: %s\n", cmd)
+		fmt.Println("Run 'vectos help' for a list of available commands.")
+		os.Exit(1)
+	}
+}
+
 func main() {
-	// Definición de subcomandos
+	// Subcommand flag sets.
 	indexCmd := flag.NewFlagSet("index", flag.ExitOnError)
 	searchCmd := flag.NewFlagSet("search", flag.ExitOnError)
 	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
@@ -30,107 +125,136 @@ func main() {
 	searchProject := searchCmd.String("project", "", "Nx project name to search when inside an Nx workspace")
 	statusProject := statusCmd.String("project", "", "Nx project name to inspect when inside an Nx workspace")
 
-	if len(os.Args) < 2 {
-		fmt.Println("Uso: vectos <comando> [argumentos]")
-		fmt.Println("Comandos disponibles:")
-		fmt.Println("  index <ruta_archivo>  - Indexa un archivo con embeddings")
-		fmt.Println("  search <query>        - Busca texto en la base de datos")
-		fmt.Println("  status                - Muestra el estado del índice del proyecto actual")
-		fmt.Println("  mcp                   - Inicia el servidor MCP para agentes")
-		fmt.Println("  setup <agent>         - Configura Vectos para un agente compatible")
-		fmt.Println("  version               - Muestra la versión, commit y fecha de build")
-		os.Exit(1)
+	// Global --help / -h before any subcommand.
+	if len(os.Args) >= 2 && (os.Args[1] == "--help" || os.Args[1] == "-h") {
+		printHelp()
+		os.Exit(0)
 	}
 
-	// Configuración base
+	if len(os.Args) < 2 {
+		printHelp()
+		os.Exit(0)
+	}
+
+	// Base configuration.
 	home, _ := os.UserHomeDir()
 	projectBaseDir := fmt.Sprintf("%s/.vectos/projects", home)
 	embedConfig, err := config.LoadEmbeddingConfig(home)
 	if err != nil {
-		log.Fatalf("❌ Error cargando configuración de embeddings: %v", err)
+		log.Fatalf("error loading embedding config: %v", err)
 	}
 
 	switch os.Args[1] {
+	case "help":
+		if len(os.Args) >= 3 {
+			printSubcommandHelp(os.Args[2])
+		} else {
+			printHelp()
+		}
+
 	case "index":
+		if len(os.Args) >= 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
+			printSubcommandHelp("index")
+			os.Exit(0)
+		}
 		if err := indexCmd.Parse(os.Args[2:]); err != nil {
 			log.Fatal(err)
 		}
 		if indexCmd.NArg() < 1 {
-			fmt.Println("Uso: vectos index <ruta_archivo>")
+			printSubcommandHelp("index")
 			os.Exit(1)
 		}
-		filePath := indexCmd.Arg(0)
-		runIndex(projectBaseDir, embedConfig, filePath, *indexProject)
+		runIndex(projectBaseDir, embedConfig, indexCmd.Arg(0), *indexProject)
 
 	case "search":
+		if len(os.Args) >= 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
+			printSubcommandHelp("search")
+			os.Exit(0)
+		}
 		if err := searchCmd.Parse(os.Args[2:]); err != nil {
 			log.Fatal(err)
 		}
 		if searchCmd.NArg() < 1 {
-			fmt.Println("Uso: vectos search <query>")
+			printSubcommandHelp("search")
 			os.Exit(1)
 		}
-		query := searchCmd.Arg(0)
-		runSearch(projectBaseDir, embedConfig, query, *searchProject)
+		runSearch(projectBaseDir, embedConfig, searchCmd.Arg(0), *searchProject)
 
 	case "status":
+		if len(os.Args) >= 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
+			printSubcommandHelp("status")
+			os.Exit(0)
+		}
 		if err := statusCmd.Parse(os.Args[2:]); err != nil {
 			log.Fatal(err)
 		}
 		runStatus(projectBaseDir, *statusProject)
 
 	case "mcp":
+		if len(os.Args) >= 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
+			printSubcommandHelp("mcp")
+			os.Exit(0)
+		}
 		if err := mcpCmd.Parse(os.Args[2:]); err != nil {
 			log.Fatal(err)
 		}
 		runMCP(projectBaseDir, embedConfig)
 
 	case "setup":
+		if len(os.Args) >= 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
+			printSubcommandHelp("setup")
+			os.Exit(0)
+		}
 		if err := setupCmd.Parse(os.Args[2:]); err != nil {
 			log.Fatal(err)
 		}
 		if setupCmd.NArg() < 1 {
-			fmt.Println("Uso: vectos setup <agent>")
+			printSubcommandHelp("setup")
 			os.Exit(1)
 		}
 		runSetup(setupCmd.Arg(0))
 
 	case "version":
+		if len(os.Args) >= 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
+			printSubcommandHelp("version")
+			os.Exit(0)
+		}
 		fmt.Printf("vectos %s\n", buildinfo.Version)
 		fmt.Printf("commit: %s\n", buildinfo.Commit)
 		fmt.Printf("built:  %s\n", buildinfo.Date)
 
 	default:
-		fmt.Printf("Comando desconocido: %s\n", os.Args[1])
+		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
+		fmt.Fprintln(os.Stderr, "Run 'vectos help' for a list of available commands.")
 		os.Exit(1)
 	}
 }
 
 func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePath string, projectName string) {
-	fmt.Printf("🚀 Indexando con IA: %s\n", filePath)
+	fmt.Printf("Indexing: %s\n", filePath)
 
 	absolutePath, err := filepath.Abs(filePath)
 	if err != nil {
-		log.Fatalf("❌ Error resolviendo ruta: %v", err)
+		log.Fatalf("error resolving path: %v", err)
 	}
 
 	scope, err := workspace.ResolveScope(absolutePath, projectName)
 	if err != nil {
-		log.Fatalf("❌ Error resolviendo proyecto: %v", err)
+		log.Fatalf("error resolving project scope: %v", err)
 	}
 
 	pm, err := storage.NewProjectManager(projectBaseDir)
 	if err != nil {
-		log.Fatalf("❌ Error PM: %v", err)
+		log.Fatalf("error initializing project manager: %v", err)
 	}
 
 	embedClient, providerInfo, err := embeddings.ResolveEmbedder(embedConfig)
 	if err != nil {
-		log.Fatalf("❌ Error embeddings: %v", err)
+		log.Fatalf("error resolving embedding provider: %v", err)
 	}
 	store, err := storage.NewSQLiteStorageForProjectName(pm, scope.Name)
 	if err != nil {
-		log.Fatalf("❌ Error DB: %v", err)
+		log.Fatalf("error opening database: %v", err)
 	}
 	defer store.Close()
 
@@ -139,7 +263,7 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 		Model:      providerInfo.Model,
 		Dimensions: providerInfo.Dimensions,
 	}); err != nil {
-		log.Fatalf("❌ Error guardando metadata del índice: %v", err)
+		log.Fatalf("error saving index metadata: %v", err)
 	}
 
 	chunker := indexer.NewSimpleChunker(indexer.ChunkConfig{
@@ -148,7 +272,7 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 
 	paths, err := collectIndexablePaths(scope.Roots)
 	if err != nil {
-		log.Fatalf("❌ Error indexando: %v", err)
+		log.Fatalf("error collecting indexable paths: %v", err)
 	}
 
 	indexedFiles := 0
@@ -156,18 +280,18 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 	for _, path := range paths {
 		language, err := detectLanguage(path)
 		if err != nil {
-			log.Printf("⚠️ Error lenguaje en %s: %v", path, err)
+			log.Printf("warning: skipping %s — unsupported language: %v", path, err)
 			continue
 		}
 
 		chunks, err := chunker.ChunkFile(path, language)
 		if err != nil {
-			log.Printf("⚠️ Error Chunker en %s: %v", path, err)
+			log.Printf("warning: failed to chunk %s: %v", path, err)
 			continue
 		}
 
 		if err := store.DeleteChunksByPath(path); err != nil {
-			log.Printf("⚠️ Error limpiando chunks previos en %s: %v", path, err)
+			log.Printf("warning: failed to clear previous chunks for %s: %v", path, err)
 			continue
 		}
 
@@ -182,7 +306,7 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 				Vector:    c.Vector,
 			})
 			if err != nil {
-				log.Printf("⚠️ Error guardando trozo en %s: %v", path, err)
+				log.Printf("warning: failed to save chunk for %s: %v", path, err)
 				continue
 			}
 			count++
@@ -194,30 +318,30 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 	for _, root := range scope.Roots {
 		for _, excludedDir := range collectExcludedDirs(root) {
 			if err := store.DeleteChunksByPathPrefix(excludedDir); err != nil {
-				log.Printf("⚠️ Error limpiando directorio excluido %s: %v", excludedDir, err)
+				log.Printf("warning: failed to clean excluded dir %s: %v", excludedDir, err)
 			}
 		}
 	}
 
-	fmt.Printf("✅ Éxito: %d archivos y %d trozos indexados con vectores en %s (%s)\n", indexedFiles, count, projectBaseDir, scope.Name)
+	fmt.Printf("Done: %d files, %d chunks indexed (project: %s)\n", indexedFiles, count, scope.Name)
 }
 
 func runSearch(projectBaseDir string, embedConfig config.EmbeddingConfig, query string, projectName string) {
-	fmt.Printf("🔍 Buscando: '%s'\n", query)
+	fmt.Printf("Searching: %q\n", query)
 
 	scope, err := resolveRuntimeScope(projectName)
 	if err != nil {
-		log.Fatalf("❌ Error resolviendo proyecto: %v", err)
+		log.Fatalf("error resolving project scope: %v", err)
 	}
 
 	pm, err := storage.NewProjectManager(projectBaseDir)
 	if err != nil {
-		log.Fatalf("❌ Error PM: %v", err)
+		log.Fatalf("error initializing project manager: %v", err)
 	}
 
 	store, err := openStorageForScope(pm, scope)
 	if err != nil {
-		log.Fatalf("❌ Error DB: %v", err)
+		log.Fatalf("error opening database: %v", err)
 	}
 	defer store.Close()
 
@@ -229,7 +353,7 @@ func runSearch(projectBaseDir string, embedConfig config.EmbeddingConfig, query 
 			if embedErr == nil {
 				results, err = store.SearchSemantic(queryVector, 5)
 				if err != nil {
-					log.Fatalf("❌ Error búsqueda semántica: %v", err)
+					log.Fatalf("error running semantic search: %v", err)
 				}
 			}
 		}
@@ -238,16 +362,16 @@ func runSearch(projectBaseDir string, embedConfig config.EmbeddingConfig, query 
 	if len(results) == 0 {
 		results, err = store.SearchText(query)
 		if err != nil {
-			log.Fatalf("❌ Error búsqueda keyword: %v", err)
+			log.Fatalf("error running keyword search: %v", err)
 		}
 	}
 
 	if len(results) == 0 {
-		fmt.Println("No se encontraron resultados.")
+		fmt.Println("No results found.")
 		return
 	}
 
-	fmt.Printf("Encontrados %d resultados:\n\n", len(results))
+	fmt.Printf("Found %d result(s):\n\n", len(results))
 	for _, r := range results {
 		fmt.Printf("--- [%s:%d-%d] [%s/%s] ---\n", r.FilePath, r.StartLine, r.EndLine, r.Category, r.Language)
 		fmt.Printf("%s\n\n", r.Content)
@@ -257,32 +381,32 @@ func runSearch(projectBaseDir string, embedConfig config.EmbeddingConfig, query 
 func runStatus(projectBaseDir string, projectName string) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		log.Fatalf("❌ Error home: %v", err)
+		log.Fatalf("error resolving home directory: %v", err)
 	}
 	embedConfig, err := config.LoadEmbeddingConfig(home)
 	if err != nil {
-		log.Fatalf("❌ Error cargando configuración de embeddings: %v", err)
+		log.Fatalf("error loading embedding config: %v", err)
 	}
 
 	scope, err := resolveRuntimeScope(projectName)
 	if err != nil {
-		log.Fatalf("❌ Error resolviendo proyecto: %v", err)
+		log.Fatalf("error resolving project scope: %v", err)
 	}
 
 	pm, err := storage.NewProjectManager(projectBaseDir)
 	if err != nil {
-		log.Fatalf("❌ Error PM: %v", err)
+		log.Fatalf("error initializing project manager: %v", err)
 	}
 
 	store, err := openStorageForScope(pm, scope)
 	if err != nil {
-		log.Fatalf("❌ Error DB: %v", err)
+		log.Fatalf("error opening database: %v", err)
 	}
 	defer store.Close()
 
 	stats, err := store.Stats()
 	if err != nil {
-		log.Fatalf("❌ Error obteniendo estado: %v", err)
+		log.Fatalf("error reading index stats: %v", err)
 	}
 
 	fmt.Println("Vectos status")
@@ -331,7 +455,7 @@ func runStatus(projectBaseDir string, projectName string) {
 }
 
 func runMCP(projectBaseDir string, embedConfig config.EmbeddingConfig) {
-	// En modo MCP escribimos logs a archivo para depurar sin contaminar stdout/stderr del protocolo.
+	// In MCP mode, write logs to a file to avoid polluting the stdio protocol stream.
 	home, _ := os.UserHomeDir()
 	logPath := filepath.Join(home, ".vectos", "vectos-mcp.log")
 	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err == nil {
@@ -520,7 +644,7 @@ func runMCP(projectBaseDir string, embedConfig config.EmbeddingConfig) {
 	log.Printf("vectos mcp ready")
 
 	if err := server.Run(context.Background(), &mcpSDK.StdioTransport{}); err != nil {
-		log.Fatalf("❌ MCP Server Error: %v", err)
+		log.Fatalf("MCP server error: %v", err)
 	}
 }
 
@@ -539,9 +663,9 @@ func stringifyMCPResult(result interface{}) (string, error) {
 
 func runSetup(agent string) {
 	if err := setupinternal.Run(agent); err != nil {
-		log.Fatalf("❌ Error configurando %s: %v", agent, err)
+		log.Fatalf("error setting up %s: %v", agent, err)
 	}
-	fmt.Printf("✅ Vectos configurado para %s.\n", agent)
+	fmt.Printf("Vectos configured for %s.\n", agent)
 }
 
 

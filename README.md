@@ -47,6 +47,34 @@ vectos index .
 vectos search "checkout payment"
 ```
 
+### Uninstall
+
+To remove the installed binary:
+
+```sh
+curl -fsSL https://github.com/mddiosc/vectos/releases/latest/download/install.sh | sh -s -- --uninstall
+```
+
+If you installed to a custom directory:
+
+```sh
+curl -fsSL https://github.com/mddiosc/vectos/releases/latest/download/install.sh | DEST_DIR=/usr/local/bin sh -s -- --uninstall
+```
+
+Or if you have the repository cloned:
+
+```sh
+./scripts/install.sh --uninstall
+```
+
+This removes only the `vectos` binary. To also clean up data and configuration, remove the following manually:
+
+| Path | Contents |
+|---|---|
+| `~/.vectos/` | Cached models and index databases |
+| `~/.config/opencode/opencode.json` | OpenCode MCP config (edit, not delete) |
+| `~/.config/opencode/AGENTS.md` | OpenCode global guidance (edit, not delete) |
+
 ---
 
 ### Option B — Install from source (fallback / development)

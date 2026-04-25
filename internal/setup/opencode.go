@@ -71,7 +71,7 @@ func (OpenCodeAdapter) Apply(ctx Context) error {
 	}
 
 	if agentsChanged {
-		fmt.Printf("Actualizada la guía global de OpenCode en %s para priorizar Vectos.\n", agentsPath)
+		fmt.Printf("Updated global OpenCode guidance at %s to prefer Vectos tools.\n", agentsPath)
 	}
 
 	return nil
@@ -91,13 +91,13 @@ func ensureOpenCodeGuidance(path string) (bool, error) {
 	}
 
 	if existing == "" && !isInteractiveTerminal() {
-		fmt.Printf("Guía global de OpenCode omitida en modo no interactivo. Añádela después en %s si quieres priorizar Vectos por defecto.\n", path)
+		fmt.Printf("OpenCode global guidance skipped (non-interactive mode). Add it later at %s to prefer Vectos by default.\n", path)
 		return false, nil
 	}
 
 	if existing != "" && !strings.Contains(existing, opencodeGuidanceStart) {
 		if !confirmInstallOpenCodeGuidance(path) {
-			fmt.Printf("Guía global de OpenCode no modificada. Puedes volver a ejecutar 'vectos setup opencode' cuando quieras añadirla.\n")
+			fmt.Printf("OpenCode global guidance not modified. Re-run 'vectos setup opencode' to add it later.\n")
 			return false, nil
 		}
 	}
@@ -112,13 +112,13 @@ func ensureOpenCodeGuidance(path string) (bool, error) {
 func managedOpenCodeGuidance() string {
 	return strings.Join([]string{
 		opencodeGuidanceStart,
-		"## Preferir Vectos MCP",
+		"## Prefer Vectos MCP",
 		"",
-		"Cuando un proyecto tenga disponibles las herramientas MCP de Vectos, prioriza `vectos_search_code` antes de usar `grep`, `find`, `glob` o lecturas amplias de archivos.",
+		"When Vectos MCP tools are available for a project, prefer `vectos_search_code` before using `grep`, `find`, `glob`, or broad file reads.",
 		"",
-		"Si el código aún no está indexado o `vectos_search_code` no devuelve nada útil, usa `vectos_index_project` y vuelve a intentar `vectos_search_code`.",
+		"If the project is not yet indexed or `vectos_search_code` returns no useful results, run `vectos_index_project` and retry `vectos_search_code`.",
 		"",
-		"Usa `grep`, `glob` y lecturas directas de archivos solo como fallback cuando Vectos no tenga resultados útiles o cuando necesites coincidencia exacta.",
+		"Use `grep`, `glob`, and direct file reads only as a fallback when Vectos has no useful results or when you need exact pattern matching.",
 		opencodeGuidanceEnd,
 	}, "\n")
 }
@@ -144,19 +144,19 @@ func upsertManagedSection(existing string, section string) (string, bool) {
 
 func confirmInstallOpenCodeGuidance(path string) bool {
 	if !isInteractiveTerminal() {
-		fmt.Printf("Detectada configuración global existente en %s. Reejecuta el setup en una terminal interactiva para decidir si quieres añadir la guía global de Vectos.\n", path)
+		fmt.Printf("Existing global config found at %s. Re-run setup in an interactive terminal to decide whether to add Vectos global guidance.\n", path)
 		return false
 	}
 
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("¿Quieres añadir una guía global en %s para que OpenCode priorice Vectos antes de grep/find? [Y/n]: ", path)
+	fmt.Printf("Add global guidance at %s so OpenCode prefers Vectos before grep/find? [Y/n]: ", path)
 	answer, err := reader.ReadString('\n')
 	if err != nil {
 		return false
 	}
 
 	answer = strings.ToLower(strings.TrimSpace(answer))
-	return answer == "" || answer == "y" || answer == "yes" || answer == "s" || answer == "si"
+	return answer == "" || answer == "y" || answer == "yes"
 }
 
 func isInteractiveTerminal() bool {
