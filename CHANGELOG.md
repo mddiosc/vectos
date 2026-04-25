@@ -34,6 +34,7 @@ Patch release focused on broader agent integration support and installer PATH re
 - `vectos help setup` and `vectos setup --help` now document `opencode`, `claude`, `codex`, and `--uninstall`
 - Installer PATH handling is now shell-aware for `zsh`, `bash`, and `fish`
 - Release/install docs now explain the managed PATH block behavior more clearly
+- Indexed file coverage now includes more common project manifests and source/config formats used by Nx, Next.js, Vite, Java, Kotlin, GraphQL, SQL, `.conf`, and related toolchains, while keeping `.env*` files excluded
 
 ### Fixed
 

@@ -836,8 +836,20 @@ func detectLanguage(path string) (string, error) {
 		return "dockerfile", nil
 	case baseName == "Makefile":
 		return "makefile", nil
+	case baseName == ".editorconfig":
+		return "ini", nil
 	case baseName == ".gitignore":
 		return "gitignore", nil
+	case baseName == ".prettierignore" || baseName == ".eslintignore":
+		return "gitignore", nil
+	case baseName == ".npmrc" || baseName == ".yarnrc" || baseName == ".nvmrc" || baseName == ".prettierrc" || baseName == ".tool-versions":
+		return "config", nil
+	case baseName == "gradlew" || baseName == "mvnw":
+		return "shell", nil
+	case strings.HasSuffix(baseName, ".gradle.kts"):
+		return "gradle", nil
+	case strings.HasSuffix(baseName, ".lock") || baseName == "bun.lockb":
+		return "lockfile", nil
 	case strings.HasPrefix(lowerBase, "docker-compose") && (strings.HasSuffix(lowerBase, ".yml") || strings.HasSuffix(lowerBase, ".yaml")):
 		return "yaml.compose", nil
 	case baseName == "BUILD":
@@ -855,9 +867,13 @@ func detectLanguage(path string) (string, error) {
 		return "go", nil
 	case ".js":
 		return "javascript", nil
+	case ".mjs", ".cjs":
+		return "javascript", nil
 	case ".jsx":
 		return "jsx", nil
 	case ".ts":
+		return "typescript", nil
+	case ".mts", ".cts":
 		return "typescript", nil
 	case ".tsx":
 		return "tsx", nil
@@ -865,20 +881,44 @@ func detectLanguage(path string) (string, error) {
 		return "python", nil
 	case ".java":
 		return "java", nil
+	case ".kt":
+		return "kotlin", nil
+	case ".kts":
+		return "kotlin", nil
 	case ".json":
 		return "json", nil
 	case ".sh":
 		return "shell", nil
 	case ".md":
 		return "markdown", nil
+	case ".mdx":
+		return "markdown", nil
 	case ".toml":
 		return "toml", nil
 	case ".ini":
 		return "ini", nil
+	case ".conf":
+		return "config", nil
 	case ".xml":
 		return "xml", nil
 	case ".properties":
 		return "properties", nil
+	case ".gradle":
+		return "gradle", nil
+	case ".sql":
+		return "sql", nil
+	case ".proto":
+		return "proto", nil
+	case ".graphql", ".gql":
+		return "graphql", nil
+	case ".css":
+		return "css", nil
+	case ".scss":
+		return "scss", nil
+	case ".sass":
+		return "sass", nil
+	case ".less":
+		return "less", nil
 	case ".yml":
 		return "yaml", nil
 	case ".yaml":
@@ -896,7 +936,7 @@ func classifyCategory(language string) string {
 		return "scripts"
 	case language == "markdown", language == "gitignore":
 		return "docs"
-	case language == "json", language == "toml", language == "ini", language == "xml", language == "properties", language == "makefile":
+	case language == "json", language == "toml", language == "ini", language == "xml", language == "properties", language == "makefile", language == "gradle", language == "lockfile", language == "config":
 		return classifyMetadataCategory(language)
 	case language == "dockerfile", strings.HasPrefix(language, "yaml"), strings.HasPrefix(language, "bazel"):
 		return "infra_config"
@@ -907,7 +947,7 @@ func classifyCategory(language string) string {
 
 func classifyMetadataCategory(language string) string {
 	switch language {
-	case "json", "toml", "properties", "xml", "makefile":
+	case "json", "toml", "properties", "xml", "makefile", "gradle", "lockfile":
 		return "dependency_metadata"
 	default:
 		return "infra_config"

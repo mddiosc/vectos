@@ -84,7 +84,7 @@ func supportsStructuredChunking(language string) bool {
 
 func isLineChunkedLanguage(language string) bool {
 	switch language {
-	case "json", "toml", "ini", "xml", "properties", "makefile", "gitignore":
+	case "json", "toml", "ini", "xml", "properties", "makefile", "gitignore", "gradle", "lockfile", "config":
 		return true
 	default:
 		return false
@@ -383,9 +383,9 @@ func classifyCategory(language string) string {
 		return "scripts"
 	case language == "markdown", language == "gitignore":
 		return "docs"
-	case language == "json", language == "toml", language == "properties", language == "xml", language == "makefile":
+	case language == "json", language == "toml", language == "properties", language == "xml", language == "makefile", language == "gradle", language == "lockfile":
 		return "dependency_metadata"
-	case language == "ini":
+	case language == "ini", language == "config":
 		return "infra_config"
 	default:
 		return "source"

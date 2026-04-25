@@ -352,24 +352,41 @@ When the optional global guidance block is installed, OpenCode is instructed to 
 
 ## Indexed Languages
 
-Vectos currently detects language by file extension.
+Vectos currently detects files by extension and common project file names.
 
-Supported extensions:
+Supported extensions and file names:
 
 - `.go`
 - `.js`
+- `.mjs`
+- `.cjs`
 - `.jsx`
 - `.ts`
+- `.mts`
+- `.cts`
 - `.tsx`
 - `.py`
 - `.java`
+- `.kt`
+- `.kts`
 - `.json`
 - `.sh`
 - `.md`
+- `.mdx`
 - `.toml`
 - `.ini`
+- `.conf`
 - `.xml`
 - `.properties`
+- `.gradle`
+- `.sql`
+- `.proto`
+- `.graphql`
+- `.gql`
+- `.css`
+- `.scss`
+- `.sass`
+- `.less`
 - `Dockerfile`
 - `docker-compose*.yml`
 - `*.yml`
@@ -379,8 +396,19 @@ Supported extensions:
 - `WORKSPACE`
 - `MODULE.bazel`
 - `*.bzl`
+- `*.lock` such as `Cargo.lock`, `yarn.lock`, and `poetry.lock`
+- `.editorconfig`
+- `.npmrc`
+- `.yarnrc`
+- `.nvmrc`
+- `.prettierrc`
+- `.prettierignore`
+- `.eslintignore`
+- `.tool-versions`
+- `gradlew`
+- `mvnw`
 
-Secret-prone `.env` files are intentionally excluded in the current phase.
+Secret-prone `.env` files are intentionally excluded in the current phase, including `.env.example` and `.env.sample`.
 
 ## How Retrieval Works
 
