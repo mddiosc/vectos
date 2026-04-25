@@ -268,6 +268,10 @@ vectos setup opencode
 
 This creates or updates `~/.config/opencode/opencode.json` with a working local MCP entry for Vectos.
 
+If `~/.config/opencode/AGENTS.md` does not exist yet, the setup also installs a small global guidance block so OpenCode prefers `vectos_search_code` and `vectos_index_project` before broad file-search tools.
+
+If you already have a global OpenCode `AGENTS.md`, the setup asks before appending the managed Vectos guidance block so your existing instructions are preserved.
+
 ## Supported Setup Targets
 
 Current validated setup target:
@@ -299,6 +303,8 @@ Use `vectos_index_project` to reindex /path/to/project
 ```text
 Use `vectos_search_code` to find the function that divides two integers and avoids division by zero.
 ```
+
+When the optional global guidance block is installed, OpenCode is instructed to prefer those Vectos MCP tools before `grep`, `find`, `glob`, or broad file reads, and only fall back when Vectos does not return useful results.
 
 ## Indexed Languages
 
