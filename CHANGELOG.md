@@ -18,6 +18,37 @@ Format per release:
 
 ---
 
+## v0.1.6 — 2026-04-25
+
+Patch release focused on frontend retrieval quality, incremental indexing, and clearer standalone-first workflow guidance.
+
+### Added
+
+- Better structural chunking for JavaScript, TypeScript, TSX, and JSX files, including components, hooks, exported functions, classes, and common test blocks
+- Incremental refresh support through `vectos index --changed <paths>`
+- Equivalent incremental indexing support in MCP through `index_project.changed`
+- A new `docs/engram-synergy.md` guide describing how Vectos can work alongside Engram without depending on it
+
+### Changed
+
+- Semantic enrichment now captures more useful chunk roles for frontend code
+- CLI indexing now accepts both `vectos index . --changed ...` and `vectos index --changed ... .`
+- Product/docs guidance now frames Vectos as standalone-first, with Engram treated as optional complementary memory
+- OpenSpec main specs now reflect the merged roadmap changes, and the completed changes have been archived
+
+### Fixed
+
+- Retrieval quality improves for TS/React-heavy projects by using higher-signal structural chunk boundaries instead of relying mostly on generic line windows
+- Incremental refresh now cleans up deleted files and files that are no longer indexable within the changed set
+
+### Known Limitations
+
+- This remains an experimental/internal release. Stability and compatibility are not guaranteed.
+- Supported download platforms remain `darwin/arm64` and `linux/amd64` only.
+- Incremental indexing currently depends on an explicit changed-file set; automatic hook or watcher-based refresh is still future work.
+
+---
+
 ## v0.1.5 — 2026-04-25
 
 Patch release focused on remote embedding health reporting and lower-noise indexing defaults.

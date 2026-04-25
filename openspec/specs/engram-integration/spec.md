@@ -6,3 +6,11 @@ The system SHALL expose code-context results in a form that can be combined with
 #### Scenario: Agent combines memory and code context
 - **WHEN** an agent uses both session-memory tools and Vectos code search in the same task
 - **THEN** the Vectos result SHALL provide file-localized code context that can be combined with memory-derived decisions
+
+#### Scenario: Agent combines memory and code context when both systems are available
+- **WHEN** an agent uses both Engram session-memory tools and Vectos code search in the same task
+- **THEN** the recommended workflow SHALL treat memory retrieval and code retrieval as complementary context sources without making either one a hard dependency of the other
+
+#### Scenario: Vectos used without Engram
+- **WHEN** Vectos is installed without Engram
+- **THEN** Vectos SHALL remain fully usable for indexing and semantic code retrieval as a standalone product

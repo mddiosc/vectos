@@ -21,3 +21,11 @@ The system SHALL expose tools for code search and project indexing through MCP.
 #### Scenario: MCP client calls project indexing
 - **WHEN** an MCP client calls `index_project` with a file or directory path
 - **THEN** the server SHALL index the requested path and return a summary of the indexing operation
+
+#### Scenario: MCP client calls project indexing for changed project content
+- **WHEN** an MCP client calls `index_project` for a scope that already has indexed content
+- **THEN** the system SHALL be able to refresh only the changed files and return a summary of the applied indexing update
+
+#### Scenario: Agent guidance for mixed memory and code workflows
+- **WHEN** an MCP-compatible agent has access to both session-memory tools and Vectos MCP tools
+- **THEN** the recommended guidance SHALL prefer memory tools for prior decisions and Vectos tools for current code context without implying that Vectos depends on the presence of memory tools

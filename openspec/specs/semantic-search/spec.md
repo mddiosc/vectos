@@ -28,3 +28,7 @@ The system SHALL generate embeddings from enriched chunk content that includes s
 #### Scenario: Enrich a Go function chunk
 - **WHEN** the system creates an embedding for a Go function chunk
 - **THEN** it SHALL include contextual metadata such as file name, language, function signature, and inferred purpose along with the raw code
+
+#### Scenario: Enrich a TypeScript or React structural chunk
+- **WHEN** the system creates an embedding for a TypeScript or React chunk with a recognized structural role
+- **THEN** it SHALL include contextual metadata such as file name, language, chunk role, and detected signature when available in addition to the raw code
