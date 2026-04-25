@@ -23,7 +23,7 @@ Use Vectos at your own responsibility. Review generated configuration changes, v
 curl -fsSL https://github.com/mddiosc/vectos/releases/latest/download/install.sh | sh
 ```
 
-The installer detects your platform, downloads the right binary, verifies the checksum, and installs `vectos` into `~/.local/bin` by default.
+The installer detects your platform, downloads the right binary, verifies the checksum, installs `vectos` into `~/.local/bin` by default, and updates the startup file for your current shell when that directory is not already in `PATH`.
 
 To install to a different directory:
 
@@ -67,7 +67,7 @@ Or if you have the repository cloned:
 ./scripts/install.sh --uninstall
 ```
 
-This removes only the `vectos` binary. To also clean up data and configuration, remove the following manually:
+This removes the `vectos` binary and also removes the Vectos-managed `PATH` block from your shell startup file if one was installed by the script. To also clean up data and configuration, remove the following manually:
 
 | Path | Contents |
 |---|---|

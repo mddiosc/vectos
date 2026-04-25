@@ -18,6 +18,8 @@ set -eu
 REPO="mddiosc/vectos"
 BIN_NAME="vectos"
 DEST_DIR="${DEST_DIR:-$HOME/.local/bin}"
+PATH_BLOCK_START="# >>> vectos path >>>"
+PATH_BLOCK_END="# <<< vectos path <<<"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -27,6 +29,111 @@ ok()   { printf '✓ %s\n' "$*"; }
 
 need() {
   command -v "$1" >/dev/null 2>&1 || die "required tool not found: $1"
+}
+
+detect_shell_name() {
+  if [ -n "${SHELL:-}" ]; then
+    basename "$SHELL"
+    return
+  fi
+
+  printf 'sh'
+}
+
+detect_shell_rc() {
+  shell_name="$(detect_shell_name)"
+  case "$shell_name" in
+    zsh)
+      printf '%s' "$HOME/.zshrc"
+      ;;
+    bash)
+      if [ "$(uname -s)" = "Darwin" ]; then
+        printf '%s' "$HOME/.bash_profile"
+      else
+        printf '%s' "$HOME/.bashrc"
+      fi
+      ;;
+    fish)
+      printf '%s' "$HOME/.config/fish/config.fish"
+      ;;
+    *)
+      printf ''
+      ;;
+  esac
+}
+
+path_block() {
+  shell_name="$(detect_shell_name)"
+  case "$shell_name" in
+    fish)
+      printf '%s\n' "$PATH_BLOCK_START"
+      printf '%s\n' "if not contains \"$DEST_DIR\" \$PATH"
+      printf '%s\n' "  set -gx PATH \"$DEST_DIR\" \$PATH"
+      printf '%s\n' "end"
+      printf '%s\n' "$PATH_BLOCK_END"
+      ;;
+    *)
+      printf '%s\n' "$PATH_BLOCK_START"
+      printf '%s\n' "case \":\$PATH:\" in"
+      printf '%s\n' "  *\":$DEST_DIR:\"*) ;;
+  *) export PATH=\"$DEST_DIR:\$PATH\" ;;
+esac"
+      printf '%s\n' "$PATH_BLOCK_END"
+      ;;
+  esac
+}
+
+ensure_path_config() {
+  case ":${PATH}:" in
+    *":${DEST_DIR}:"*)
+      return 0
+      ;;
+  esac
+
+  rc_file="$(detect_shell_rc)"
+  if [ -z "$rc_file" ]; then
+    printf '\n'
+    printf '  %s is not in your PATH.\n' "$DEST_DIR"
+    printf '  Add it manually for your shell:\n'
+    printf '    export PATH="%s:$PATH"\n' "$DEST_DIR"
+    printf '\n'
+    return 0
+  fi
+
+  rc_dir=$(dirname "$rc_file")
+  mkdir -p "$rc_dir"
+  if [ ! -f "$rc_file" ]; then
+    : > "$rc_file"
+  fi
+
+  if grep -Fq "$PATH_BLOCK_START" "$rc_file"; then
+    ok "PATH block already present in $rc_file"
+    return 0
+  fi
+
+  printf '\n%s\n' "$(path_block)" >> "$rc_file"
+  ok "Updated $rc_file to include $DEST_DIR in PATH"
+  printf '  Restart your shell or run: source "%s"\n' "$rc_file"
+}
+
+remove_path_config() {
+  rc_file="$(detect_shell_rc)"
+  if [ -z "$rc_file" ] || [ ! -f "$rc_file" ]; then
+    return 0
+  fi
+
+  if ! grep -Fq "$PATH_BLOCK_START" "$rc_file"; then
+    return 0
+  fi
+
+  tmp_file="$(mktemp)"
+  awk -v start="$PATH_BLOCK_START" -v end="$PATH_BLOCK_END" '
+    $0 == start { skip=1; next }
+    $0 == end { skip=0; next }
+    !skip { print }
+  ' "$rc_file" > "$tmp_file"
+  mv "$tmp_file" "$rc_file"
+  ok "Removed Vectos PATH block from $rc_file"
 }
 
 # ── source-based fallback ────────────────────────────────────────────────────
@@ -39,7 +146,7 @@ install_from_source() {
   install -m 0755 "$BIN_NAME" "$DEST_DIR/$BIN_NAME"
   rm -f "$BIN_NAME"
   ok "Installed vectos to $DEST_DIR/$BIN_NAME"
-  check_path
+  ensure_path_config
   exit 0
 }
 
@@ -61,6 +168,7 @@ uninstall() {
 
   rm -f "$BIN_PATH"
   ok "Removed $BIN_PATH"
+  remove_path_config
 
   printf '\n'
   printf 'Optional manual cleanup:\n'
@@ -168,24 +276,7 @@ mkdir -p "$DEST_DIR"
 install -m 0755 "${BIN_NAME}" "${DEST_DIR}/${BIN_NAME}"
 
 ok "Installed vectos ${VERSION} to ${DEST_DIR}/${BIN_NAME}"
-
-# ── path reminder ─────────────────────────────────────────────────────────────
-
-check_path() {
-  case ":${PATH}:" in
-    *":${DEST_DIR}:"*) ;;
-    *)
-      printf '\n'
-      printf '  ⚠️  %s is not in your PATH.\n' "$DEST_DIR"
-      printf '  Add it with:\n'
-      printf '    export PATH="%s:$PATH"\n' "$DEST_DIR"
-      printf '  Or add that line to your ~/.bashrc / ~/.zshrc\n'
-      printf '\n'
-      ;;
-  esac
-}
-
-check_path
+ensure_path_config
 
 printf '\nRun `vectos version` to verify the installation.\n'
 printf '\n'
