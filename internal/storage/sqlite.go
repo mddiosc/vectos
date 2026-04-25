@@ -299,7 +299,7 @@ func (s *SQLiteStorage) SearchSemantic(queryVector []float32, limit int) ([]Code
 		return nil, nil
 	}
 
-	sqlQuery := `SELECT id, file_path, content, start_line, end_line, language, category, created_at, embedding FROM code_chunks WHERE embedding IS NOT NULL AND length(embedding) > 0`
+	sqlQuery := `SELECT id, file_path, content, start_line, end_line, language, category, created_at, embedding FROM code_chunks WHERE embedding IS NOT NULL AND length(embedding) > 0 AND (category IS NULL OR category NOT IN ('docs', 'dependency_metadata'))`
 	rows, err := s.db.Query(sqlQuery)
 	if err != nil {
 		return nil, fmt.Errorf("semantic search query failed: %w", err)

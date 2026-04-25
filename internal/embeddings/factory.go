@@ -52,19 +52,7 @@ func InspectProviders(cfg config.EmbeddingConfig) []ProviderInfo {
 			status := InspectEmbeddedProvider(cfg.Embedded)
 			statuses = append(statuses, providerInfoFromStatus(status))
 		case config.ProviderRemote:
-			_, info, err := NewRemoteEmbedderFromConfig(cfg.Remote)
-			if err != nil {
-				statuses = append(statuses, ProviderInfo{
-					Provider: provider,
-					Model:    strings.TrimSpace(cfg.Remote.Model),
-					Ready:    false,
-					Message:  err.Error(),
-				})
-				continue
-			}
-			info.Ready = true
-			info.Message = "remote provider configured"
-			statuses = append(statuses, info)
+			statuses = append(statuses, InspectRemoteProvider(cfg.Remote))
 		}
 	}
 

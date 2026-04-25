@@ -71,6 +71,8 @@ Supported extensions and file names:
 
 Secret-prone `.env` files are intentionally excluded in the current phase, including `.env.example` and `.env.sample`.
 
+To reduce search noise, the current default indexing path prioritizes higher-signal content categories. Files classified as `docs` and `dependency_metadata` are detected but skipped during indexing, so semantic retrieval stays focused on source code, scripts, and infrastructure/configuration that are more likely to answer code-navigation queries.
+
 ## How Retrieval Works
 
 Vectos stores:

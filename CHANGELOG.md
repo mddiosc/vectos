@@ -18,6 +18,31 @@ Format per release:
 
 ---
 
+## v0.1.5 — 2026-04-25
+
+Patch release focused on remote embedding health reporting and lower-noise indexing defaults.
+
+### Changed
+
+- Remote embedding provider health now performs a real probe instead of reporting a purely configuration-based status
+- Remote embedding dimensions are now detected from the provider and persisted in index metadata
+- Default indexing now skips `docs` and `dependency_metadata` categories to keep semantic retrieval focused on higher-signal code and config
+- Semantic search now ignores `docs` and `dependency_metadata` chunks by default to reduce result noise
+
+### Fixed
+
+- Remote provider status no longer reports `ready` with `Embedding dimensions: 0` when the provider is actually returning valid vectors
+- Reindexing now clears chunks for files that are no longer part of the default indexing set after category filtering changes
+- Search quality improves in smaller projects where markdown and JSON metadata previously dominated the index
+
+### Known Limitations
+
+- This remains an experimental/internal release. Stability and compatibility are not guaranteed.
+- Supported download platforms remain `darwin/arm64` and `linux/amd64` only.
+- The current indexing defaults intentionally favor code-navigation quality over exhaustive repository coverage; `docs` and dependency metadata are not part of semantic retrieval by default.
+
+---
+
 ## v0.1.4 — 2026-04-25
 
 Patch release focused on indexing command visibility and progress feedback.

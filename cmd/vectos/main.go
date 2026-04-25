@@ -286,7 +286,7 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 		MaxLines: 10,
 	}, embedClient)
 
-	paths, err := collectIndexablePaths(scope.Roots)
+	paths, skippedPaths, err := collectIndexablePaths(scope.Roots)
 	if err != nil {
 		log.Fatalf("error collecting indexable paths: %v", err)
 	}
@@ -346,6 +346,12 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 			if err := store.DeleteChunksByPathPrefix(excludedDir); err != nil {
 				log.Printf("warning: failed to clean excluded dir %s: %v", excludedDir, err)
 			}
+		}
+	}
+
+	for _, skippedPath := range skippedPaths {
+		if err := store.DeleteChunksByPath(skippedPath); err != nil {
+			log.Printf("warning: failed to clear skipped path %s: %v", skippedPath, err)
 		}
 	}
 
@@ -622,7 +628,7 @@ func runMCP(projectBaseDir string, embedConfig config.EmbeddingConfig) {
 		}
 
 		chunker := indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10}, embedClient)
-		paths, err := collectIndexablePaths(scope.Roots)
+		paths, skippedPaths, err := collectIndexablePaths(scope.Roots)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -660,6 +666,12 @@ func runMCP(projectBaseDir string, embedConfig config.EmbeddingConfig) {
 				count++
 			}
 			indexedFiles++
+		}
+
+		for _, skippedPath := range skippedPaths {
+			if err := store.DeleteChunksByPath(skippedPath); err != nil {
+				return nil, nil, err
+			}
 		}
 
 		return &mcpSDK.CallToolResult{
@@ -723,29 +735,38 @@ func runSetup(agent string, uninstall bool) {
 	fmt.Printf("Vectos configured for %s.\n", agent)
 }
 
-func collectIndexablePaths(inputPaths []string) ([]string, error) {
+func collectIndexablePaths(inputPaths []string) ([]string, []string, error) {
 	var paths []string
+	var skippedPaths []string
 	seen := map[string]struct{}{}
+	skippedSeen := map[string]struct{}{}
 	for _, path := range inputPaths {
 		absPath, err := filepath.Abs(path)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		info, err := os.Stat(absPath)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		if !info.IsDir() {
-			if _, err := detectLanguage(absPath); err == nil {
+			if language, err := detectLanguage(absPath); err == nil {
+				if !shouldIndexLanguage(language) {
+					if _, ok := skippedSeen[absPath]; !ok {
+						skippedPaths = append(skippedPaths, absPath)
+						skippedSeen[absPath] = struct{}{}
+					}
+					continue
+				}
 				if _, ok := seen[absPath]; !ok {
 					paths = append(paths, absPath)
 					seen[absPath] = struct{}{}
 				}
 				continue
 			}
-			return nil, fmt.Errorf("unsupported file type: %s", absPath)
+			return nil, nil, fmt.Errorf("unsupported file type: %s", absPath)
 		}
 
 		err = filepath.Walk(absPath, func(current string, info os.FileInfo, walkErr error) error {
@@ -760,7 +781,14 @@ func collectIndexablePaths(inputPaths []string) ([]string, error) {
 				return nil
 			}
 
-			if _, err := detectLanguage(current); err == nil {
+			if language, err := detectLanguage(current); err == nil {
+				if !shouldIndexLanguage(language) {
+					if _, ok := skippedSeen[current]; !ok {
+						skippedPaths = append(skippedPaths, current)
+						skippedSeen[current] = struct{}{}
+					}
+					return nil
+				}
 				if _, ok := seen[current]; !ok {
 					paths = append(paths, current)
 					seen[current] = struct{}{}
@@ -769,15 +797,15 @@ func collectIndexablePaths(inputPaths []string) ([]string, error) {
 			return nil
 		})
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	if len(paths) == 0 {
-		return nil, fmt.Errorf("no supported files found in selected scope")
+		return nil, nil, fmt.Errorf("no supported files found in selected scope")
 	}
 
-	return paths, nil
+	return paths, skippedPaths, nil
 }
 
 func shouldSkipDir(name string) bool {
@@ -787,6 +815,11 @@ func shouldSkipDir(name string) bool {
 	default:
 		return false
 	}
+}
+
+func shouldIndexLanguage(language string) bool {
+	category := classifyCategory(language)
+	return category != "docs" && category != "dependency_metadata"
 }
 
 func collectExcludedDirs(root string) []string {

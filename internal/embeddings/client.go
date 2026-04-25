@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 	"vectos/internal/config"
 )
@@ -56,10 +57,53 @@ func NewRemoteEmbedderFromConfig(cfg config.RemoteProviderConfig) (*RemoteEmbedd
 		embedder.httpClient.Timeout = time.Duration(cfg.TimeoutS) * time.Second
 	}
 
+	dimensions, err := embedder.detectDimensions()
+	if err != nil {
+		return nil, ProviderInfo{}, err
+	}
+
 	return embedder, ProviderInfo{
 		Provider: config.ProviderRemote,
 		Model:    cfg.Model,
+		Dimensions: dimensions,
 	}, nil
+}
+
+func InspectRemoteProvider(cfg config.RemoteProviderConfig) ProviderInfo {
+	if !cfg.Enabled {
+		return ProviderInfo{
+			Provider: config.ProviderRemote,
+			Model:    strings.TrimSpace(cfg.Model),
+			Ready:    false,
+			Message:  "remote provider disabled",
+		}
+	}
+
+	embedder, info, err := NewRemoteEmbedderFromConfig(cfg)
+	if err != nil {
+		return ProviderInfo{
+			Provider: config.ProviderRemote,
+			Model:    strings.TrimSpace(cfg.Model),
+			Ready:    false,
+			Message:  err.Error(),
+		}
+	}
+
+	info.Ready = true
+	info.Message = fmt.Sprintf("remote provider ready (%d dimensions)", info.Dimensions)
+	_ = embedder
+	return info
+}
+
+func (r *RemoteEmbedder) detectDimensions() (int, error) {
+	vector, err := r.GetEmbedding("vectos healthcheck")
+	if err != nil {
+		return 0, fmt.Errorf("remote provider probe failed: %w", err)
+	}
+	if len(vector) == 0 {
+		return 0, fmt.Errorf("remote provider probe returned empty embedding")
+	}
+	return len(vector), nil
 }
 
 // GetEmbedding implementa la interfaz Embedder llamando al servidor remoto.
