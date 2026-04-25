@@ -14,46 +14,38 @@ Use Vectos at your own responsibility. Review generated configuration changes, v
 
 ## Quick Start
 
-### Option A — Download an experimental release (recommended for most users)
+### Option A — Install from a release (recommended)
 
 > ⚠️ Experimental/internal builds. Not a stable public release.
 > Supported platforms: `darwin/arm64` and `linux/amd64` only.
 
-1. Go to the [Releases](../../releases) page and download the archive for your platform.
-
-2. Verify the checksum:
-
-```bash
-sha256sum -c checksums.txt
+```sh
+curl -fsSL https://github.com/mddiosc/vectos/releases/latest/download/install.sh | sh
 ```
 
-3. Extract and install:
+The installer detects your platform, downloads the right binary, verifies the checksum, and installs `vectos` into `~/.local/bin` by default.
 
-```bash
-tar -xzf vectos_<version>_<os>_<arch>.tar.gz
-install -m 0755 vectos ~/.local/bin/vectos
+To install to a different directory:
+
+```sh
+curl -fsSL https://github.com/mddiosc/vectos/releases/latest/download/install.sh | DEST_DIR=/usr/local/bin sh
 ```
 
-4. Make sure `~/.local/bin` is in your `PATH`, then verify:
+Then verify:
 
 ```bash
 vectos version
 ```
 
-5. Index a project:
+**First-run note**: on first use, the embedded provider downloads ONNX Runtime and model assets from the internet into `~/.vectos/models/`. Subsequent runs use the cached assets.
+
+Once installed, index a project and start searching:
 
 ```bash
 cd /path/to/your/project
 vectos index .
-```
-
-6. Search code:
-
-```bash
 vectos search "checkout payment"
 ```
-
-**First-run note**: on first use, the embedded provider downloads ONNX Runtime and model assets from the internet into `~/.vectos/models/`. Subsequent runs use the cached assets.
 
 ---
 

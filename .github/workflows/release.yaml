@@ -95,6 +95,9 @@ jobs:
           sha256sum *.tar.gz > checksums.txt
           cat checksums.txt
 
+      - name: Copy installer script
+        run: cp scripts/install.sh dist/install.sh
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -104,6 +107,18 @@ jobs:
             > Interfaces, packaging, and behavior may change without notice.
             > Supported platforms: `darwin/arm64` and `linux/amd64` only.
 
+            ## Install
+
+            ```sh
+            curl -fsSL https://github.com/mddiosc/vectos/releases/download/${{ github.ref_name }}/install.sh | sh
+            ```
+
+            Or to a custom directory:
+
+            ```sh
+            curl -fsSL https://github.com/mddiosc/vectos/releases/download/${{ github.ref_name }}/install.sh | DEST_DIR=/usr/local/bin sh
+            ```
+
             **First run note**: the embedded provider downloads ONNX Runtime and model
             assets from the internet into `~/.vectos/models/` on first use.
 
@@ -111,6 +126,7 @@ jobs:
           files: |
             dist/*.tar.gz
             dist/checksums.txt
+            dist/install.sh
           prerelease: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
