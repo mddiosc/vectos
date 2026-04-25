@@ -1,5 +1,5 @@
-- [ ] Review current TypeScript/React chunking heuristics and identify the minimum structural boundaries that improve search quality
-- [ ] Implement improved chunk extraction for TS/TSX/JSX with safe fallback behavior
-- [ ] Update semantic enrichment to reflect chunk roles such as component, hook, exported function, or test
-- [ ] Validate chunk counts and search quality on a representative frontend project
-- [ ] Update documentation if the chunking behavior becomes materially different for users
+- [x] Review current TypeScript/React chunking heuristics and identify the minimum structural boundaries that improve search quality
+- [x] Implement improved chunk extraction for TS/TSX/JSX with safe fallback behavior
+- [x] Update semantic enrichment to reflect chunk roles such as component, hook, exported function, or test
+- [x] Validate chunk counts and search quality on a representative frontend project
+- [x] Update documentation if the chunking behavior becomes materially different for users

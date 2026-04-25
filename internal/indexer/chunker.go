@@ -11,6 +11,11 @@ import (
 
 var goFuncPattern = regexp.MustCompile(`^func\s+`)
 var jsFuncPattern = regexp.MustCompile(`^(export\s+)?(async\s+)?function\s+|^(export\s+)?(const|let|var)\s+\w+\s*=\s*(async\s*)?\(`)
+var jsNamedArrowPattern = regexp.MustCompile(`^(export\s+)?(const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*(async\s*)?(\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>`)
+var jsComponentPattern = regexp.MustCompile(`^(export\s+default\s+function\s+[A-Z][\w$]*|export\s+function\s+[A-Z][\w$]*|function\s+[A-Z][\w$]*|export\s+default\s+(const|let|var)\s+[A-Z][\w$]*\s*=|export\s+(const|let|var)\s+[A-Z][\w$]*\s*=|(const|let|var)\s+[A-Z][\w$]*\s*=)`)
+var jsHookPattern = regexp.MustCompile(`^(export\s+)?function\s+use[A-Z][\w$]*|^(export\s+)?(const|let|var)\s+use[A-Z][\w$]*\s*=`)
+var jsClassPattern = regexp.MustCompile(`^(export\s+default\s+)?class\s+[A-Za-z_$][\w$]*|^export\s+class\s+[A-Za-z_$][\w$]*`)
+var jsTestPattern = regexp.MustCompile(`^(describe|it|test)\s*\(`)
 var pyBlockPattern = regexp.MustCompile(`^(def|class)\s+`)
 var javaBlockPattern = regexp.MustCompile(`^(public|protected|private|static|final|abstract|class|interface|enum|record)\s+`)
 var shellBlockPattern = regexp.MustCompile(`^(function\s+\w+|\w+\s*\(\)\s*\{|if\s|for\s|while\s|case\s)`)
@@ -169,6 +174,10 @@ func (s *SimpleChunker) chunkStructuredFile(filePath, language string, lines []s
 	var prelude []string
 	preludeEnd := 0
 
+	if isBraceStructuredLanguage(language) {
+		return s.chunkBraceStructuredFile(filePath, language, lines)
+	}
+
 	for i := 0; i < len(lines); {
 		trimmed := strings.TrimSpace(lines[i])
 		if !isStructuredBoundary(language, trimmed) {
@@ -202,10 +211,103 @@ func (s *SimpleChunker) chunkStructuredFile(filePath, language string, lines []s
 	return chunks
 }
 
+func (s *SimpleChunker) chunkBraceStructuredFile(filePath, language string, lines []string) []ChunkResult {
+	var chunks []ChunkResult
+	var prelude []string
+	preludeEnd := 0
+
+	for i := 0; i < len(lines); {
+		trimmed := strings.TrimSpace(lines[i])
+		if !isStructuredBoundary(language, trimmed) {
+			prelude = append(prelude, lines[i])
+			preludeEnd = i + 1
+			i++
+			continue
+		}
+
+		start := i + 1
+		end := findStructuredBlockEnd(language, lines, i)
+		if end < i {
+			end = i
+		}
+
+		chunks = append(chunks, s.buildChunk(filePath, language, lines[i:end+1], start, end+1))
+		i = end + 1
+	}
+
+	if len(chunks) == 0 {
+		return s.chunkByLines(filePath, language, lines)
+	}
+
+	if len(prelude) > 0 {
+		chunks = append([]ChunkResult{s.buildChunk(filePath, language, prelude, 1, preludeEnd)}, chunks...)
+	}
+
+	return chunks
+}
+
+func isBraceStructuredLanguage(language string) bool {
+	switch language {
+	case "javascript", "typescript", "tsx", "jsx":
+		return true
+	default:
+		return false
+	}
+}
+
+func findStructuredBlockEnd(language string, lines []string, startIdx int) int {
+	braceDepth := 0
+	seenBrace := false
+	startedExpr := false
+	parenDepth := 0
+
+	for i := startIdx; i < len(lines); i++ {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+
+		braceDepth += strings.Count(line, "{")
+		if strings.Contains(line, "{") {
+			seenBrace = true
+		}
+		braceDepth -= strings.Count(line, "}")
+
+		parenDepth += strings.Count(line, "(")
+		parenDepth -= strings.Count(line, ")")
+
+		if strings.Contains(line, "=>") || strings.Contains(line, "=") || strings.Contains(line, "function") || strings.Contains(line, "class ") {
+			startedExpr = true
+		}
+
+		if seenBrace && braceDepth <= 0 {
+			return i
+		}
+
+		if startedExpr && !seenBrace && parenDepth <= 0 && isLikelyExpressionTerminator(language, trimmed) {
+			return i
+		}
+
+		if i > startIdx && isStructuredBoundary(language, trimmed) && !seenBrace {
+			return i - 1
+		}
+	}
+
+	return len(lines) - 1
+}
+
+func isLikelyExpressionTerminator(language, trimmedLine string) bool {
+	if !isBraceStructuredLanguage(language) {
+		return false
+	}
+	if trimmedLine == "" {
+		return true
+	}
+	return strings.HasSuffix(trimmedLine, ";") || strings.HasSuffix(trimmedLine, ")") || strings.HasSuffix(trimmedLine, "/>" ) || strings.HasSuffix(trimmedLine, ">")
+}
+
 func isStructuredBoundary(language, trimmedLine string) bool {
 	switch language {
 	case "javascript", "typescript", "tsx", "jsx":
-		return jsFuncPattern.MatchString(trimmedLine)
+		return jsFuncPattern.MatchString(trimmedLine) || jsNamedArrowPattern.MatchString(trimmedLine) || jsComponentPattern.MatchString(trimmedLine) || jsHookPattern.MatchString(trimmedLine) || jsClassPattern.MatchString(trimmedLine) || jsTestPattern.MatchString(trimmedLine)
 	case "python":
 		return pyBlockPattern.MatchString(trimmedLine)
 	case "java":
@@ -285,6 +387,18 @@ func inferPurpose(language, chunkContent string) string {
 	if language != "go" {
 		lower := strings.ToLower(chunkContent)
 		var tags []string
+		if isReactComponentChunk(language, chunkContent) {
+			tags = append(tags, "react component")
+		}
+		if isHookChunk(language, chunkContent) {
+			tags = append(tags, "custom hook")
+		}
+		if isTestChunk(language, chunkContent) {
+			tags = append(tags, "test block")
+		}
+		if isExportedChunk(language, chunkContent) {
+			tags = append(tags, "exported api")
+		}
 		category := classifyCategory(language)
 		if category == "docs" {
 			if strings.Contains(lower, "install") || strings.Contains(lower, "usage") {
@@ -373,6 +487,54 @@ func inferPurpose(language, chunkContent string) string {
 	}
 
 	return strings.Join(tags, "; ")
+}
+
+func isReactComponentChunk(language, chunkContent string) bool {
+	if language != "javascript" && language != "typescript" && language != "tsx" && language != "jsx" {
+		return false
+	}
+	for _, line := range strings.Split(chunkContent, "\n") {
+		if jsComponentPattern.MatchString(strings.TrimSpace(line)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isHookChunk(language, chunkContent string) bool {
+	if language != "javascript" && language != "typescript" && language != "tsx" && language != "jsx" {
+		return false
+	}
+	for _, line := range strings.Split(chunkContent, "\n") {
+		if jsHookPattern.MatchString(strings.TrimSpace(line)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isTestChunk(language, chunkContent string) bool {
+	if language != "javascript" && language != "typescript" && language != "tsx" && language != "jsx" {
+		return false
+	}
+	for _, line := range strings.Split(chunkContent, "\n") {
+		if jsTestPattern.MatchString(strings.TrimSpace(line)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isExportedChunk(language, chunkContent string) bool {
+	if language != "javascript" && language != "typescript" && language != "tsx" && language != "jsx" {
+		return false
+	}
+	for _, line := range strings.Split(chunkContent, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "export ") {
+			return true
+		}
+	}
+	return false
 }
 
 func classifyCategory(language string) string {

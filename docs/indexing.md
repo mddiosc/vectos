@@ -93,6 +93,8 @@ Semantic retrieval is only used when the current provider metadata matches the m
 
 Search results preserve both logical project scope and file classification metadata.
 
+For Go, Vectos prefers function-oriented chunk boundaries. For TypeScript and React-heavy files, Vectos now also prefers higher-signal structural boundaries such as exported functions, hooks, components, classes, and common test blocks when those boundaries can be derived safely. When they cannot, it falls back to the generic chunking strategy.
+
 ## Workspace Selection
 
 Vectos supports an Nx-aware workspace phase.
