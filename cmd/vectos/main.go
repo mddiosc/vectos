@@ -51,10 +51,12 @@ func printSubcommandHelp(cmd string) {
 		fmt.Println()
 		fmt.Println("Flags:")
 		fmt.Println("  --project <name>   Nx project name to scope the index (optional)")
+		fmt.Println("  --changed <paths>  Comma-separated changed file paths to refresh incrementally")
 		fmt.Println()
 		fmt.Println("Examples:")
 		fmt.Println("  vectos index .")
 		fmt.Println("  vectos index ./src --project my-app")
+		fmt.Println("  vectos index . --changed src/App.tsx,src/hooks/useAuth.ts")
 	case "search":
 		fmt.Println("Usage:")
 		fmt.Println("  vectos search <query> [flags]")
@@ -130,6 +132,7 @@ func main() {
 	mcpCmd := flag.NewFlagSet("mcp", flag.ExitOnError)
 	setupCmd := flag.NewFlagSet("setup", flag.ExitOnError)
 	indexProject := indexCmd.String("project", "", "Nx project name to index when inside an Nx workspace")
+	indexChanged := indexCmd.String("changed", "", "Comma-separated changed file paths to refresh incrementally")
 	searchProject := searchCmd.String("project", "", "Nx project name to search when inside an Nx workspace")
 	statusProject := statusCmd.String("project", "", "Nx project name to inspect when inside an Nx workspace")
 	setupUninstall := setupCmd.Bool("uninstall", false, "Remove the Vectos MCP setup for the selected agent")
@@ -162,18 +165,19 @@ func main() {
 		}
 
 	case "index":
-		if len(os.Args) >= 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
+		indexArgs, showHelp := normalizeIndexArgs(os.Args[2:])
+		if showHelp {
 			printSubcommandHelp("index")
 			os.Exit(0)
 		}
-		if err := indexCmd.Parse(os.Args[2:]); err != nil {
+		if err := indexCmd.Parse(indexArgs); err != nil {
 			log.Fatal(err)
 		}
 		if indexCmd.NArg() < 1 {
 			printSubcommandHelp("index")
 			os.Exit(1)
 		}
-		runIndex(projectBaseDir, embedConfig, indexCmd.Arg(0), *indexProject)
+		runIndex(projectBaseDir, embedConfig, indexCmd.Arg(0), *indexProject, parseChangedPaths(*indexChanged))
 
 	case "search":
 		if len(os.Args) >= 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
@@ -240,7 +244,7 @@ func main() {
 	}
 }
 
-func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePath string, projectName string) {
+func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePath string, projectName string, changedPaths []string) {
 	fmt.Printf("Indexing: %s\n", filePath)
 
 	absolutePath, err := filepath.Abs(filePath)
@@ -291,8 +295,19 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 		log.Fatalf("error collecting indexable paths: %v", err)
 	}
 
+	if len(changedPaths) > 0 {
+		paths, skippedPaths, err = filterChangedPaths(scope, paths, skippedPaths, changedPaths)
+		if err != nil {
+			log.Fatalf("error filtering changed paths: %v", err)
+		}
+	}
+
 	totalFiles := len(paths)
-	fmt.Printf("Found %d supported files\n", totalFiles)
+	if len(changedPaths) > 0 {
+		fmt.Printf("Found %d changed supported files\n", totalFiles)
+	} else {
+		fmt.Printf("Found %d supported files\n", totalFiles)
+	}
 	fmt.Println("Processing files...")
 
 	indexedFiles := 0
@@ -593,6 +608,7 @@ func runMCP(projectBaseDir string, embedConfig config.EmbeddingConfig) {
 	type indexProjectInput struct {
 		Path    string `json:"path" jsonschema:"path to a file or directory to index"`
 		Project string `json:"project,omitempty" jsonschema:"optional Nx project name when indexing inside a workspace"`
+		Changed string `json:"changed,omitempty" jsonschema:"optional comma-separated changed file paths for incremental refresh"`
 	}
 
 	mcpSDK.AddTool(server, &mcpSDK.Tool{
@@ -631,6 +647,14 @@ func runMCP(projectBaseDir string, embedConfig config.EmbeddingConfig) {
 		paths, skippedPaths, err := collectIndexablePaths(scope.Roots)
 		if err != nil {
 			return nil, nil, err
+		}
+
+		changedPaths := parseChangedPaths(input.Changed)
+		if len(changedPaths) > 0 {
+			paths, skippedPaths, err = filterChangedPaths(scope, paths, skippedPaths, changedPaths)
+			if err != nil {
+				return nil, nil, err
+			}
 		}
 
 		indexedFiles := 0
@@ -674,8 +698,13 @@ func runMCP(projectBaseDir string, embedConfig config.EmbeddingConfig) {
 			}
 		}
 
+		label := "files"
+		if len(changedPaths) > 0 {
+			label = "changed files"
+		}
+
 		return &mcpSDK.CallToolResult{
-			Content: []mcpSDK.Content{&mcpSDK.TextContent{Text: fmt.Sprintf("Successfully indexed %d files and %d chunks for %s", indexedFiles, count, scope.Name)}},
+			Content: []mcpSDK.Content{&mcpSDK.TextContent{Text: fmt.Sprintf("Successfully indexed %d %s and %d chunks for %s", indexedFiles, label, count, scope.Name)}},
 		}, nil, nil
 	})
 
@@ -697,6 +726,24 @@ func stringifyMCPResult(result interface{}) (string, error) {
 	}
 
 	return string(encoded), nil
+}
+
+func normalizeIndexArgs(args []string) ([]string, bool) {
+	if len(args) == 0 {
+		return args, false
+	}
+
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			return nil, true
+		}
+	}
+
+	if strings.HasPrefix(args[0], "-") {
+		return args, false
+	}
+
+	return append(args[1:], args[0]), false
 }
 
 func normalizeSetupArgs(args []string) ([]string, bool) {
@@ -835,6 +882,94 @@ func collectExcludedDirs(root string) []string {
 		return nil
 	})
 	return excluded
+}
+
+func parseChangedPaths(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	changed := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		changed = append(changed, trimmed)
+	}
+	return changed
+}
+
+func filterChangedPaths(scope workspace.Scope, paths, skippedPaths, changedPaths []string) ([]string, []string, error) {
+	allowedRoots := make([]string, 0, len(scope.Roots))
+	for _, root := range scope.Roots {
+		absRoot, err := filepath.Abs(root)
+		if err != nil {
+			return nil, nil, err
+		}
+		allowedRoots = append(allowedRoots, absRoot)
+	}
+
+	pathSet := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		pathSet[path] = struct{}{}
+	}
+
+	skippedSet := make(map[string]struct{}, len(skippedPaths))
+	for _, path := range skippedPaths {
+		skippedSet[path] = struct{}{}
+	}
+
+	var filteredPaths []string
+	var filteredSkipped []string
+	seenPaths := map[string]struct{}{}
+	seenSkipped := map[string]struct{}{}
+
+	for _, changed := range changedPaths {
+		resolved, err := resolveChangedPath(scope.PrimaryRoot, changed)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !isWithinRoots(resolved, allowedRoots) {
+			continue
+		}
+		if _, ok := pathSet[resolved]; ok {
+			if _, seen := seenPaths[resolved]; !seen {
+				filteredPaths = append(filteredPaths, resolved)
+				seenPaths[resolved] = struct{}{}
+			}
+			continue
+		}
+		if _, ok := skippedSet[resolved]; ok || !fileExists(resolved) {
+			if _, seen := seenSkipped[resolved]; !seen {
+				filteredSkipped = append(filteredSkipped, resolved)
+				seenSkipped[resolved] = struct{}{}
+			}
+		}
+	}
+
+	return filteredPaths, filteredSkipped, nil
+}
+
+func resolveChangedPath(baseRoot, changed string) (string, error) {
+	if filepath.IsAbs(changed) {
+		return filepath.Clean(changed), nil
+	}
+	return filepath.Abs(filepath.Join(baseRoot, changed))
+}
+
+func isWithinRoots(path string, roots []string) bool {
+	for _, root := range roots {
+		if path == root || strings.HasPrefix(path, root+string(os.PathSeparator)) {
+			return true
+		}
+	}
+	return false
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func openStorageForScope(pm *storage.ProjectManager, scope *workspace.Scope) (*storage.SQLiteStorage, error) {
