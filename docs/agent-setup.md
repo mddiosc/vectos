@@ -82,6 +82,8 @@ If the project is not yet indexed or `vectos_search_code` returns no useful resu
 Use `grep`, `glob`, and direct file reads only as a fallback when Vectos has no useful results or when you need exact pattern matching.
 ```
 
+When session memory tools such as Engram are also available, use them for prior decisions and durable learnings first, then use Vectos for current code retrieval. Vectos does not require those tools to function.
+
 ## Unsupported Setup Targets
 
 Current explicit non-validated target for this phase:
@@ -93,5 +95,7 @@ Running `vectos setup <agent>` for a non-validated target currently fails with a
 For unsupported clients, manual MCP configuration is the intended path.
 
 See also: [CLI Usage](cli.md)
+
+See also: [Optional Engram Synergy](engram-synergy.md)
 
 If setup fails or the client cannot launch Vectos, also see [Troubleshooting](troubleshooting.md).
