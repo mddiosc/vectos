@@ -72,6 +72,10 @@ This removes only the `vectos` binary. To also clean up data and configuration, 
 | Path | Contents |
 |---|---|
 | `~/.vectos/` | Cached models and index databases |
+| `~/.claude.json` | Claude Code user MCP config (edit, not delete) |
+| `~/.claude/CLAUDE.md` | Claude Code global guidance (edit, not delete) |
+| `~/.codex/config.toml` | Codex MCP config (edit, not delete) |
+| `~/.codex/AGENTS.md` | Codex global guidance (edit, not delete) |
 | `~/.config/opencode/opencode.json` | OpenCode MCP config (edit, not delete) |
 | `~/.config/opencode/AGENTS.md` | OpenCode global guidance (edit, not delete) |
 
@@ -278,28 +282,50 @@ When a workspace-scoped project is selected, status also reports:
 vectos mcp
 ```
 
-### Configure OpenCode automatically
+### Configure agent clients automatically
 
 ```bash
 vectos setup opencode
+vectos setup claude
+vectos setup codex
 ```
 
-This creates or updates `~/.config/opencode/opencode.json` with a working local MCP entry for Vectos.
+Validated setup targets in this phase:
 
-If `~/.config/opencode/AGENTS.md` does not exist yet, the setup also installs a small global guidance block so OpenCode prefers `vectos_search_code` and `vectos_index_project` before broad file-search tools.
+- `opencode`
+- `claude`
+- `codex`
 
-If you already have a global OpenCode `AGENTS.md`, the setup asks before appending the managed Vectos guidance block so your existing instructions are preserved.
+Each setup command creates or updates a Vectos MCP entry in the agent's user-wide config and may also manage a small global guidance block so the agent prefers `vectos_search_code` and `vectos_index_project` before broad file-search tools.
+
+Configuration targets:
+
+- `opencode` -> `~/.config/opencode/opencode.json` + `~/.config/opencode/AGENTS.md`
+- `claude` -> `~/.claude.json` + `~/.claude/CLAUDE.md`
+- `codex` -> `~/.codex/config.toml` + `~/.codex/AGENTS.md`
+
+If the global guidance file for a target does not exist yet, the setup creates a managed Vectos guidance block. If it already exists, the setup asks before appending the managed Vectos section so unrelated user instructions are preserved.
+
+To remove a configured agent integration:
+
+```bash
+vectos setup opencode --uninstall
+vectos setup claude --uninstall
+vectos setup codex --uninstall
+```
+
+This removes only the Vectos-managed MCP entry and the Vectos-managed guidance block for that agent. It does not delete unrelated user config.
 
 ## Supported Setup Targets
 
-Current validated setup target:
+Current validated setup targets:
 
 - `opencode`
-
-Current explicit non-validated targets for this phase:
-
 - `claude`
 - `codex`
+
+Current explicit non-validated target for this phase:
+
 - `gemini`
 
 Running `vectos setup <agent>` for a non-validated target currently fails with an explicit error instead of pretending support exists.

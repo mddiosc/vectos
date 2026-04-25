@@ -11,6 +11,7 @@ type Adapter interface {
 	Name() string
 	Validate() error
 	Apply(ctx Context) error
+	Remove(ctx Context) error
 }
 
 type Context struct {
@@ -18,7 +19,7 @@ type Context struct {
 	HomeDir    string
 }
 
-func Run(agent string) error {
+func Run(agent string, uninstall bool) error {
 	ctx, err := newContext()
 	if err != nil {
 		return err
@@ -33,18 +34,26 @@ func Run(agent string) error {
 		return err
 	}
 
+	if uninstall {
+		return adapter.Remove(ctx)
+	}
+
 	return adapter.Apply(ctx)
 }
 
 func SupportedAgents() []string {
-	return []string{"opencode"}
+	return []string{"opencode", "claude", "codex"}
 }
 
 func resolveAdapter(agent string) (Adapter, error) {
 	switch strings.ToLower(strings.TrimSpace(agent)) {
 	case "opencode":
 		return OpenCodeAdapter{}, nil
-	case "claude", "codex", "gemini":
+	case "claude", "claude-code":
+		return ClaudeCodeAdapter{}, nil
+	case "codex":
+		return CodexAdapter{}, nil
+	case "gemini":
 		return nil, fmt.Errorf("agent %q is not validated for setup in this phase yet", agent)
 	default:
 		return nil, fmt.Errorf("unsupported agent: %s", agent)

@@ -91,17 +91,25 @@ func printSubcommandHelp(cmd string) {
 		fmt.Println("Logs are written to ~/.vectos/vectos-mcp.log to avoid polluting stdio.")
 	case "setup":
 		fmt.Println("Usage:")
-		fmt.Println("  vectos setup <agent>")
+		fmt.Println("  vectos setup <agent> [--uninstall]")
 		fmt.Println()
-		fmt.Println("Configure Vectos MCP integration for a supported agent client.")
+		fmt.Println("Configure or remove Vectos MCP integration for a supported agent client.")
 		fmt.Println("Optionally installs global guidance so the agent prefers Vectos")
 		fmt.Println("search tools before falling back to generic file-search tools.")
 		fmt.Println()
 		fmt.Println("Supported agents:")
 		fmt.Println("  opencode")
+		fmt.Println("  claude")
+		fmt.Println("  codex")
+		fmt.Println()
+		fmt.Println("Flags:")
+		fmt.Println("  --uninstall   Remove the Vectos MCP entry and managed guidance for the selected agent")
 		fmt.Println()
 		fmt.Println("Examples:")
 		fmt.Println("  vectos setup opencode")
+		fmt.Println("  vectos setup claude")
+		fmt.Println("  vectos setup codex")
+		fmt.Println("  vectos setup opencode --uninstall")
 	case "version":
 		fmt.Println("Usage:")
 		fmt.Println("  vectos version")
@@ -124,6 +132,7 @@ func main() {
 	indexProject := indexCmd.String("project", "", "Nx project name to index when inside an Nx workspace")
 	searchProject := searchCmd.String("project", "", "Nx project name to search when inside an Nx workspace")
 	statusProject := statusCmd.String("project", "", "Nx project name to inspect when inside an Nx workspace")
+	setupUninstall := setupCmd.Bool("uninstall", false, "Remove the Vectos MCP setup for the selected agent")
 
 	// Global --help / -h before any subcommand.
 	if len(os.Args) >= 2 && (os.Args[1] == "--help" || os.Args[1] == "-h") {
@@ -201,18 +210,19 @@ func main() {
 		runMCP(projectBaseDir, embedConfig)
 
 	case "setup":
-		if len(os.Args) >= 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
+		setupArgs, showHelp := normalizeSetupArgs(os.Args[2:])
+		if showHelp {
 			printSubcommandHelp("setup")
 			os.Exit(0)
 		}
-		if err := setupCmd.Parse(os.Args[2:]); err != nil {
+		if err := setupCmd.Parse(setupArgs); err != nil {
 			log.Fatal(err)
 		}
 		if setupCmd.NArg() < 1 {
 			printSubcommandHelp("setup")
 			os.Exit(1)
 		}
-		runSetup(setupCmd.Arg(0))
+		runSetup(setupCmd.Arg(0), *setupUninstall)
 
 	case "version":
 		if len(os.Args) >= 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
@@ -661,13 +671,41 @@ func stringifyMCPResult(result interface{}) (string, error) {
 	return string(encoded), nil
 }
 
-func runSetup(agent string) {
-	if err := setupinternal.Run(agent); err != nil {
-		log.Fatalf("error setting up %s: %v", agent, err)
+func normalizeSetupArgs(args []string) ([]string, bool) {
+	flags := make([]string, 0, len(args))
+	positionals := make([]string, 0, len(args))
+	showHelp := false
+
+	for _, arg := range args {
+		switch arg {
+		case "--help", "-h":
+			showHelp = true
+		case "--uninstall":
+			flags = append(flags, arg)
+		default:
+			positionals = append(positionals, arg)
+		}
 	}
-	fmt.Printf("Vectos configured for %s.\n", agent)
+
+	return append(flags, positionals...), showHelp
 }
 
+func runSetup(agent string, uninstall bool) {
+	action := "setting up"
+	if uninstall {
+		action = "removing"
+	}
+
+	if err := setupinternal.Run(agent, uninstall); err != nil {
+		log.Fatalf("error %s %s: %v", action, agent, err)
+	}
+	if uninstall {
+		fmt.Printf("Vectos setup removed for %s.\n", agent)
+		return
+	}
+
+	fmt.Printf("Vectos configured for %s.\n", agent)
+}
 
 func collectIndexablePaths(inputPaths []string) ([]string, error) {
 	var paths []string

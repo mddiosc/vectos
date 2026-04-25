@@ -5,6 +5,7 @@ go 1.26.2
 require (
 	github.com/mattn/go-sqlite3 v1.14.42
 	github.com/modelcontextprotocol/go-sdk v1.5.0
+	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/sugarme/tokenizer v0.3.0
 	github.com/yalue/onnxruntime_go v1.28.0
 )

@@ -1,7 +1,6 @@
 package setup
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -65,7 +64,7 @@ func (OpenCodeAdapter) Apply(ctx Context) error {
 	}
 
 	agentsPath := filepath.Join(ctx.HomeDir, ".config", "opencode", "AGENTS.md")
-	agentsChanged, err := ensureOpenCodeGuidance(agentsPath)
+	agentsChanged, err := ensureManagedGuidance(agentsPath, managedOpenCodeGuidance(), opencodeGuidanceStart, opencodeGuidanceEnd, "OpenCode", "opencode")
 	if err != nil {
 		return err
 	}
@@ -77,36 +76,30 @@ func (OpenCodeAdapter) Apply(ctx Context) error {
 	return nil
 }
 
-func ensureOpenCodeGuidance(path string) (bool, error) {
-	content, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
-		return false, err
+func (OpenCodeAdapter) Remove(ctx Context) error {
+	configPath := filepath.Join(ctx.HomeDir, ".config", "opencode", "opencode.json")
+	removedConfig, err := removeOpenCodeMCPEntry(configPath)
+	if err != nil {
+		return err
 	}
 
-	existing := string(content)
-	section := managedOpenCodeGuidance()
-	updated, changed := upsertManagedSection(existing, section)
-	if !changed {
-		return false, nil
+	agentsPath := filepath.Join(ctx.HomeDir, ".config", "opencode", "AGENTS.md")
+	removedGuidance, err := removeManagedGuidance(agentsPath, opencodeGuidanceStart, opencodeGuidanceEnd)
+	if err != nil {
+		return err
 	}
 
-	if existing == "" && !isInteractiveTerminal() {
-		fmt.Printf("OpenCode global guidance skipped (non-interactive mode). Add it later at %s to prefer Vectos by default.\n", path)
-		return false, nil
+	if removedConfig {
+		fmt.Printf("Removed Vectos MCP entry from %s.\n", configPath)
+	}
+	if removedGuidance {
+		fmt.Printf("Removed Vectos guidance block from %s.\n", agentsPath)
+	}
+	if !removedConfig && !removedGuidance {
+		fmt.Println("No Vectos-managed OpenCode setup was found to remove.")
 	}
 
-	if existing != "" && !strings.Contains(existing, opencodeGuidanceStart) {
-		if !confirmInstallOpenCodeGuidance(path) {
-			fmt.Printf("OpenCode global guidance not modified. Re-run 'vectos setup opencode' to add it later.\n")
-			return false, nil
-		}
-	}
-
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return false, err
-	}
-
-	return true, os.WriteFile(path, []byte(updated), 0644)
+	return nil
 }
 
 func managedOpenCodeGuidance() string {
@@ -123,47 +116,43 @@ func managedOpenCodeGuidance() string {
 	}, "\n")
 }
 
-func upsertManagedSection(existing string, section string) (string, bool) {
-	start := strings.Index(existing, opencodeGuidanceStart)
-	end := strings.Index(existing, opencodeGuidanceEnd)
-	if start >= 0 && end >= start {
-		end += len(opencodeGuidanceEnd)
-		updated := existing[:start] + section + existing[end:]
-		updated = strings.TrimSpace(updated) + "\n"
-		return updated, updated != existing
-	}
-
-	trimmed := strings.TrimSpace(existing)
-	if trimmed == "" {
-		return section + "\n", true
-	}
-
-	updated := trimmed + "\n\n" + section + "\n"
-	return updated, true
-}
-
-func confirmInstallOpenCodeGuidance(path string) bool {
-	if !isInteractiveTerminal() {
-		fmt.Printf("Existing global config found at %s. Re-run setup in an interactive terminal to decide whether to add Vectos global guidance.\n", path)
-		return false
-	}
-
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("Add global guidance at %s so OpenCode prefers Vectos before grep/find? [Y/n]: ", path)
-	answer, err := reader.ReadString('\n')
+func removeOpenCodeMCPEntry(path string) (bool, error) {
+	content, err := os.ReadFile(path)
 	if err != nil {
-		return false
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
 	}
 
-	answer = strings.ToLower(strings.TrimSpace(answer))
-	return answer == "" || answer == "y" || answer == "yes"
-}
+	config := map[string]interface{}{}
+	if len(strings.TrimSpace(string(content))) > 0 {
+		if err := json.Unmarshal(content, &config); err != nil {
+			return false, fmt.Errorf("failed to parse existing config: %w", err)
+		}
+	}
 
-func isInteractiveTerminal() bool {
-	info, err := os.Stdin.Stat()
+	mcpConfig, ok := config["mcp"].(map[string]interface{})
+	if !ok || mcpConfig == nil {
+		return false, nil
+	}
+
+	if _, exists := mcpConfig["vectos"]; !exists {
+		return false, nil
+	}
+
+	delete(mcpConfig, "vectos")
+	if len(mcpConfig) == 0 {
+		delete(config, "mcp")
+	} else {
+		config["mcp"] = mcpConfig
+	}
+
+	encoded, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
-		return false
+		return false, err
 	}
 
-	return (info.Mode() & os.ModeCharDevice) != 0
+	encoded = append(encoded, '\n')
+	return true, os.WriteFile(path, encoded, 0644)
 }
