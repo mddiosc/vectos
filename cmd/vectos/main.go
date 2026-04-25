@@ -253,6 +253,12 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 		log.Fatalf("error resolving project scope: %v", err)
 	}
 
+	fmt.Printf("Project: %s\n", scope.Name)
+	if scope.IsWorkspace() {
+		fmt.Printf("Workspace: %s (%s)\n", scope.WorkspaceRoot, scope.WorkspaceType)
+	}
+	fmt.Printf("Root: %s\n", scope.PrimaryRoot)
+
 	pm, err := storage.NewProjectManager(projectBaseDir)
 	if err != nil {
 		log.Fatalf("error initializing project manager: %v", err)
@@ -285,9 +291,13 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 		log.Fatalf("error collecting indexable paths: %v", err)
 	}
 
+	totalFiles := len(paths)
+	fmt.Printf("Found %d supported files\n", totalFiles)
+	fmt.Println("Processing files...")
+
 	indexedFiles := 0
 	count := 0
-	for _, path := range paths {
+	for i, path := range paths {
 		language, err := detectLanguage(path)
 		if err != nil {
 			log.Printf("warning: skipping %s — unsupported language: %v", path, err)
@@ -323,8 +333,14 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 		}
 
 		indexedFiles++
+		if indexedFiles == 1 || indexedFiles == totalFiles || indexedFiles%25 == 0 {
+			fmt.Printf("Progress: %d/%d files, %d chunks indexed\n", indexedFiles, totalFiles, count)
+		} else if i == totalFiles-1 {
+			fmt.Printf("Progress: %d/%d files, %d chunks indexed\n", indexedFiles, totalFiles, count)
+		}
 	}
 
+	fmt.Println("Cleaning excluded directories...")
 	for _, root := range scope.Roots {
 		for _, excludedDir := range collectExcludedDirs(root) {
 			if err := store.DeleteChunksByPathPrefix(excludedDir); err != nil {
