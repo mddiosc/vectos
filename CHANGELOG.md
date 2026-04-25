@@ -18,6 +18,33 @@ Format per release:
 
 ---
 
+## v0.1.3 — 2026-04-25
+
+Patch release focused on broader indexing coverage and a more structured documentation experience.
+
+### Added
+
+- Support for indexing more common project and devops file types, including JS/TS variants, Kotlin, GraphQL, SQL, CSS variants, lockfiles, wrapper scripts, and `.conf`
+- A dedicated `docs/` documentation set covering installation, agent setup, CLI usage, indexing, development, and troubleshooting
+- First-class manual MCP setup guidance for unsupported agent clients
+
+### Changed
+
+- The root `README.md` is now a lightweight landing page that points to the structured documentation set
+- Product documentation is now organized by workflow instead of being concentrated in a single long README
+
+### Fixed
+
+- `.env*` files remain excluded from indexing, including `.env.example` and `.env.sample`, to avoid indexing potentially sensitive environment data
+
+### Known Limitations
+
+- This remains an experimental/internal release. Stability and compatibility are not guaranteed.
+- Supported download platforms remain `darwin/arm64` and `linux/amd64` only.
+- Manual MCP setup for unsupported clients follows a generic command pattern, but client-specific configuration examples are not yet documented.
+
+---
+
 ## v0.1.2 — 2026-04-25
 
 Patch release focused on broader agent integration support and installer PATH reliability.
@@ -34,7 +61,6 @@ Patch release focused on broader agent integration support and installer PATH re
 - `vectos help setup` and `vectos setup --help` now document `opencode`, `claude`, `codex`, and `--uninstall`
 - Installer PATH handling is now shell-aware for `zsh`, `bash`, and `fish`
 - Release/install docs now explain the managed PATH block behavior more clearly
-- Indexed file coverage now includes more common project manifests and source/config formats used by Nx, Next.js, Vite, Java, Kotlin, GraphQL, SQL, `.conf`, and related toolchains, while keeping `.env*` files excluded
 
 ### Fixed
 
