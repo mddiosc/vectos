@@ -18,6 +18,36 @@ Format per release:
 
 ---
 
+## v0.1.2 — 2026-04-25
+
+Patch release focused on broader agent integration support and installer PATH reliability.
+
+### Added
+
+- `vectos setup claude` to configure Claude Code with a Vectos MCP entry and managed global guidance
+- `vectos setup codex` to configure Codex with a Vectos MCP entry and managed global guidance
+- `vectos setup <agent> --uninstall` support for `opencode`, `claude`, and `codex`
+- OpenSpec main specs now track the expanded setup matrix and setup help behavior
+
+### Changed
+
+- `vectos help setup` and `vectos setup --help` now document `opencode`, `claude`, `codex`, and `--uninstall`
+- Installer PATH handling is now shell-aware for `zsh`, `bash`, and `fish`
+- Release/install docs now explain the managed PATH block behavior more clearly
+
+### Fixed
+
+- Codex setup now creates `~/.codex/` before writing `config.toml`
+- Installer uninstall now removes the Vectos-managed PATH block from the detected shell startup file
+
+### Known Limitations
+
+- This remains an experimental/internal release. Stability and compatibility are not guaranteed.
+- Supported download platforms remain `darwin/arm64` and `linux/amd64` only.
+- Agent uninstall removes only Vectos-managed MCP entries and managed guidance blocks. It does not delete unrelated user configuration.
+
+---
+
 ## v0.1.1 — 2026-04-25
 
 Patch release focused on CLI usability and installation lifecycle polish.
