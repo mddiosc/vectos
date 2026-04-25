@@ -14,14 +14,54 @@ Use Vectos at your own responsibility. Review generated configuration changes, v
 
 ## Quick Start
 
-### 1. Install prerequisites
+### Option A — Download an experimental release (recommended for most users)
 
-You need:
+> ⚠️ Experimental/internal builds. Not a stable public release.
+> Supported platforms: `darwin/arm64` and `linux/amd64` only.
 
-- `git`
-- `go`
+1. Go to the [Releases](../../releases) page and download the archive for your platform.
 
-If you do not have Go installed yet, use the official installer or instructions for your platform:
+2. Verify the checksum:
+
+```bash
+sha256sum -c checksums.txt
+```
+
+3. Extract and install:
+
+```bash
+tar -xzf vectos_<version>_<os>_<arch>.tar.gz
+install -m 0755 vectos ~/.local/bin/vectos
+```
+
+4. Make sure `~/.local/bin` is in your `PATH`, then verify:
+
+```bash
+vectos version
+```
+
+5. Index a project:
+
+```bash
+cd /path/to/your/project
+vectos index .
+```
+
+6. Search code:
+
+```bash
+vectos search "checkout payment"
+```
+
+**First-run note**: on first use, the embedded provider downloads ONNX Runtime and model assets from the internet into `~/.vectos/models/`. Subsequent runs use the cached assets.
+
+---
+
+### Option B — Install from source (fallback / development)
+
+You need `git` and `go`.
+
+If you do not have Go installed yet:
 
 - https://go.dev/doc/install
 
@@ -31,69 +71,27 @@ On macOS with Homebrew:
 brew install go
 ```
 
-If you do not have Homebrew yet:
-
-- https://brew.sh/
-
-Check that Go is available:
-
-```bash
-go version
-```
-
-### 2. Clone the repository
+Clone and install:
 
 ```bash
 git clone <YOUR_REPO_URL>
 cd vectos
-```
-
-### 3. Install Vectos
-
-Recommended install path:
-
-```bash
 ./scripts/install.sh
 ```
 
-By default, this installs `vectos` into `~/.local/bin`.
-
-If you want a different install directory:
+By default this installs `vectos` into `~/.local/bin`. To use a different directory:
 
 ```bash
 DEST_DIR=/your/bin/dir ./scripts/install.sh
 ```
 
-Make sure the chosen install directory is in your `PATH`.
+Make sure the chosen directory is in your `PATH`.
 
-### 4. Verify the CLI
-
-```bash
-vectos
-```
-
-### 5. Index a project
+Verify:
 
 ```bash
-cd /path/to/your/project
-vectos index .
+vectos version
 ```
-
-### 6. Search code
-
-```bash
-vectos search "checkout payment"
-```
-
-### 7. Check index status
-
-```bash
-vectos status
-```
-
-### First-run note
-
-The first time Vectos uses the embedded provider, it downloads the local model assets and ONNX runtime into `~/.vectos/models/`.
 
 ## Manual Install
 

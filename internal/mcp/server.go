@@ -86,15 +86,22 @@ type Server struct {
 	writer   io.Writer
 	tools    map[string]Tool
 	handlers map[string]ToolHandler
+	version  string
 }
 
 // NewServer crea una nueva instancia del servidor MCP.
-func NewServer(input io.Reader, output io.Writer) *Server {
+// version es el string de versión del servidor (e.g. "v0.1.0").
+func NewServer(input io.Reader, output io.Writer, version string) *Server {
+	v := version
+	if v == "" {
+		v = "dev"
+	}
 	return &Server{
 		reader:   bufio.NewReader(input),
 		writer:   output,
 		tools:    make(map[string]Tool),
 		handlers: make(map[string]ToolHandler),
+		version:  v,
 	}
 }
 
@@ -260,10 +267,10 @@ func (s *Server) handleRequest(req JSONRPCRequest) (JSONRPCResponse, bool, error
 						"listChanged": false,
 					},
 				},
-				ServerInfo: map[string]string{
-					"name":    "vectos",
-					"version": "0.1.0",
-				},
+			ServerInfo: map[string]string{
+				"name":    "vectos",
+				"version": s.version,
+			},
 			},
 		}, true, nil
 	case "notifications/initialized":

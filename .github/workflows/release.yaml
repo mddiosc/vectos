@@ -1,0 +1,58 @@
+name: Experimental Release
+
+# Triggered when a version tag is pushed (e.g. v0.1.0).
+# Produces experimental/internal GitHub release assets for darwin/arm64 and linux/amd64.
+
+on:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: GoReleaser
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # darwin/arm64 cross-compilation requires an arm64 C toolchain.
+      # musl-cross provides a portable cross-compiler for Linux targets.
+      - name: Install cross-compilation toolchains
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      # macOS cross-compilation via osxcross provides the macOS SDK and toolchain.
+      # We pin a known-good release of the osxcross Docker image.
+      - name: Set up osxcross for darwin/arm64
+        uses: mbround18/setup-osxcross@v1
+        with:
+          osx-version: "12.3"
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          # Cross-compiler for linux/amd64 (native on ubuntu-latest, CGO default).
+          # Cross-compiler for linux/arm64 (excluded in first milestone via goreleaser ignore).
+          # Cross-compiler for darwin/arm64 (provided by osxcross above).
+          CC_darwin_arm64: ${{ env.OSXCROSS_PATH }}/bin/aarch64-apple-darwin21.4-clang
+          CC_linux_amd64: gcc

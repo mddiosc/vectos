@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"vectos/internal/buildinfo"
 	"vectos/internal/config"
 	"vectos/internal/embeddings"
 	"vectos/internal/indexer"
@@ -37,6 +38,7 @@ func main() {
 		fmt.Println("  status                - Muestra el estado del índice del proyecto actual")
 		fmt.Println("  mcp                   - Inicia el servidor MCP para agentes")
 		fmt.Println("  setup <agent>         - Configura Vectos para un agente compatible")
+		fmt.Println("  version               - Muestra la versión, commit y fecha de build")
 		os.Exit(1)
 	}
 
@@ -92,6 +94,11 @@ func main() {
 			os.Exit(1)
 		}
 		runSetup(setupCmd.Arg(0))
+
+	case "version":
+		fmt.Printf("vectos %s\n", buildinfo.Version)
+		fmt.Printf("commit: %s\n", buildinfo.Commit)
+		fmt.Printf("built:  %s\n", buildinfo.Date)
 
 	default:
 		fmt.Printf("Comando desconocido: %s\n", os.Args[1])
@@ -340,7 +347,7 @@ func runMCP(projectBaseDir string, embedConfig config.EmbeddingConfig) {
 
 	server := mcpSDK.NewServer(&mcpSDK.Implementation{
 		Name:    "vectos",
-		Version: "0.1.0",
+		Version: buildinfo.Version,
 	}, &mcpSDK.ServerOptions{
 		Capabilities: &mcpSDK.ServerCapabilities{
 			Tools: &mcpSDK.ToolCapabilities{ListChanged: false},

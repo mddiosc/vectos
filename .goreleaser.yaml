@@ -1,0 +1,64 @@
+version: 2
+
+# Experimental/internal release configuration for Vectos.
+# Targets: darwin/arm64 and linux/amd64 only for the first milestone.
+# This is not a stable public release pipeline.
+
+project_name: vectos
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: vectos
+    main: ./cmd/vectos
+    binary: vectos
+    env:
+      - CGO_ENABLED=1
+    ldflags:
+      - -s -w
+      - -X vectos/internal/buildinfo.Version={{.Version}}
+      - -X vectos/internal/buildinfo.Commit={{.ShortCommit}}
+      - -X vectos/internal/buildinfo.Date={{.Date}}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - arm64
+      - amd64
+    ignore:
+      # Exclude linux/arm64 from first experimental milestone.
+      # Add back after hands-on validation on that target.
+      - goos: linux
+        goarch: arm64
+
+archives:
+  - id: vectos
+    name_template: "vectos_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+release:
+  github:
+    owner: "{{ .Env.GITHUB_REPOSITORY_OWNER }}"
+    name: vectos
+  prerelease: auto
+  name_template: "v{{.Version}} (experimental)"
+  header: |
+    > ⚠️ **Experimental/internal build** — not a stable public release.
+    > Interfaces, packaging, and behavior may change without notice.
+    > Supported platforms: `darwin/arm64` and `linux/amd64` only.
+
+  footer: |
+    See [CHANGELOG.md](CHANGELOG.md) for details.
+
+    **First run note**: the embedded provider downloads ONNX Runtime and model
+    assets from the internet into `~/.vectos/models/` on first use.
