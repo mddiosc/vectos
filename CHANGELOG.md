@@ -18,6 +18,40 @@ Format per release:
 
 ---
 
+## v0.1.7 — 2026-04-26
+
+Patch release focused on retrieval evaluation, better hybrid ranking, and more actionable MCP search ergonomics.
+
+### Added
+
+- A new `vectos benchmark <file>` workflow for repeatable retrieval evaluation against an indexed project
+- A benchmark fixture format for representative queries with expected files or chunk ranges
+- A seed benchmark at `benchmarks/retrieval/vectos-core.json` for validating core retrieval behavior
+- A new `retrieval-evaluation` OpenSpec capability capturing benchmark behavior and reporting expectations
+- Richer MCP search result metadata including rank, file info, score, preview, and relevance hints
+
+### Changed
+
+- Semantic retrieval now uses a hybrid reranking stage that combines embedding similarity with text and path overlap signals
+- Top search results now reduce redundant overlapping candidates and limit repeated results from the same file
+- MCP `search_code` now returns clearer recovery guidance when a project is unindexed or when semantic ranking should be refreshed
+- MCP `index_project` now returns a structured summary with indexing mode, counts, roots, and summary text
+- Main OpenSpec specs now reflect the phase 2 retrieval evaluation, hybrid ranking, and MCP ergonomics work, and the completed changes have been archived
+
+### Fixed
+
+- Retrieval quality improves for real code-navigation queries where pure semantic ranking previously surfaced weaker or noisier top results
+- Agents can now distinguish more easily between usable search results and situations that require indexing or refresh before proceeding
+
+### Known Limitations
+
+- This remains an experimental/internal release. Stability and compatibility are not guaranteed.
+- Supported download platforms remain `darwin/arm64` and `linux/amd64` only.
+- Hybrid ranking still cannot fully compensate for all low-signal indexed content; some repositories may still need further indexing-policy cleanup for best results.
+- MCP ergonomics are improved, but the tool surface is still intentionally small and may evolve in future `0.x` releases.
+
+---
+
 ## v0.1.6 — 2026-04-25
 
 Patch release focused on frontend retrieval quality, incremental indexing, and clearer standalone-first workflow guidance.
