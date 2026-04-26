@@ -72,13 +72,13 @@ func executeSearch(store *storage.SQLiteStorage, embedConfig config.EmbeddingCon
 
 	queryVector, err := embedClient.GetEmbedding(query)
 	if err == nil {
-		results, semanticErr := store.SearchSemantic(queryVector, limit)
+		results, semanticErr := store.SearchSemantic(queryVector, hybridCandidateLimit)
 		if semanticErr != nil {
 			return searchRun{}, semanticErr
 		}
 		if len(results) > 0 {
-			run.Mode = "semantic"
-			run.Results = results
+			run.Mode = "semantic_hybrid"
+			run.Results = rerankHybridResults(query, results, limit)
 			return run, nil
 		}
 	}
