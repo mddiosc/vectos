@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	mcpSDK "github.com/modelcontextprotocol/go-sdk/mcp"
 	"log"
@@ -19,154 +18,7 @@ import (
 	"vectos/internal/workspace"
 )
 
-// printHelp prints global usage for all subcommands.
-func printHelp() {
-	fmt.Printf("vectos %s\n\n", buildinfo.Version)
-	fmt.Println("Local-first code context engine for AI agents.")
-	fmt.Println()
-	fmt.Println("Usage:")
-	fmt.Println("  vectos <command> [arguments]")
-	fmt.Println()
-	fmt.Println("Commands:")
-	fmt.Println("  index   <path>   Index a file or directory with semantic embeddings")
-	fmt.Println("  search  <query>  Search the index using semantic or keyword search")
-	fmt.Println("  benchmark <file> Run retrieval benchmarks against an indexed project")
-	fmt.Println("  status           Show index status for the current project")
-	fmt.Println("  mcp              Start the MCP server for agent clients")
-	fmt.Println("  setup   <agent>  Configure Vectos for a supported agent client")
-	fmt.Println("  version          Show version, commit, and build date")
-	fmt.Println("  help             Show this help message")
-	fmt.Println()
-	fmt.Println("Use 'vectos help <command>' or 'vectos <command> --help' for command details.")
-}
-
-// printSubcommandHelp prints help for a specific subcommand.
-func printSubcommandHelp(cmd string) {
-	switch cmd {
-	case "index":
-		fmt.Println("Usage:")
-		fmt.Println("  vectos index <path> [flags]")
-		fmt.Println()
-		fmt.Println("Index a file or directory. Generates semantic embeddings for all supported")
-		fmt.Println("files and stores them in a project-scoped SQLite database.")
-		fmt.Println()
-		fmt.Println("Flags:")
-		fmt.Println("  --project <name>   Nx project name to scope the index (optional)")
-		fmt.Println("  --changed <paths>  Comma-separated changed file paths to refresh incrementally")
-		fmt.Println()
-		fmt.Println("Examples:")
-		fmt.Println("  vectos index .")
-		fmt.Println("  vectos index ./src --project my-app")
-		fmt.Println("  vectos index . --changed src/App.tsx,src/hooks/useAuth.ts")
-	case "search":
-		fmt.Println("Usage:")
-		fmt.Println("  vectos search <query> [flags]")
-		fmt.Println()
-		fmt.Println("Search the index using semantic similarity. Falls back to keyword search")
-		fmt.Println("when semantic search is unavailable or returns no results.")
-		fmt.Println()
-		fmt.Println("Flags:")
-		fmt.Println("  --project <name>   Nx project name to scope the search (optional)")
-		fmt.Println()
-		fmt.Println("Examples:")
-		fmt.Println("  vectos search \"checkout payment flow\"")
-		fmt.Println("  vectos search \"auth middleware\" --project api")
-	case "status":
-		fmt.Println("Usage:")
-		fmt.Println("  vectos status [flags]")
-		fmt.Println()
-		fmt.Println("Show index stats, embedding provider health, and reindex status for")
-		fmt.Println("the current project.")
-		fmt.Println()
-		fmt.Println("Flags:")
-		fmt.Println("  --project <name>   Nx project name to inspect (optional)")
-		fmt.Println()
-		fmt.Println("Examples:")
-		fmt.Println("  vectos status")
-		fmt.Println("  vectos status --project my-app")
-	case "benchmark":
-		fmt.Println("Usage:")
-		fmt.Println("  vectos benchmark <file> [flags]")
-		fmt.Println()
-		fmt.Println("Run a repeatable retrieval benchmark against the current project's index.")
-		fmt.Println("The benchmark file defines representative queries and expected useful")
-		fmt.Println("files or chunks. Results report top-ranked hit rates for normal")
-		fmt.Println("development iteration.")
-		fmt.Println()
-		fmt.Println("Flags:")
-		fmt.Println("  --project <name>   Nx project name to benchmark when inside an Nx workspace")
-		fmt.Println()
-		fmt.Println("Examples:")
-		fmt.Println("  vectos benchmark ./benchmarks/retrieval/vectos-core.json")
-		fmt.Println("  vectos benchmark ./benchmarks/retrieval/app.json --project web")
-	case "mcp":
-		fmt.Println("Usage:")
-		fmt.Println("  vectos mcp")
-		fmt.Println()
-		fmt.Println("Start the MCP server over stdio. Exposes vectos_index_project and")
-		fmt.Println("vectos_search_code tools to compatible agent clients (e.g. OpenCode).")
-		fmt.Println()
-		fmt.Println("Logs are written to ~/.vectos/vectos-mcp.log to avoid polluting stdio.")
-	case "setup":
-		fmt.Println("Usage:")
-		fmt.Println("  vectos setup <agent> [--uninstall]")
-		fmt.Println()
-		fmt.Println("Configure or remove Vectos MCP integration for a supported agent client.")
-		fmt.Println("Optionally installs global guidance so the agent prefers Vectos")
-		fmt.Println("search tools before falling back to generic file-search tools.")
-		fmt.Println()
-		fmt.Println("Supported agents:")
-		fmt.Println("  opencode")
-		fmt.Println("  claude")
-		fmt.Println("  codex")
-		fmt.Println()
-		fmt.Println("Flags:")
-		fmt.Println("  --uninstall   Remove the Vectos MCP entry and managed guidance for the selected agent")
-		fmt.Println()
-		fmt.Println("Examples:")
-		fmt.Println("  vectos setup opencode")
-		fmt.Println("  vectos setup claude")
-		fmt.Println("  vectos setup codex")
-		fmt.Println("  vectos setup opencode --uninstall")
-	case "version":
-		fmt.Println("Usage:")
-		fmt.Println("  vectos version")
-		fmt.Println()
-		fmt.Println("Print the release version, git commit, and build date.")
-	default:
-		fmt.Printf("unknown command: %s\n", cmd)
-		fmt.Println("Run 'vectos help' for a list of available commands.")
-		os.Exit(1)
-	}
-}
-
 func main() {
-	// Subcommand flag sets.
-	indexCmd := flag.NewFlagSet("index", flag.ExitOnError)
-	searchCmd := flag.NewFlagSet("search", flag.ExitOnError)
-	benchmarkCmd := flag.NewFlagSet("benchmark", flag.ExitOnError)
-	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
-	mcpCmd := flag.NewFlagSet("mcp", flag.ExitOnError)
-	setupCmd := flag.NewFlagSet("setup", flag.ExitOnError)
-	indexProject := indexCmd.String("project", "", "Nx project name to index when inside an Nx workspace")
-	indexChanged := indexCmd.String("changed", "", "Comma-separated changed file paths to refresh incrementally")
-	searchProject := searchCmd.String("project", "", "Nx project name to search when inside an Nx workspace")
-	benchmarkProject := benchmarkCmd.String("project", "", "Nx project name to benchmark when inside an Nx workspace")
-	statusProject := statusCmd.String("project", "", "Nx project name to inspect when inside an Nx workspace")
-	setupUninstall := setupCmd.Bool("uninstall", false, "Remove the Vectos MCP setup for the selected agent")
-
-	// Global --help / -h before any subcommand.
-	if len(os.Args) >= 2 && (os.Args[1] == "--help" || os.Args[1] == "-h") {
-		printHelp()
-		os.Exit(0)
-	}
-
-	if len(os.Args) < 2 {
-		printHelp()
-		os.Exit(0)
-	}
-
-	// Base configuration.
 	home, _ := os.UserHomeDir()
 	projectBaseDir := fmt.Sprintf("%s/.vectos/projects", home)
 	embedConfig, err := config.LoadEmbeddingConfig(home)
@@ -174,106 +26,11 @@ func main() {
 		log.Fatalf("error loading embedding config: %v", err)
 	}
 
-	switch os.Args[1] {
-	case "help":
-		if len(os.Args) >= 3 {
-			printSubcommandHelp(os.Args[2])
-		} else {
-			printHelp()
-		}
-
-	case "index":
-		indexArgs, showHelp := normalizeIndexArgs(os.Args[2:])
-		if showHelp {
-			printSubcommandHelp("index")
-			os.Exit(0)
-		}
-		if err := indexCmd.Parse(indexArgs); err != nil {
-			log.Fatal(err)
-		}
-		if indexCmd.NArg() < 1 {
-			printSubcommandHelp("index")
-			os.Exit(1)
-		}
-		runIndex(projectBaseDir, embedConfig, indexCmd.Arg(0), *indexProject, parseChangedPaths(*indexChanged))
-
-	case "search":
-		if len(os.Args) >= 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
-			printSubcommandHelp("search")
-			os.Exit(0)
-		}
-		if err := searchCmd.Parse(os.Args[2:]); err != nil {
-			log.Fatal(err)
-		}
-		if searchCmd.NArg() < 1 {
-			printSubcommandHelp("search")
-			os.Exit(1)
-		}
-		runSearch(projectBaseDir, embedConfig, searchCmd.Arg(0), *searchProject)
-
-	case "benchmark":
-		if len(os.Args) >= 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
-			printSubcommandHelp("benchmark")
-			os.Exit(0)
-		}
-		if err := benchmarkCmd.Parse(os.Args[2:]); err != nil {
-			log.Fatal(err)
-		}
-		if benchmarkCmd.NArg() < 1 {
-			printSubcommandHelp("benchmark")
-			os.Exit(1)
-		}
-		runBenchmark(projectBaseDir, embedConfig, benchmarkCmd.Arg(0), *benchmarkProject)
-
-	case "status":
-		if len(os.Args) >= 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
-			printSubcommandHelp("status")
-			os.Exit(0)
-		}
-		if err := statusCmd.Parse(os.Args[2:]); err != nil {
-			log.Fatal(err)
-		}
-		runStatus(projectBaseDir, *statusProject)
-
-	case "mcp":
-		if len(os.Args) >= 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
-			printSubcommandHelp("mcp")
-			os.Exit(0)
-		}
-		if err := mcpCmd.Parse(os.Args[2:]); err != nil {
-			log.Fatal(err)
-		}
-		runMCP(projectBaseDir, embedConfig)
-
-	case "setup":
-		setupArgs, showHelp := normalizeSetupArgs(os.Args[2:])
-		if showHelp {
-			printSubcommandHelp("setup")
-			os.Exit(0)
-		}
-		if err := setupCmd.Parse(setupArgs); err != nil {
-			log.Fatal(err)
-		}
-		if setupCmd.NArg() < 1 {
-			printSubcommandHelp("setup")
-			os.Exit(1)
-		}
-		runSetup(setupCmd.Arg(0), *setupUninstall)
-
-	case "version":
-		if len(os.Args) >= 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
-			printSubcommandHelp("version")
-			os.Exit(0)
-		}
-		fmt.Printf("vectos %s\n", buildinfo.Version)
-		fmt.Printf("commit: %s\n", buildinfo.Commit)
-		fmt.Printf("built:  %s\n", buildinfo.Date)
-
-	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
-		fmt.Fprintln(os.Stderr, "Run 'vectos help' for a list of available commands.")
-		os.Exit(1)
-	}
+	runCLI(appContext{
+		projectBaseDir: projectBaseDir,
+		embedConfig:    embedConfig,
+		flags:          newCLIFlags(),
+	}, os.Args[1:])
 }
 
 func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePath string, projectName string, changedPaths []string) {
@@ -731,43 +488,6 @@ func stringifyMCPResult(result interface{}) (string, error) {
 	}
 
 	return string(encoded), nil
-}
-
-func normalizeIndexArgs(args []string) ([]string, bool) {
-	if len(args) == 0 {
-		return args, false
-	}
-
-	for _, arg := range args {
-		if arg == "--help" || arg == "-h" {
-			return nil, true
-		}
-	}
-
-	if strings.HasPrefix(args[0], "-") {
-		return args, false
-	}
-
-	return append(args[1:], args[0]), false
-}
-
-func normalizeSetupArgs(args []string) ([]string, bool) {
-	flags := make([]string, 0, len(args))
-	positionals := make([]string, 0, len(args))
-	showHelp := false
-
-	for _, arg := range args {
-		switch arg {
-		case "--help", "-h":
-			showHelp = true
-		case "--uninstall":
-			flags = append(flags, arg)
-		default:
-			positionals = append(positionals, arg)
-		}
-	}
-
-	return append(flags, positionals...), showHelp
 }
 
 func runSetup(agent string, uninstall bool) {
