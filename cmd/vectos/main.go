@@ -574,19 +574,24 @@ func runMCP(projectBaseDir string, embedConfig config.EmbeddingConfig) {
 		}
 		defer store.Close()
 
+		stats, err := store.Stats()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to inspect index state: %w", err)
+		}
+		if stats.ChunkCount == 0 {
+			text, err := stringifyMCPResult(buildMCPMissingIndexPayload(scope))
+			if err != nil {
+				return nil, nil, err
+			}
+			return &mcpSDK.CallToolResult{Content: []mcpSDK.Content{&mcpSDK.TextContent{Text: text}}}, nil, nil
+		}
+
 		searchRun, err := executeSearch(store, embedConfig, input.Query, 5)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		payload := any(searchRun.Results)
-		if searchRun.Warning != "" || searchRun.Mode != "" {
-			payload = map[string]any{
-				"mode":    searchRun.Mode,
-				"warning": searchRun.Warning,
-				"results": searchRun.Results,
-			}
-		}
+		payload := buildMCPSearchPayload(scope, searchRun)
 
 		text, err := stringifyMCPResult(payload)
 		if err != nil {
@@ -695,9 +700,16 @@ func runMCP(projectBaseDir string, embedConfig config.EmbeddingConfig) {
 		if len(changedPaths) > 0 {
 			label = "changed files"
 		}
+		_ = label
+
+		payload := buildMCPIndexPayload(scope, changedPaths, indexedFiles, count, len(skippedPaths))
+		text, err := stringifyMCPResult(payload)
+		if err != nil {
+			return nil, nil, err
+		}
 
 		return &mcpSDK.CallToolResult{
-			Content: []mcpSDK.Content{&mcpSDK.TextContent{Text: fmt.Sprintf("Successfully indexed %d %s and %d chunks for %s", indexedFiles, label, count, scope.Name)}},
+			Content: []mcpSDK.Content{&mcpSDK.TextContent{Text: text}},
 		}, nil, nil
 	})
 
