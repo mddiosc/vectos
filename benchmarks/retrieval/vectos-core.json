@@ -1,0 +1,33 @@
+{
+  "name": "Vectos core retrieval benchmark",
+  "queries": [
+    {
+      "name": "MCP search tool handler",
+      "query": "search_code MCP tool handler",
+      "expected_files": [
+        "cmd/vectos/main.go"
+      ]
+    },
+    {
+      "name": "Project database path resolution",
+      "query": "project scoped database path resolution",
+      "expected_files": [
+        "internal/storage/project_manager.go"
+      ]
+    },
+    {
+      "name": "Changed file filtering during indexing",
+      "query": "filter changed file paths during indexing",
+      "expected_files": [
+        "cmd/vectos/main.go"
+      ]
+    },
+    {
+      "name": "TypeScript React structural chunking",
+      "query": "structural chunking for TypeScript and React components hooks tests",
+      "expected_files": [
+        "internal/indexer/chunker.go"
+      ]
+    }
+  ]
+}
