@@ -30,6 +30,7 @@ func printHelp() {
 	fmt.Println("Commands:")
 	fmt.Println("  index   <path>   Index a file or directory with semantic embeddings")
 	fmt.Println("  search  <query>  Search the index using semantic or keyword search")
+	fmt.Println("  benchmark <file> Run retrieval benchmarks against an indexed project")
 	fmt.Println("  status           Show index status for the current project")
 	fmt.Println("  mcp              Start the MCP server for agent clients")
 	fmt.Println("  setup   <agent>  Configure Vectos for a supported agent client")
@@ -83,6 +84,21 @@ func printSubcommandHelp(cmd string) {
 		fmt.Println("Examples:")
 		fmt.Println("  vectos status")
 		fmt.Println("  vectos status --project my-app")
+	case "benchmark":
+		fmt.Println("Usage:")
+		fmt.Println("  vectos benchmark <file> [flags]")
+		fmt.Println()
+		fmt.Println("Run a repeatable retrieval benchmark against the current project's index.")
+		fmt.Println("The benchmark file defines representative queries and expected useful")
+		fmt.Println("files or chunks. Results report top-ranked hit rates for normal")
+		fmt.Println("development iteration.")
+		fmt.Println()
+		fmt.Println("Flags:")
+		fmt.Println("  --project <name>   Nx project name to benchmark when inside an Nx workspace")
+		fmt.Println()
+		fmt.Println("Examples:")
+		fmt.Println("  vectos benchmark ./benchmarks/retrieval/vectos-core.json")
+		fmt.Println("  vectos benchmark ./benchmarks/retrieval/app.json --project web")
 	case "mcp":
 		fmt.Println("Usage:")
 		fmt.Println("  vectos mcp")
@@ -128,12 +144,14 @@ func main() {
 	// Subcommand flag sets.
 	indexCmd := flag.NewFlagSet("index", flag.ExitOnError)
 	searchCmd := flag.NewFlagSet("search", flag.ExitOnError)
+	benchmarkCmd := flag.NewFlagSet("benchmark", flag.ExitOnError)
 	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
 	mcpCmd := flag.NewFlagSet("mcp", flag.ExitOnError)
 	setupCmd := flag.NewFlagSet("setup", flag.ExitOnError)
 	indexProject := indexCmd.String("project", "", "Nx project name to index when inside an Nx workspace")
 	indexChanged := indexCmd.String("changed", "", "Comma-separated changed file paths to refresh incrementally")
 	searchProject := searchCmd.String("project", "", "Nx project name to search when inside an Nx workspace")
+	benchmarkProject := benchmarkCmd.String("project", "", "Nx project name to benchmark when inside an Nx workspace")
 	statusProject := statusCmd.String("project", "", "Nx project name to inspect when inside an Nx workspace")
 	setupUninstall := setupCmd.Bool("uninstall", false, "Remove the Vectos MCP setup for the selected agent")
 
@@ -192,6 +210,20 @@ func main() {
 			os.Exit(1)
 		}
 		runSearch(projectBaseDir, embedConfig, searchCmd.Arg(0), *searchProject)
+
+	case "benchmark":
+		if len(os.Args) >= 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
+			printSubcommandHelp("benchmark")
+			os.Exit(0)
+		}
+		if err := benchmarkCmd.Parse(os.Args[2:]); err != nil {
+			log.Fatal(err)
+		}
+		if benchmarkCmd.NArg() < 1 {
+			printSubcommandHelp("benchmark")
+			os.Exit(1)
+		}
+		runBenchmark(projectBaseDir, embedConfig, benchmarkCmd.Arg(0), *benchmarkProject)
 
 	case "status":
 		if len(os.Args) >= 3 && (os.Args[2] == "--help" || os.Args[2] == "-h") {
@@ -393,30 +425,21 @@ func runSearch(projectBaseDir string, embedConfig config.EmbeddingConfig, query 
 	defer store.Close()
 
 	results := []storage.CodeChunk(nil)
-	if embedClient, providerInfo, err := embeddings.ResolveEmbedder(embedConfig); err == nil {
-		requiresReindex, reindexErr := store.RequiresReindex(providerInfo.Provider, providerInfo.Model, providerInfo.Dimensions)
-		if reindexErr == nil && !requiresReindex {
-			queryVector, embedErr := embedClient.GetEmbedding(query)
-			if embedErr == nil {
-				results, err = store.SearchSemantic(queryVector, 5)
-				if err != nil {
-					log.Fatalf("error running semantic search: %v", err)
-				}
-			}
-		}
+	searchRun, err := executeSearch(store, embedConfig, query, 5)
+	if err != nil {
+		log.Fatalf("error running search: %v", err)
 	}
-
-	if len(results) == 0 {
-		results, err = store.SearchText(query)
-		if err != nil {
-			log.Fatalf("error running keyword search: %v", err)
-		}
-	}
+	results = searchRun.Results
 
 	if len(results) == 0 {
 		fmt.Println("No results found.")
 		return
 	}
+
+	if strings.TrimSpace(searchRun.Warning) != "" {
+		fmt.Printf("Warning: %s\n", searchRun.Warning)
+	}
+	fmt.Printf("Search mode: %s\n", searchRun.Mode)
 
 	fmt.Printf("Found %d result(s):\n\n", len(results))
 	for _, r := range results {
@@ -551,51 +574,21 @@ func runMCP(projectBaseDir string, embedConfig config.EmbeddingConfig) {
 		}
 		defer store.Close()
 
-		embedClient, providerInfo, err := embeddings.ResolveEmbedder(embedConfig)
+		searchRun, err := executeSearch(store, embedConfig, input.Query, 5)
 		if err != nil {
-			results, textErr := store.SearchText(input.Query)
-			if textErr != nil {
-				return nil, nil, err
-			}
-			text, textErr := stringifyMCPResult(results)
-			if textErr != nil {
-				return nil, nil, textErr
-			}
-			return &mcpSDK.CallToolResult{Content: []mcpSDK.Content{&mcpSDK.TextContent{Text: text}}}, nil, nil
+			return nil, nil, err
 		}
 
-		requiresReindex, err := store.RequiresReindex(providerInfo.Provider, providerInfo.Model, providerInfo.Dimensions)
-		if err == nil && requiresReindex {
-			results, textErr := store.SearchText(input.Query)
-			if textErr != nil {
-				return nil, nil, textErr
-			}
-			text, textErr := stringifyMCPResult(map[string]any{
-				"warning": "index metadata does not match current embedding provider; semantic results may be stale until reindex",
-				"results": results,
-			})
-			if textErr != nil {
-				return nil, nil, textErr
-			}
-			return &mcpSDK.CallToolResult{Content: []mcpSDK.Content{&mcpSDK.TextContent{Text: text}}}, nil, nil
-		}
-		queryVector, err := embedClient.GetEmbedding(input.Query)
-		results := []storage.CodeChunk(nil)
-		if err == nil {
-			results, err = store.SearchSemantic(queryVector, 5)
-			if err != nil {
-				return nil, nil, err
+		payload := any(searchRun.Results)
+		if searchRun.Warning != "" || searchRun.Mode != "" {
+			payload = map[string]any{
+				"mode":    searchRun.Mode,
+				"warning": searchRun.Warning,
+				"results": searchRun.Results,
 			}
 		}
 
-		if len(results) == 0 {
-			results, err = store.SearchText(input.Query)
-			if err != nil {
-				return nil, nil, err
-			}
-		}
-
-		text, err := stringifyMCPResult(results)
+		text, err := stringifyMCPResult(payload)
 		if err != nil {
 			return nil, nil, err
 		}
