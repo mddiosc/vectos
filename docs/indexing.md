@@ -110,11 +110,74 @@ Current Nx-supported flow:
 - detect `nx.json`
 - discover Nx projects from `project.json`
 - resolve the selected Nx project's root
+- expand internal Nx project dependencies into additional logical roots when the Nx project graph is available
+- exclude non-code helper projects such as common `e2e`, `storybook`, and `docs` targets from the logical root set by default
 - index/search/status against that logical project scope
 
 Current limitation:
 
-- the first implementation phase resolves a selected Nx project to its main project root; generic manual multi-root path groups are intentionally out of scope for now
+- dependency-aware logical roots rely on the Nx project graph being available from the local workspace tooling; when it is unavailable, Vectos falls back to the selected project's main root
+- the Nx project graph is cached in memory per workspace during the current process so repeated scope resolutions do not re-run the graph command each time
+
+### Nx Scope Model
+
+In an Nx workspace, Vectos treats a selected project as a logical scope.
+
+- `workspaceRoot` is the directory where `nx.json` was found
+- `PrimaryRoot` is the selected Nx project's own root
+- `Roots` is the full set of directories that Vectos indexes and searches together for that project scope
+
+`Roots` is a Vectos concept, not an Nx field.
+
+Example workspace:
+
+```text
+repo/
+├─ nx.json
+├─ apps/
+│  └─ app-main/
+│     └─ project.json           # name: app-main
+└─ libs/
+   ├─ feature-shell/
+   │  └─ project.json           # name: feature-shell
+   ├─ shared-ui/
+   │  └─ project.json           # name: shared-ui
+   └─ shared-auth/
+      └─ project.json           # name: shared-auth
+```
+
+Example Nx dependency graph:
+
+```text
+app-main -> feature-shell
+app-main -> shared-ui
+feature-shell -> shared-auth
+```
+
+Running:
+
+```bash
+vectos index --project app-main .
+```
+
+Resolves a logical scope similar to:
+
+```text
+Name: app-main
+WorkspaceRoot: /repo
+PrimaryRoot: /repo/apps/app-main
+Roots:
+- /repo/apps/app-main
+- /repo/libs/feature-shell
+- /repo/libs/shared-ui
+- /repo/libs/shared-auth
+```
+
+Vectos uses the Nx project graph to discover those related projects. It does not infer dependencies from matching names or folder structure.
+
+By default, Vectos excludes common helper projects such as `e2e`, `storybook`, and `docs` from the expanded root set.
+
+When the Nx graph is unavailable, Vectos falls back to the selected project's `PrimaryRoot` only.
 
 ## Reindex Behavior
 

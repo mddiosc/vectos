@@ -154,7 +154,7 @@ func filterChangedPaths(scope workspace.Scope, paths, skippedPaths, changedPaths
 	seenSkipped := map[string]struct{}{}
 
 	for _, changed := range changedPaths {
-		resolved, err := resolveChangedPath(scope.PrimaryRoot, changed)
+		resolved, err := resolveChangedPath(scope, changed)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -179,11 +179,27 @@ func filterChangedPaths(scope workspace.Scope, paths, skippedPaths, changedPaths
 	return filteredPaths, filteredSkipped, nil
 }
 
-func resolveChangedPath(baseRoot, changed string) (string, error) {
+func resolveChangedPath(scope workspace.Scope, changed string) (string, error) {
 	if filepath.IsAbs(changed) {
 		return filepath.Clean(changed), nil
 	}
-	return filepath.Abs(filepath.Join(baseRoot, changed))
+
+	bases := []string{scope.PrimaryRoot}
+	if scope.WorkspaceRoot != "" && scope.WorkspaceRoot != scope.PrimaryRoot {
+		bases = append([]string{scope.WorkspaceRoot}, bases...)
+	}
+
+	for _, base := range bases {
+		resolved, err := filepath.Abs(filepath.Join(base, changed))
+		if err != nil {
+			return "", err
+		}
+		if isWithinRoots(resolved, scope.Roots) || fileExists(resolved) {
+			return resolved, nil
+		}
+	}
+
+	return filepath.Abs(filepath.Join(scope.PrimaryRoot, changed))
 }
 
 func isWithinRoots(path string, roots []string) bool {

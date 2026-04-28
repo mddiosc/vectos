@@ -32,6 +32,15 @@ vectos index .
 vectos search "checkout payment"
 ```
 
+Inside an Nx workspace, you can scope indexing and search to a selected Nx project:
+
+```bash
+vectos index --project app-main .
+vectos search --project app-main "shared ui"
+```
+
+When the Nx project graph is available, Vectos expands that logical project scope to include internal dependency roots automatically.
+
 Connect a validated client:
 
 ```bash
@@ -47,6 +56,7 @@ vectos setup codex
 - [Agent Setup](docs/agent-setup.md)
 - [CLI Usage](docs/cli.md)
 - [Indexing And Retrieval](docs/indexing.md)
+- [Nx Scope Model](docs/indexing.md#nx-scope-model)
 - [Development](docs/development.md)
 - [Optional Engram Synergy](docs/engram-synergy.md)
 - [Troubleshooting](docs/troubleshooting.md)
