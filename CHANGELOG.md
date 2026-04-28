@@ -18,6 +18,36 @@ Format per release:
 
 ---
 
+## v0.1.8 — 2026-04-28
+
+Patch release focused on Nx logical project scopes, dependency-aware indexing, and clearer workspace documentation.
+
+### Added
+
+- Nx logical scope expansion from the selected project into internal workspace dependency roots using the Nx project graph when available
+- Process-local caching of Nx graph data per workspace to avoid repeated graph resolution during the same run
+- Test coverage for Nx workspace scope expansion, helper-project exclusion, graph caching, and workspace-relative changed-path resolution
+- Explicit Nx scope documentation in the main docs and a top-level README entry for discoverability
+
+### Changed
+
+- CLI help and flag descriptions now explain that `--project` scopes indexing, search, status, and benchmarking to dependency-aware Nx logical projects
+- Indexing and CLI docs now describe how `workspaceRoot`, `PrimaryRoot`, and Vectos `Roots` interact inside Nx workspaces
+
+### Fixed
+
+- `vectos index --changed <paths>` now resolves workspace-relative paths correctly for Nx scopes that span multiple roots
+- Common helper projects such as `e2e`, `storybook`, and `docs` no longer expand into the logical code scope by default
+
+### Known Limitations
+
+- This remains an experimental/internal release. Stability and compatibility are not guaranteed.
+- Supported download platforms remain `darwin/arm64` and `linux/amd64` only.
+- Dependency-aware logical roots rely on the Nx project graph being available from local workspace tooling; when it is unavailable, Vectos falls back to the selected project's main root.
+- Default helper-project exclusions cover common `e2e`, `storybook`, and `docs` patterns, but more specialized workspace conventions may still need future configuration.
+
+---
+
 ## v0.1.7 — 2026-04-26
 
 Patch release focused on retrieval evaluation, better hybrid ranking, and more actionable MCP search ergonomics.
