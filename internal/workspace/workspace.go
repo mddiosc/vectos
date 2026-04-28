@@ -1,12 +1,16 @@
 package workspace
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 )
 
 type Scope struct {
@@ -25,6 +29,39 @@ type NxProject struct {
 	Name string `json:"name"`
 	Root string `json:"root"`
 }
+
+type nxGraphDependency struct {
+	Target string `json:"target"`
+}
+
+type nxGraphProject struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+	Data struct {
+		Root string `json:"root"`
+	} `json:"data"`
+}
+
+type nxGraphData struct {
+	Dependencies map[string][]nxGraphDependency `json:"dependencies"`
+	Projects     []nxGraphProject               `json:"projects"`
+	Graph        struct {
+		Dependencies map[string][]nxGraphDependency `json:"dependencies"`
+		Nodes        map[string]struct {
+			Type string `json:"type"`
+			Data struct {
+				Root string `json:"root"`
+			} `json:"data"`
+		} `json:"nodes"`
+	} `json:"graph"`
+}
+
+var nxGraphReader = readNxGraph
+
+var nxGraphCache = struct {
+	sync.RWMutex
+	entries map[string]nxGraphData
+}{entries: map[string]nxGraphData{}}
 
 func ResolveScope(path string, projectName string) (Scope, error) {
 	absPath, err := filepath.Abs(path)
@@ -65,11 +102,16 @@ func ResolveScope(path string, projectName string) (Scope, error) {
 		return Scope{}, err
 	}
 
+	roots := []string{selected.Root}
+	if resolvedRoots, err := resolveNxProjectRoots(workspaceRoot, selected, projects); err == nil && len(resolvedRoots) > 0 {
+		roots = resolvedRoots
+	}
+
 	return Scope{
 		Name:          selected.Name,
 		WorkspaceRoot: workspaceRoot,
 		PrimaryRoot:   selected.Root,
-		Roots:         []string{selected.Root},
+		Roots:         roots,
 		WorkspaceType: "nx",
 	}, nil
 }
@@ -110,6 +152,220 @@ func detectNxWorkspaceRoot(startDir string) string {
 		}
 		current = parent
 	}
+}
+
+func resolveNxProjectRoots(workspaceRoot string, selected NxProject, projects []NxProject) ([]string, error) {
+	projectMap := make(map[string]NxProject, len(projects))
+	for _, project := range projects {
+		projectMap[project.Name] = project
+	}
+
+	graph, err := loadNxGraph(workspaceRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	dependencies, err := nxGraphDependencies(graph)
+	if err != nil {
+		return nil, err
+	}
+	excludedProjects := nxExcludedProjects(graph, projectMap)
+
+	seenProjects := map[string]struct{}{selected.Name: {}}
+	seenRoots := map[string]struct{}{selected.Root: {}}
+	roots := []string{selected.Root}
+	queue := []string{selected.Name}
+
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		targets := internalDependencyTargets(dependencies[current], projectMap)
+		for _, target := range targets {
+			if _, excluded := excludedProjects[target]; excluded {
+				continue
+			}
+			if _, seen := seenProjects[target]; seen {
+				continue
+			}
+			seenProjects[target] = struct{}{}
+			queue = append(queue, target)
+
+			project := projectMap[target]
+			if _, seen := seenRoots[project.Root]; seen {
+				continue
+			}
+			seenRoots[project.Root] = struct{}{}
+			roots = append(roots, project.Root)
+		}
+	}
+
+	return roots, nil
+}
+
+func internalDependencyTargets(dependencies []nxGraphDependency, projectMap map[string]NxProject) []string {
+	targets := make([]string, 0, len(dependencies))
+	seen := make(map[string]struct{}, len(dependencies))
+	for _, dependency := range dependencies {
+		if _, ok := projectMap[dependency.Target]; !ok {
+			continue
+		}
+		if _, ok := seen[dependency.Target]; ok {
+			continue
+		}
+		seen[dependency.Target] = struct{}{}
+		targets = append(targets, dependency.Target)
+	}
+	sort.Strings(targets)
+	return targets
+}
+
+func loadNxGraph(workspaceRoot string) (nxGraphData, error) {
+	nxGraphCache.RLock()
+	if graph, ok := nxGraphCache.entries[workspaceRoot]; ok {
+		nxGraphCache.RUnlock()
+		return graph, nil
+	}
+	nxGraphCache.RUnlock()
+
+	graph, err := nxGraphReader(workspaceRoot)
+	if err != nil {
+		return nxGraphData{}, err
+	}
+
+	nxGraphCache.Lock()
+	nxGraphCache.entries[workspaceRoot] = graph
+	nxGraphCache.Unlock()
+
+	return graph, nil
+}
+
+func nxGraphDependencies(graph nxGraphData) (map[string][]nxGraphDependency, error) {
+	if len(graph.Dependencies) > 0 {
+		return graph.Dependencies, nil
+	}
+	if len(graph.Graph.Dependencies) > 0 {
+		return graph.Graph.Dependencies, nil
+	}
+
+	return nil, fmt.Errorf("nx graph output did not contain dependencies")
+}
+
+func nxExcludedProjects(graph nxGraphData, projectMap map[string]NxProject) map[string]struct{} {
+	excluded := map[string]struct{}{}
+	for _, project := range graph.Projects {
+		if shouldExcludeNxProject(project.Name, project.Type, project.Data.Root, projectMap) {
+			excluded[project.Name] = struct{}{}
+		}
+	}
+	for name, node := range graph.Graph.Nodes {
+		if shouldExcludeNxProject(name, node.Type, node.Data.Root, projectMap) {
+			excluded[name] = struct{}{}
+		}
+	}
+	return excluded
+}
+
+func shouldExcludeNxProject(name string, projectType string, graphRoot string, projectMap map[string]NxProject) bool {
+	if strings.EqualFold(strings.TrimSpace(projectType), "e2e") {
+		return true
+	}
+
+	root := strings.ToLower(strings.TrimSpace(graphRoot))
+	if root == "" {
+		if project, ok := projectMap[name]; ok {
+			root = strings.ToLower(project.Root)
+		}
+	}
+	lowerName := strings.ToLower(strings.TrimSpace(name))
+
+	return hasExcludedProjectMarker(lowerName) || hasExcludedProjectMarker(root)
+}
+
+func hasExcludedProjectMarker(value string) bool {
+	if value == "" {
+		return false
+	}
+	markers := []string{
+		"-e2e",
+		"/e2e",
+		"\\e2e",
+		"storybook",
+		"stories",
+		"/docs",
+		"\\docs",
+		"docs-",
+		"-docs",
+	}
+	for _, marker := range markers {
+		if strings.Contains(value, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func readNxGraph(workspaceRoot string) (nxGraphData, error) {
+	commands := nxGraphCommands(workspaceRoot)
+	var lastErr error
+	for _, args := range commands {
+		output, err := runNxGraphCommand(workspaceRoot, args)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		var graph nxGraphData
+		if err := json.Unmarshal(output, &graph); err != nil {
+			lastErr = err
+			continue
+		}
+		return graph, nil
+	}
+
+	if lastErr == nil {
+		lastErr = fmt.Errorf("nx graph command not available")
+	}
+	return nxGraphData{}, lastErr
+}
+
+func nxGraphCommands(workspaceRoot string) [][]string {
+	commands := make([][]string, 0, 6)
+	localNx := filepath.Join(workspaceRoot, "node_modules", ".bin", "nx")
+	if _, err := os.Stat(localNx); err == nil {
+		commands = append(commands, []string{localNx, "graph", "--print"})
+	}
+	if _, err := os.Stat(localNx + ".cmd"); err == nil {
+		commands = append(commands, []string{localNx + ".cmd", "graph", "--print"})
+	}
+	commands = append(commands,
+		[]string{"nx", "graph", "--print"},
+		[]string{"npx", "nx", "graph", "--print"},
+		[]string{"pnpm", "nx", "graph", "--print"},
+		[]string{"yarn", "nx", "graph", "--print"},
+		[]string{"bunx", "nx", "graph", "--print"},
+	)
+	return commands
+}
+
+func runNxGraphCommand(workspaceRoot string, args []string) ([]byte, error) {
+	if len(args) == 0 {
+		return nil, fmt.Errorf("missing nx graph command")
+	}
+	if _, err := exec.LookPath(args[0]); err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Dir = workspaceRoot
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	return output, nil
 }
 
 func discoverNxProjects(workspaceRoot string) ([]NxProject, error) {

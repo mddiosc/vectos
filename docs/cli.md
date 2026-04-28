@@ -27,6 +27,15 @@ Inside an Nx workspace:
 vectos index --project web .
 ```
 
+If you run the command from inside a project directory, Vectos can often infer the workspace automatically and still use the selected project scope:
+
+```bash
+cd apps/app-main
+vectos index .
+```
+
+For Nx workspaces, the selected project scope can expand to include internal dependent libs when the Nx project graph is available.
+
 ### Search the current project index
 
 ```bash
@@ -38,6 +47,8 @@ Inside an Nx workspace:
 ```bash
 vectos search --project web "checkout"
 ```
+
+This searches the selected Nx project together with any included dependency roots in the logical scope.
 
 `search` uses semantic retrieval first when the active index metadata matches the current embedding provider, then falls back to text search if semantic retrieval is unavailable or incompatible.
 
@@ -52,6 +63,8 @@ Inside an Nx workspace:
 ```bash
 vectos status --project web
 ```
+
+For Nx scopes, `status` also shows the resolved project roots so you can verify which app and libs were included.
 
 Example output includes:
 
@@ -79,5 +92,7 @@ vectos setup --help
 ```
 
 See also: [Indexing And Retrieval](indexing.md)
+
+For a detailed explanation of Nx logical scopes, roots, exclusions, and fallback behavior, see the `Nx Scope Model` section in [Indexing And Retrieval](indexing.md).
 
 If commands do not behave as expected, also see [Troubleshooting](troubleshooting.md).

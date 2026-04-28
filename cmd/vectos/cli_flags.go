@@ -32,11 +32,11 @@ func newCLIFlags() cliFlags {
 		statusCmd:        statusCmd,
 		mcpCmd:           mcpCmd,
 		setupCmd:         setupCmd,
-		indexProject:     indexCmd.String("project", "", "Nx project name to index when inside an Nx workspace"),
+		indexProject:     indexCmd.String("project", "", "Nx project name to index with internal workspace dependencies when inside an Nx workspace"),
 		indexChanged:     indexCmd.String("changed", "", "Comma-separated changed file paths to refresh incrementally"),
-		searchProject:    searchCmd.String("project", "", "Nx project name to search when inside an Nx workspace"),
-		benchmarkProject: benchmarkCmd.String("project", "", "Nx project name to benchmark when inside an Nx workspace"),
-		statusProject:    statusCmd.String("project", "", "Nx project name to inspect when inside an Nx workspace"),
+		searchProject:    searchCmd.String("project", "", "Nx project name to search with internal workspace dependencies when inside an Nx workspace"),
+		benchmarkProject: benchmarkCmd.String("project", "", "Nx project name to benchmark with internal workspace dependencies when inside an Nx workspace"),
+		statusProject:    statusCmd.String("project", "", "Nx project name to inspect with internal workspace dependencies when inside an Nx workspace"),
 		setupUninstall:   setupCmd.Bool("uninstall", false, "Remove the Vectos MCP setup for the selected agent"),
 	}
 }
