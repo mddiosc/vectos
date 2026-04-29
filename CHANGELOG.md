@@ -32,21 +32,20 @@ Patch release focused on token-efficient retrieval, compact search output, and g
 ### Changed
 
 - Hybrid ranking now favors generic intent buckets for config, UI, auth, data, routing, SEO, forms, state, and database/API queries
-- Search result ranking now splits camelCase path tokens so names like `apiConfig` and `githubApi` are scored more accurately
+- Search result ranking now splits camelCase path tokens so mixed-case path names are scored more accurately
 - Generic routing and SEO queries now prefer more direct files without relying on repository-specific layout assumptions
 
 ### Fixed
 
 - Retrieval now avoids verbose full-chunk output by default, reducing token usage for agent-facing search flows
 - Broad config and database queries now rank the more direct implementation files above unrelated wrappers or config noise
-- `mywebsite` benchmark queries now reach the intended files with fewer reads than a `grep`-style baseline in most cases
+- Benchmark queries now reach the intended files with fewer reads than a `grep`-style baseline in most cases
 
 ### Known Limitations
 
 - This remains an experimental/internal release. Stability and compatibility are not guaranteed.
 - Supported download platforms remain `darwin/arm64` and `linux/amd64` only.
 - Generic ranking is still heuristic-based and may need further tuning on very noisy repositories or unusually named files.
-- The published `v0.1.9` GitHub release was created before this changelog entry was committed, so future releases should continue to treat the changelog as a pre-tag checklist item.
 
 ---
 
