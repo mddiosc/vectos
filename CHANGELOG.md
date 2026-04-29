@@ -27,7 +27,7 @@ Patch release focused on token-efficient retrieval, compact search output, and g
 - Compact `vectos search` output by default, with `--full` for expanded chunk content when needed
 - Adaptive preview sizing driven by query confidence so high-signal queries use shorter output and ambiguous queries keep more context
 - MCP search payloads now use the same adaptive preview logic as the CLI
-- Benchmark fixtures for token efficiency and a larger-project validation run on `mywebsite`
+- Benchmark fixtures for token efficiency and large-project validation coverage
 
 ### Changed
 
