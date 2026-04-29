@@ -18,6 +18,38 @@ Format per release:
 
 ---
 
+## v0.1.9 — 2026-04-29
+
+Patch release focused on token-efficient retrieval, compact search output, and generic ranking improvements for agent navigation.
+
+### Added
+
+- Compact `vectos search` output by default, with `--full` for expanded chunk content when needed
+- Adaptive preview sizing driven by query confidence so high-signal queries use shorter output and ambiguous queries keep more context
+- MCP search payloads now use the same adaptive preview logic as the CLI
+- Benchmark fixtures for token efficiency and a larger-project validation run on `mywebsite`
+
+### Changed
+
+- Hybrid ranking now favors generic intent buckets for config, UI, auth, data, routing, SEO, forms, state, and database/API queries
+- Search result ranking now splits camelCase path tokens so names like `apiConfig` and `githubApi` are scored more accurately
+- Generic routing and SEO queries now prefer more direct files without relying on repository-specific layout assumptions
+
+### Fixed
+
+- Retrieval now avoids verbose full-chunk output by default, reducing token usage for agent-facing search flows
+- Broad config and database queries now rank the more direct implementation files above unrelated wrappers or config noise
+- `mywebsite` benchmark queries now reach the intended files with fewer reads than a `grep`-style baseline in most cases
+
+### Known Limitations
+
+- This remains an experimental/internal release. Stability and compatibility are not guaranteed.
+- Supported download platforms remain `darwin/arm64` and `linux/amd64` only.
+- Generic ranking is still heuristic-based and may need further tuning on very noisy repositories or unusually named files.
+- The published `v0.1.9` GitHub release was created before this changelog entry was committed, so future releases should continue to treat the changelog as a pre-tag checklist item.
+
+---
+
 ## v0.1.8 — 2026-04-28
 
 Patch release focused on Nx logical project scopes, dependency-aware indexing, and clearer workspace documentation.
