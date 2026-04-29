@@ -14,3 +14,5 @@ dist/
 *.db-wal
 
 .playwright-mcp/
+.agents/
+skills-lock.json

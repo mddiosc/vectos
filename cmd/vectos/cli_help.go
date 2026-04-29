@@ -53,6 +53,7 @@ func printSubcommandHelp(cmd string) {
 		fmt.Println()
 		fmt.Println("Flags:")
 		fmt.Println("  --project <name>   Nx project name to scope the search and internal dependencies (optional)")
+		fmt.Println("  --full             Show full chunk content instead of compact snippets")
 		fmt.Println()
 		fmt.Println("Examples:")
 		fmt.Println("  vectos search \"checkout payment flow\"")

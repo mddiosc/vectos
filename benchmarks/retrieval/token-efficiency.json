@@ -1,0 +1,75 @@
+{
+  "name": "Vectos token efficiency benchmark",
+  "queries": [
+    {
+      "name": "Fallback to text search",
+      "query": "how does Vectos fall back to text search when embeddings fail",
+      "expected_files": [
+        "cmd/vectos/benchmark.go"
+      ],
+      "expected_chunks": [
+        {
+          "file": "cmd/vectos/benchmark.go",
+          "start_line": 48,
+          "end_line": 91
+        }
+      ]
+    },
+    {
+      "name": "Docs and metadata exclusion",
+      "query": "where are docs and dependency metadata excluded from indexing",
+      "expected_files": [
+        "cmd/vectos/runtime_paths.go"
+      ],
+      "expected_chunks": [
+        {
+          "file": "cmd/vectos/runtime_paths.go",
+          "start_line": 95,
+          "end_line": 98
+        }
+      ]
+    },
+    {
+      "name": "TypeScript and React chunking",
+      "query": "how are TypeScript and React files chunked structurally",
+      "expected_files": [
+        "internal/indexer/chunker.go"
+      ],
+      "expected_chunks": [
+        {
+          "file": "internal/indexer/chunker.go",
+          "start_line": 172,
+          "end_line": 246
+        }
+      ]
+    },
+    {
+      "name": "Hybrid ranking logic",
+      "query": "how does hybrid ranking rerank search results and remove duplicates",
+      "expected_files": [
+        "cmd/vectos/search_ranking.go"
+      ],
+      "expected_chunks": [
+        {
+          "file": "cmd/vectos/search_ranking.go",
+          "start_line": 31,
+          "end_line": 90
+        }
+      ]
+    },
+    {
+      "name": "Nx logical scope roots",
+      "query": "how does Nx scope resolution expand logical roots from dependencies",
+      "expected_files": [
+        "internal/workspace/workspace.go"
+      ],
+      "expected_chunks": [
+        {
+          "file": "internal/workspace/workspace.go",
+          "start_line": 157,
+          "end_line": 203
+        }
+      ]
+    }
+  ]
+}
