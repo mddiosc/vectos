@@ -11,7 +11,7 @@ import (
 	"vectos/internal/storage"
 )
 
-func runSearch(projectBaseDir string, embedConfig config.EmbeddingConfig, query string, projectName string) {
+func runSearch(projectBaseDir string, embedConfig config.EmbeddingConfig, query string, projectName string, full bool) {
 	fmt.Printf("Searching: %q\n", query)
 
 	scope, err := resolveRuntimeScope(projectName)
@@ -36,21 +36,15 @@ func runSearch(projectBaseDir string, embedConfig config.EmbeddingConfig, query 
 	}
 	results := searchRun.Results
 
+	if strings.TrimSpace(searchRun.Warning) != "" {
+		fmt.Printf("Warning: %s\n", searchRun.Warning)
+	}
 	if len(results) == 0 {
 		fmt.Println("No results found.")
 		return
 	}
 
-	if strings.TrimSpace(searchRun.Warning) != "" {
-		fmt.Printf("Warning: %s\n", searchRun.Warning)
-	}
-	fmt.Printf("Search mode: %s\n", searchRun.Mode)
-
-	fmt.Printf("Found %d result(s):\n\n", len(results))
-	for _, r := range results {
-		fmt.Printf("--- [%s:%d-%d] [%s/%s] ---\n", r.FilePath, r.StartLine, r.EndLine, r.Category, r.Language)
-		fmt.Printf("%s\n\n", r.Content)
-	}
+	fmt.Print(formatSearchResults(query, results, searchRun.Mode, full))
 }
 
 func runStatus(projectBaseDir string, projectName string) {

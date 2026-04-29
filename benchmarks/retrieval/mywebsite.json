@@ -1,0 +1,43 @@
+{
+  "name": "mywebsite retrieval benchmark",
+  "queries": [
+    {
+      "name": "Mobile menu toggle",
+      "query": "where is the mobile menu toggled",
+      "expected_files": [
+        "components/navbar/NavBar.tsx",
+        "context/ui/UIProvider.tsx"
+      ]
+    },
+    {
+      "name": "Work experience loading",
+      "query": "how are work experiences fetched and sorted",
+      "expected_files": [
+        "database/dbWorkExperience.ts",
+        "pages/about.tsx"
+      ]
+    },
+    {
+      "name": "GitHub API client",
+      "query": "where is the GitHub API client configured",
+      "expected_files": [
+        "apiConfig/githubApi.ts"
+      ]
+    },
+    {
+      "name": "Navbar links",
+      "query": "where are the navbar links defined",
+      "expected_files": [
+        "utils/constants.tsx",
+        "components/navbar/Navbar.tsx"
+      ]
+    },
+    {
+      "name": "JWT helpers",
+      "query": "where are JWT token helpers defined",
+      "expected_files": [
+        "utils/jwt.ts"
+      ]
+    }
+  ]
+}

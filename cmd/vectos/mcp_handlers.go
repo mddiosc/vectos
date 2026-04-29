@@ -48,7 +48,7 @@ func makeSearchCodeHandler(projectBaseDir string, embedConfig config.EmbeddingCo
 			return nil, nil, err
 		}
 
-		payload := buildMCPSearchPayload(scope, searchRun)
+		payload := buildMCPSearchPayload(scope, input.Query, searchRun)
 		text, err := stringifyMCPResult(payload)
 		if err != nil {
 			return nil, nil, err

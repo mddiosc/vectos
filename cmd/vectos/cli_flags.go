@@ -12,6 +12,7 @@ type cliFlags struct {
 	indexProject     *string
 	indexChanged     *string
 	searchProject    *string
+	searchFull       *bool
 	benchmarkProject *string
 	statusProject    *string
 	setupUninstall   *bool
@@ -35,6 +36,7 @@ func newCLIFlags() cliFlags {
 		indexProject:     indexCmd.String("project", "", "Nx project name to index with internal workspace dependencies when inside an Nx workspace"),
 		indexChanged:     indexCmd.String("changed", "", "Comma-separated changed file paths to refresh incrementally"),
 		searchProject:    searchCmd.String("project", "", "Nx project name to search with internal workspace dependencies when inside an Nx workspace"),
+		searchFull:       searchCmd.Bool("full", false, "Show full chunk content instead of compact snippets"),
 		benchmarkProject: benchmarkCmd.String("project", "", "Nx project name to benchmark with internal workspace dependencies when inside an Nx workspace"),
 		statusProject:    statusCmd.String("project", "", "Nx project name to inspect with internal workspace dependencies when inside an Nx workspace"),
 		setupUninstall:   setupCmd.Bool("uninstall", false, "Remove the Vectos MCP setup for the selected agent"),

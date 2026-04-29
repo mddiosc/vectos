@@ -42,6 +42,9 @@ For Nx workspaces, the selected project scope can expand to include internal dep
 vectos search "checkout payment"
 ```
 
+By default, `search` prints compact snippets with file, line range, score, and a short
+reason. Use `--full` only when you need the complete chunk content.
+
 Inside an Nx workspace:
 
 ```bash

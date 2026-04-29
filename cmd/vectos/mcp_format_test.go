@@ -19,7 +19,7 @@ func TestBuildMCPMissingIndexPayloadIncludesGuidance(t *testing.T) {
 }
 
 func TestBuildMCPSearchPayloadIncludesMetadata(t *testing.T) {
-	payload := buildMCPSearchPayload(&workspace.Scope{Name: "vectos"}, searchRun{
+	payload := buildMCPSearchPayload(&workspace.Scope{Name: "vectos"}, "search_code MCP tool handler", searchRun{
 		Mode: "semantic_hybrid",
 		Results: []storage.CodeChunk{{
 			FilePath:  "/tmp/vectos/cmd/vectos/main.go",
@@ -41,5 +41,39 @@ func TestBuildMCPSearchPayloadIncludesMetadata(t *testing.T) {
 	}
 	if result.Preview == "" || result.Reason == "" {
 		t.Fatalf("expected preview and reason, got %+v", result)
+	}
+}
+
+func TestBuildMCPSearchPayloadUsesAdaptivePreview(t *testing.T) {
+	query := "how does Nx scope resolution expand logical roots from dependencies"
+	payload := buildMCPSearchPayload(&workspace.Scope{Name: "vectos"}, query, searchRun{
+		Mode: "semantic_hybrid",
+		Results: []storage.CodeChunk{{
+			FilePath:  "/tmp/vectos/cmd/vectos/benchmark.go",
+			StartLine: 48,
+			EndLine:   92,
+			Language:  "go",
+			Category:  "source",
+			Score:     0.74,
+			Content:   strings.Repeat("fallback and text search content ", 12),
+		}, {
+			FilePath:  "/tmp/vectos/internal/config/embedding.go",
+			StartLine: 66,
+			EndLine:   87,
+			Language:  "go",
+			Category:  "source",
+			Score:     0.73,
+			Content:   strings.Repeat("second result content ", 12),
+		}},
+	})
+
+	if len(payload.Results) != 2 {
+		t.Fatalf("expected two results, got %d", len(payload.Results))
+	}
+	if got, want := len(payload.Results[0].Preview), searchPreviewLong; got > want {
+		t.Fatalf("expected long preview for top result, got %d > %d", got, want)
+	}
+	if got, want := len(payload.Results[1].Preview), searchPreviewMedium; got > want {
+		t.Fatalf("expected medium preview for second result, got %d > %d", got, want)
 	}
 }

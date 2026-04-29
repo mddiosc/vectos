@@ -200,3 +200,5 @@ Typical cases that require reindexing:
 See also: [Development](development.md)
 
 If results look stale or low quality, also see [Troubleshooting](troubleshooting.md).
+
+For measured retrieval output and a `Vectos vs rg` comparison, see [Retrieval Benchmark](benchmarking.md).

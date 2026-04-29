@@ -88,7 +88,7 @@ func runSearchCommand(app appContext, args []string) {
 		printSubcommandHelp("search")
 		os.Exit(1)
 	}
-	runSearch(app.projectBaseDir, app.embedConfig, app.flags.searchCmd.Arg(0), *app.flags.searchProject)
+	runSearch(app.projectBaseDir, app.embedConfig, app.flags.searchCmd.Arg(0), *app.flags.searchProject, *app.flags.searchFull)
 }
 
 func runBenchmarkCommand(app appContext, args []string) {

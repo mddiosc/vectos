@@ -32,22 +32,23 @@ type mcpSearchResultEntry struct {
 }
 
 type mcpIndexPayload struct {
-	Project      string   `json:"project"`
-	Mode         string   `json:"mode"`
-	IndexedFiles int      `json:"indexed_files"`
-	IndexedChunks int     `json:"indexed_chunks"`
-	SkippedPaths int      `json:"skipped_paths"`
-	Roots        []string `json:"roots,omitempty"`
-	Summary      string   `json:"summary"`
+	Project       string   `json:"project"`
+	Mode          string   `json:"mode"`
+	IndexedFiles  int      `json:"indexed_files"`
+	IndexedChunks int      `json:"indexed_chunks"`
+	SkippedPaths  int      `json:"skipped_paths"`
+	Roots         []string `json:"roots,omitempty"`
+	Summary       string   `json:"summary"`
 }
 
-func buildMCPSearchPayload(scope *workspace.Scope, searchRun searchRun) mcpSearchPayload {
+func buildMCPSearchPayload(scope *workspace.Scope, query string, searchRun searchRun) mcpSearchPayload {
 	payload := mcpSearchPayload{
 		Mode:    searchRun.Mode,
 		Warning: searchRun.Warning,
 		Project: scopeName(scope),
 		Results: make([]mcpSearchResultEntry, 0, len(searchRun.Results)),
 	}
+	previewLimit := adaptivePreviewLimit(query, searchRun.Results)
 
 	for i, result := range searchRun.Results {
 		payload.Results = append(payload.Results, mcpSearchResultEntry{
@@ -59,7 +60,7 @@ func buildMCPSearchPayload(scope *workspace.Scope, searchRun searchRun) mcpSearc
 			Language:  result.Language,
 			Category:  result.Category,
 			Score:     result.Score,
-			Preview:   compactPreview(result.Content),
+			Preview:   compactPreviewLimit(result.Content, previewLimitForResult(previewLimit, i)),
 			Reason:    explainResultReason(searchRun.Mode, result),
 		})
 	}
@@ -99,16 +100,6 @@ func buildMCPIndexPayload(scope workspace.Scope, changedPaths []string, indexedF
 		Roots:         scope.Roots,
 		Summary:       fmt.Sprintf("Successfully indexed %d %s and %d chunks for %s", indexedFiles, label, indexedChunks, scope.Name),
 	}
-}
-
-func compactPreview(content string) string {
-	trimmed := strings.TrimSpace(content)
-	trimmed = strings.ReplaceAll(trimmed, "\n", " ")
-	trimmed = strings.Join(strings.Fields(trimmed), " ")
-	if len(trimmed) > 160 {
-		return trimmed[:157] + "..."
-	}
-	return trimmed
 }
 
 func explainResultReason(mode string, result storage.CodeChunk) string {
