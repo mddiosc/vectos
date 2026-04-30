@@ -1,5 +1,5 @@
 {
-  "name": "mywebsite retrieval benchmark",
+  "name": "example-site retrieval benchmark",
   "queries": [
     {
       "name": "Mobile menu toggle",

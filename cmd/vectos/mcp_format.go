@@ -9,26 +9,29 @@ import (
 	"vectos/internal/workspace"
 )
 
+const (
+	highConfidenceThreshold = 0.90
+)
+
 type mcpSearchPayload struct {
-	Mode       string                 `json:"mode,omitempty"`
-	Warning    string                 `json:"warning,omitempty"`
-	Project    string                 `json:"project,omitempty"`
-	Guidance   string                 `json:"guidance,omitempty"`
-	NextAction string                 `json:"next_action,omitempty"`
-	Results    []mcpSearchResultEntry `json:"results,omitempty"`
+	Mode       string                   `json:"mode,omitempty"`
+	Warning    string                   `json:"warning,omitempty"`
+	Project    string                   `json:"project,omitempty"`
+	Guidance   string                   `json:"guidance,omitempty"`
+	NextAction string                   `json:"next_action,omitempty"`
+	Results    []mcpSearchFileResult   `json:"results,omitempty"`
 }
 
-type mcpSearchResultEntry struct {
-	Rank      int     `json:"rank"`
-	FilePath  string  `json:"file_path"`
-	FileName  string  `json:"file_name"`
-	StartLine int     `json:"start_line"`
-	EndLine   int     `json:"end_line"`
-	Language  string  `json:"language,omitempty"`
-	Category  string  `json:"category,omitempty"`
-	Score     float64 `json:"score,omitempty"`
-	Preview   string  `json:"preview,omitempty"`
-	Reason    string  `json:"reason,omitempty"`
+type mcpSearchFileResult struct {
+	Rank      int          `json:"rank"`
+	FilePath  string       `json:"file_path"`
+	FileName  string       `json:"file_name"`
+	Language  string      `json:"language,omitempty"`
+	Category  string      `json:"category,omitempty"`
+	Relevance float64     `json:"relevance,omitempty"`
+	LineRanges []storage.LineRange `json:"line_ranges"`
+	Signatures []string    `json:"signatures"`
+	Hint      string       `json:"hint,omitempty"`
 }
 
 type mcpIndexPayload struct {
@@ -46,23 +49,24 @@ func buildMCPSearchPayload(scope *workspace.Scope, query string, searchRun searc
 		Mode:    searchRun.Mode,
 		Warning: searchRun.Warning,
 		Project: scopeName(scope),
-		Results: make([]mcpSearchResultEntry, 0, len(searchRun.Results)),
 	}
-	previewLimit := adaptivePreviewLimit(query, searchRun.Results)
 
-	for i, result := range searchRun.Results {
-		payload.Results = append(payload.Results, mcpSearchResultEntry{
-			Rank:      i + 1,
-			FilePath:  result.FilePath,
-			FileName:  filepath.Base(result.FilePath),
-			StartLine: result.StartLine,
-			EndLine:   result.EndLine,
-			Language:  result.Language,
-			Category:  result.Category,
-			Score:     result.Score,
-			Preview:   compactPreviewLimit(result.Content, previewLimitForResult(previewLimit, i)),
-			Reason:    explainResultReason(searchRun.Mode, result),
-		})
+	if len(searchRun.FileResults) > 0 {
+		payload.Results = make([]mcpSearchFileResult, 0, len(searchRun.FileResults))
+		for i, fr := range searchRun.FileResults {
+			hint := buildHintForFileResult(fr, query)
+			payload.Results = append(payload.Results, mcpSearchFileResult{
+				Rank:       i + 1,
+				FilePath:   fr.FilePath,
+				FileName:   fr.FileName,
+				Language:   fr.Language,
+				Category:   fr.Category,
+				Relevance:  fr.Relevance,
+				LineRanges: fr.LineRanges,
+				Signatures: fr.Signatures,
+				Hint:      hint,
+			})
+		}
 	}
 
 	if searchRun.Warning != "" {
@@ -71,6 +75,32 @@ func buildMCPSearchPayload(scope *workspace.Scope, query string, searchRun searc
 	}
 
 	return payload
+}
+
+func buildHintForFileResult(fr storage.SearchFileResult, query string) string {
+	if fr.Relevance >= highConfidenceThreshold {
+		return ""
+	}
+	if fr.Purpose != "" {
+		return fr.Purpose
+	}
+	if len(fr.Signatures) > 0 {
+		return fr.Signatures[0]
+	}
+	switch fr.Category {
+	case "source":
+		return "source code"
+	case "infra_config":
+		return "configuration"
+	case "docs":
+		return "documentation"
+	case "scripts":
+		return "script"
+	case "dependency_metadata":
+		return "metadata"
+	default:
+		return "code"
+	}
 }
 
 func buildMCPMissingIndexPayload(scope *workspace.Scope) mcpSearchPayload {

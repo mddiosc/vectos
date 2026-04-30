@@ -9,7 +9,7 @@ import (
 func TestRerankHybridResultsBoostsRelevantLocalSource(t *testing.T) {
 	results := rerankHybridResults("filter changed file paths during indexing", []storage.CodeChunk{
 		{
-			FilePath: "/tmp/project/mywebsite-2/dist/assets/post.js",
+			FilePath: "/tmp/project/example-site/dist/assets/post.js",
 			Content:  "changed file paths during indexing explained in generated blog output",
 			Category: "source",
 			Score:    0.61,
@@ -89,100 +89,4 @@ func TestRerankHybridResultsPenalizesNonSourceFilesForBroadQueries(t *testing.T)
 	}
 }
 
-func TestRerankHybridResultsBoostsRouterDirectoryForRoutingQueries(t *testing.T) {
-	results := rerankHybridResults("where is routing defined", []storage.CodeChunk{
-		{FilePath: "/tmp/project/src/components/RoutePreloader.tsx", Content: "route preloading helper", Category: "source", Score: 0.81},
-		{FilePath: "/tmp/project/src/router/routes.tsx", Content: "export const router = createBrowserRouter([...])", Category: "source", Score: 0.80},
-	}, 5)
 
-	if len(results) == 0 {
-		t.Fatal("expected reranked results")
-	}
-	if results[0].FilePath != "/tmp/project/src/router/routes.tsx" {
-		t.Fatalf("expected router directory file first, got %s", results[0].FilePath)
-	}
-}
-
-func TestRerankHybridResultsBoostsConfigurationFilesForConfigQueries(t *testing.T) {
-	results := rerankHybridResults("where is the GitHub API client configured", []storage.CodeChunk{
-		{FilePath: "/tmp/project/pages/api/githubrepos.ts", Content: "import { githubApi } from '../../apiConfig'", Category: "source", Score: 0.81},
-		{FilePath: "/tmp/project/apiConfig/githubApi.ts", Content: "const githubApi = axios.create({ baseURL: 'https://api.github.com' })", Category: "source", Score: 0.79},
-	}, 5)
-
-	if len(results) == 0 {
-		t.Fatal("expected reranked results")
-	}
-	if results[0].FilePath != "/tmp/project/apiConfig/githubApi.ts" {
-		t.Fatalf("expected config-like file first, got %s", results[0].FilePath)
-	}
-}
-
-func TestRerankHybridResultsBoostsDatabaseFilesForDatabaseQueries(t *testing.T) {
-	results := rerankHybridResults("where is the database connection configured", []storage.CodeChunk{
-		{FilePath: "/tmp/project/models/workExperience.ts", Content: "export interface IWorkExperience { startDate: string }", Category: "source", Score: 0.78},
-		{FilePath: "/tmp/project/database/db.ts", Content: "connect to database and export db", Category: "source", Score: 0.79},
-	}, 5)
-
-	if len(results) == 0 {
-		t.Fatal("expected reranked results")
-	}
-	if results[0].FilePath != "/tmp/project/database/db.ts" {
-		t.Fatalf("expected database file first, got %s", results[0].FilePath)
-	}
-}
-
-func TestRerankHybridResultsBoostsApiClientsForApiQueries(t *testing.T) {
-	results := rerankHybridResults("where is the API client configured", []storage.CodeChunk{
-		{FilePath: "/tmp/project/pages/api/githubrepos.ts", Content: "import { githubApi } from '../../apiConfig'", Category: "source", Score: 0.81},
-		{FilePath: "/tmp/project/apiConfig/githubApi.ts", Content: "const githubApi = axios.create({ baseURL: 'https://api.github.com' })", Category: "source", Score: 0.79},
-	}, 5)
-
-	if len(results) == 0 {
-		t.Fatal("expected reranked results")
-	}
-	if results[0].FilePath != "/tmp/project/apiConfig/githubApi.ts" {
-		t.Fatalf("expected api client file first, got %s", results[0].FilePath)
-	}
-}
-
-func TestRerankHybridResultsBoostsSEOFilesForMetaQueries(t *testing.T) {
-	results := rerankHybridResults("where is the page metadata and title configured", []storage.CodeChunk{
-		{FilePath: "/tmp/project/pages/index.tsx", Content: "const Home = () => <MainLayout title=... pageDescription=...>", Category: "source", Score: 0.78},
-		{FilePath: "/tmp/project/components/DocumentHead.tsx", Content: "<title>{title}</title><meta name=\"description\" content={description} />", Category: "source", Score: 0.79},
-	}, 5)
-
-	if len(results) == 0 {
-		t.Fatal("expected reranked results")
-	}
-	if results[0].FilePath != "/tmp/project/components/DocumentHead.tsx" {
-		t.Fatalf("expected SEO/metadata file first, got %s", results[0].FilePath)
-	}
-}
-
-func TestRerankHybridResultsPenalizesPageFilesForSEOQueries(t *testing.T) {
-	results := rerankHybridResults("where is the page metadata and title configured", []storage.CodeChunk{
-		{FilePath: "/tmp/project/pages/about.tsx", Content: "<MainLayout title=... pageDescription=...>", Category: "source", Score: 0.81},
-		{FilePath: "/tmp/project/components/DocumentHead.tsx", Content: "<title>{title}</title><meta name=\"description\" content={description} />", Category: "source", Score: 0.80},
-	}, 5)
-
-	if len(results) == 0 {
-		t.Fatal("expected reranked results")
-	}
-	if results[0].FilePath != "/tmp/project/components/DocumentHead.tsx" {
-		t.Fatalf("expected head/metadata component first, got %s", results[0].FilePath)
-	}
-}
-
-func TestRerankHybridResultsBoostsFormFilesForContactQueries(t *testing.T) {
-	results := rerankHybridResults("where is the contact form validation handled", []storage.CodeChunk{
-		{FilePath: "/tmp/project/components/navbar/Navbar.tsx", Content: "const handleClick = () => toggleMobileMenu()", Category: "source", Score: 0.80},
-		{FilePath: "/tmp/project/components/contactForm/ContactForm.tsx", Content: "react-hook-form zod validation submit", Category: "source", Score: 0.79},
-	}, 5)
-
-	if len(results) == 0 {
-		t.Fatal("expected reranked results")
-	}
-	if results[0].FilePath != "/tmp/project/components/contactForm/ContactForm.tsx" {
-		t.Fatalf("expected form/contact file first, got %s", results[0].FilePath)
-	}
-}

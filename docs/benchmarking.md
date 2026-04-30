@@ -49,9 +49,9 @@ there at least as much as in the CLI.
 The payload scales linearly with result count, so keeping the default search window at 5
 is a sensible balance for MCP. Ten results roughly doubles the payload relative to five.
 
-## mywebsite Check
+## Larger Project Validation
 
-Benchmarking the larger Next.js project at `/Users/mddiosc/develop/personal/mywebsite` gave:
+Benchmarking against a larger Next.js project gave:
 
 | Query                   | Vectos tokens | Vectos files | rg tokens | rg files | Verdict |
 | ----------------------- | ------------: | -----------: | --------: | -------: | ------- |

@@ -42,7 +42,7 @@ func printSubcommandHelp(cmd string) {
 		fmt.Println()
 		fmt.Println("Examples:")
 		fmt.Println("  vectos index .")
-		fmt.Println("  vectos index ./src --project my-app")
+		fmt.Println("  vectos index ./src --project frontend")
 		fmt.Println("  vectos index . --changed src/App.tsx,src/hooks/useAuth.ts")
 	case "search":
 		fmt.Println("Usage:")
@@ -70,7 +70,7 @@ func printSubcommandHelp(cmd string) {
 		fmt.Println()
 		fmt.Println("Examples:")
 		fmt.Println("  vectos status")
-		fmt.Println("  vectos status --project my-app")
+		fmt.Println("  vectos status --project frontend")
 	case "benchmark":
 		fmt.Println("Usage:")
 		fmt.Println("  vectos benchmark <file> [flags]")

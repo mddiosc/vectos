@@ -13,9 +13,10 @@ import (
 )
 
 type searchRun struct {
-	Results []storage.CodeChunk
-	Mode    string
-	Warning string
+	Results        []storage.CodeChunk
+	FileResults    []storage.SearchFileResult
+	Mode           string
+	Warning        string
 }
 
 type retrievalBenchmarkFile struct {
@@ -79,6 +80,7 @@ func executeSearch(store *storage.SQLiteStorage, embedConfig config.EmbeddingCon
 		if len(results) > 0 {
 			run.Mode = "semantic_hybrid"
 			run.Results = rerankHybridResults(query, results, limit)
+			run.FileResults = storage.CollapseFileResults(run.Results, 5)
 			return run, nil
 		}
 	}

@@ -2,20 +2,19 @@ package storage
 
 import "time"
 
-// CodeChunk representa un fragmento de código procesado y listo para ser buscado.
 type CodeChunk struct {
-	ID        int64     `json:"id"`         // ID único en la base de datos
-	FilePath  string    `json:"file_path"`  // Ruta absoluta del archivo
-	Content   string    `json:"content"`    // El texto real del código
-	StartLine int       `json:"start_line"` // Línea donde empieza el fragmento
-	EndLine   int       `json:"end_line"`   // Línea donde termina
-	Language  string    `json:"language"`   // Lenguaje de programación (ej: "go", "typescript")
+	ID        int64     `json:"id"`
+	FilePath  string    `json:"file_path"`
+	Content   string    `json:"content"`
+	StartLine int       `json:"start_line"`
+	EndLine   int       `json:"end_line"`
+	Language  string    `json:"language"`
 	Category  string    `json:"category,omitempty"`
-	CreatedAt time.Time `json:"created_at"` // Fecha de indexación
+	CreatedAt time.Time `json:"created_at"`
 	Score     float64   `json:"score,omitempty"`
+	Signature string    `json:"signature,omitempty"`
+	Purpose   string    `json:"purpose,omitempty"`
 
-	// El campo Vector se usará para la búsqueda semántica (embeddings).
-	// En SQLite se guardará como un BLOB o mediante una extensión vectorial.
 	Vector []float32 `json:"-"`
 }
 
