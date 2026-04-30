@@ -104,6 +104,8 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 				Language:  language,
 				Category:  classifyCategory(language),
 				Vector:    c.Vector,
+				Signature: c.Signature,
+				Purpose:   c.Purpose,
 			})
 			if err != nil {
 				log.Printf("warning: failed to save chunk for %s: %v", path, err)

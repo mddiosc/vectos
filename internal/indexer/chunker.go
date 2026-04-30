@@ -27,12 +27,14 @@ type ChunkConfig struct {
 	MinLines int // Mínimo de líneas por trozo
 }
 
-// ChunkResult contiene el contenido de un trozo y su posición.
+// ChunkResult contains the content of a chunk and its position.
 type ChunkResult struct {
 	Content   string
 	StartLine int
 	EndLine   int
 	Vector    []float32
+	Signature string
+	Purpose   string
 }
 
 // SimpleChunker es una implementación básica de segmentación de archivos.
@@ -323,6 +325,8 @@ func isStructuredBoundary(language, trimmedLine string) bool {
 
 func (s *SimpleChunker) buildChunk(filePath, language string, chunkLines []string, startLine, endLine int) ChunkResult {
 	chunkContent := strings.Join(chunkLines, "\n")
+	signature := extractSignature(language, chunkContent)
+	purpose := inferPurpose(language, chunkContent)
 	semanticContent := buildSemanticContent(filePath, language, chunkContent)
 
 	var vector []float32
@@ -339,6 +343,8 @@ func (s *SimpleChunker) buildChunk(filePath, language string, chunkLines []strin
 		StartLine: startLine,
 		EndLine:   endLine,
 		Vector:    vector,
+		Signature: signature,
+		Purpose:   purpose,
 	}
 }
 

@@ -128,6 +128,8 @@ func makeIndexProjectHandler(projectBaseDir string, embedConfig config.Embedding
 					Language:  language,
 					Category:  classifyCategory(language),
 					Vector:    c.Vector,
+					Signature: c.Signature,
+					Purpose:   c.Purpose,
 				})
 				if err != nil {
 					return nil, nil, err

@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"os"
-	"strings"
 	"testing"
 
 	"vectos/internal/storage"
@@ -27,24 +26,24 @@ func TestMCPSearchPayloadSizes(t *testing.T) {
 		{name: "Nx logical scope roots", query: "how does Nx scope resolution expand logical roots from dependencies"},
 	}
 
-	results := []storage.CodeChunk{
-		{FilePath: "/Users/mddiosc/develop/personal/vectos/cmd/vectos/benchmark.go", StartLine: 48, EndLine: 92, Language: "go", Category: "source", Score: 0.8426, Content: strings.Repeat("fallback and text search content ", 12)},
-		{FilePath: "/Users/mddiosc/develop/personal/vectos/internal/config/embedding.go", StartLine: 66, EndLine: 87, Language: "go", Category: "source", Score: 0.7632, Content: strings.Repeat("second result content ", 12)},
-		{FilePath: "/Users/mddiosc/develop/personal/vectos/internal/setup/claude.go", StartLine: 82, EndLine: 94, Language: "go", Category: "source", Score: 0.7584, Content: strings.Repeat("third result content ", 12)},
-		{FilePath: "/Users/mddiosc/develop/personal/vectos/internal/setup/opencode.go", StartLine: 105, EndLine: 117, Language: "go", Category: "source", Score: 0.7549, Content: strings.Repeat("fourth result content ", 12)},
-		{FilePath: "/Users/mddiosc/develop/personal/vectos/internal/setup/codex.go", StartLine: 83, EndLine: 95, Language: "go", Category: "source", Score: 0.7525, Content: strings.Repeat("fifth result content ", 12)},
-		{FilePath: "/Users/mddiosc/develop/personal/vectos/internal/embeddings/client.go", StartLine: 98, EndLine: 107, Language: "go", Category: "source", Score: 0.7410, Content: strings.Repeat("sixth result content ", 12)},
-		{FilePath: "/Users/mddiosc/develop/personal/vectos/cmd/vectos/commands_search.go", StartLine: 14, EndLine: 48, Language: "go", Category: "source", Score: 0.7320, Content: strings.Repeat("seventh result content ", 12)},
-		{FilePath: "/Users/mddiosc/develop/personal/vectos/cmd/vectos/search_ranking.go", StartLine: 34, EndLine: 104, Language: "go", Category: "source", Score: 0.7240, Content: strings.Repeat("eighth result content ", 12)},
-		{FilePath: "/Users/mddiosc/develop/personal/vectos/internal/workspace/workspace.go", StartLine: 66, EndLine: 117, Language: "go", Category: "source", Score: 0.7180, Content: strings.Repeat("ninth result content ", 12)},
-		{FilePath: "/Users/mddiosc/develop/personal/vectos/cmd/vectos/runtime_paths.go", StartLine: 182, EndLine: 203, Language: "go", Category: "source", Score: 0.7120, Content: strings.Repeat("tenth result content ", 12)},
+	fileResults := []storage.SearchFileResult{
+		{FilePath: "/tmp/project/cmd/vectos/benchmark.go", FileName: "benchmark.go", Language: "go", Category: "source", Relevance: 0.8426, LineRanges: []storage.LineRange{{Start: 48, End: 92}}, Signatures: []string{"func executeSearch(...)"}},
+		{FilePath: "/tmp/project/internal/config/embedding.go", FileName: "embedding.go", Language: "go", Category: "source", Relevance: 0.7632, LineRanges: []storage.LineRange{{Start: 66, End: 87}}, Signatures: []string{"type EmbeddingConfig"}},
+		{FilePath: "/tmp/project/internal/setup/claude.go", FileName: "claude.go", Language: "go", Category: "source", Relevance: 0.7584, LineRanges: []storage.LineRange{{Start: 82, End: 94}}, Signatures: []string{"func setupClaude(...)"}},
+		{FilePath: "/tmp/project/internal/setup/opencode.go", FileName: "opencode.go", Language: "go", Category: "source", Relevance: 0.7549, LineRanges: []storage.LineRange{{Start: 105, End: 117}}, Signatures: []string{"func setupOpenCode(...)"}},
+		{FilePath: "/tmp/project/internal/setup/codex.go", FileName: "codex.go", Language: "go", Category: "source", Relevance: 0.7525, LineRanges: []storage.LineRange{{Start: 83, End: 95}}, Signatures: []string{"func setupCodex(...)"}},
+		{FilePath: "/tmp/project/internal/embeddings/client.go", FileName: "client.go", Language: "go", Category: "source", Relevance: 0.7410, LineRanges: []storage.LineRange{{Start: 98, End: 107}}, Signatures: []string{"type EmbeddingClient"}},
+		{FilePath: "/tmp/project/cmd/vectos/commands_search.go", FileName: "commands_search.go", Language: "go", Category: "source", Relevance: 0.7320, LineRanges: []storage.LineRange{{Start: 14, End: 48}}, Signatures: []string{"func runSearch(...)"}},
+		{FilePath: "/tmp/project/cmd/vectos/search_ranking.go", FileName: "search_ranking.go", Language: "go", Category: "source", Relevance: 0.7240, LineRanges: []storage.LineRange{{Start: 34, End: 104}}, Signatures: []string{"func rerankHybridResults(...)"}},
+		{FilePath: "/tmp/project/internal/workspace/workspace.go", FileName: "workspace.go", Language: "go", Category: "source", Relevance: 0.7180, LineRanges: []storage.LineRange{{Start: 66, End: 117}}, Signatures: []string{"type Scope"}},
+		{FilePath: "/tmp/project/cmd/vectos/runtime_paths.go", FileName: "runtime_paths.go", Language: "go", Category: "source", Relevance: 0.7120, LineRanges: []storage.LineRange{{Start: 182, End: 203}}, Signatures: []string{"func resolveRuntimePaths(...)"}},
 	}
 	counts := []int{3, 5, 10}
 	rows := make([]map[string]any, 0, len(queries)*len(counts))
 
 	for _, tc := range queries {
 		for _, count := range counts {
-			payload := buildMCPSearchPayload(&workspace.Scope{Name: "vectos"}, tc.query, searchRun{Mode: "semantic_hybrid", Results: results[:count]})
+			payload := buildMCPSearchPayload(&workspace.Scope{Name: "vectos"}, tc.query, searchRun{Mode: "semantic_hybrid", FileResults: fileResults[:count]})
 			encoded, err := json.Marshal(payload)
 			if err != nil {
 				t.Fatalf("%s: marshal payload: %v", tc.name, err)
@@ -62,19 +61,31 @@ func TestMCPSearchPayloadSizes(t *testing.T) {
 	}
 }
 
-func TestMCPSearchPayloadPreviewHeuristic(t *testing.T) {
-	shortContent := strings.Repeat("short query preview content ", 12)
-	longContent := strings.Repeat("long query preview content ", 12)
-	short := buildMCPSearchPayload(&workspace.Scope{Name: "vectos"}, "fallback text search", searchRun{Mode: "semantic_hybrid", Results: []storage.CodeChunk{{Score: 0.92, Content: shortContent}, {Score: 0.60, Content: shortContent}}})
-	long := buildMCPSearchPayload(&workspace.Scope{Name: "vectos"}, "how does Nx scope resolution expand logical roots from dependencies", searchRun{Mode: "semantic_hybrid", Results: []storage.CodeChunk{{Score: 0.71, Content: longContent}, {Score: 0.70, Content: longContent}}})
+func TestMCPSearchPayloadHintForLowConfidence(t *testing.T) {
+	shortQuery := "fallback text search"
+	longQuery := "how does Nx scope resolution expand logical roots from dependencies"
 
-	if len(short.Results) == 0 || len(long.Results) == 0 {
+	highConfFile := storage.SearchFileResult{
+		FilePath: "/tmp/vectos/cmd/vectos/main.go", FileName: "main.go", Language: "go", Category: "source",
+		Relevance: 0.95, LineRanges: []storage.LineRange{{Start: 100, End: 140}},
+		Signatures: []string{"func runMCP(...)"}, Purpose: "runs MCP server",
+	}
+	lowConfFile := storage.SearchFileResult{
+		FilePath: "/tmp/vectos/cmd/vectos/main.go", FileName: "main.go", Language: "go", Category: "source",
+		Relevance: 0.74, LineRanges: []storage.LineRange{{Start: 100, End: 140}},
+		Signatures: []string{"func runMCP(...)"}, Purpose: "runs MCP server",
+	}
+
+	highConfPayload := buildMCPSearchPayload(&workspace.Scope{Name: "vectos"}, shortQuery, searchRun{Mode: "semantic_hybrid", FileResults: []storage.SearchFileResult{highConfFile}})
+	lowConfPayload := buildMCPSearchPayload(&workspace.Scope{Name: "vectos"}, longQuery, searchRun{Mode: "semantic_hybrid", FileResults: []storage.SearchFileResult{lowConfFile}})
+
+	if len(highConfPayload.Results) == 0 || len(lowConfPayload.Results) == 0 {
 		t.Fatal("expected results")
 	}
-	if got := len(short.Results[0].Preview); got != searchPreviewShort {
-		t.Fatalf("expected short query preview to use short limit, got %d", got)
+	if highConfPayload.Results[0].Hint != "" {
+		t.Fatalf("expected no hint for high-confidence result (relevance=%f), got %q", highConfFile.Relevance, highConfPayload.Results[0].Hint)
 	}
-	if got := len(long.Results[0].Preview); got != searchPreviewLong {
-		t.Fatalf("expected long query preview to use long limit, got %d", got)
+	if lowConfPayload.Results[0].Hint == "" {
+		t.Fatalf("expected hint for low-confidence result (relevance=%f)", lowConfFile.Relevance)
 	}
 }

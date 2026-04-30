@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	hybridCandidateLimit       = 25
+	hybridCandidateLimit      = 10
 	hybridResultLimitPerFile   = 2
 	hybridDedupLineWindow      = 12
 	hybridExactPhraseBoost     = 0.08
@@ -19,21 +19,6 @@ const (
 	hybridFileNameBoost        = 0.06
 	hybridActionableCodeBoost  = 0.04
 	hybridFallbackBoost        = 0.12
-	hybridSourcePathBoost      = 0.08
-	hybridConfigIntentBoost    = 0.10
-	hybridConfigPathBoost      = 0.08
-	hybridApiRoutePenalty      = 0.05
-	hybridDbIntentBoost        = 0.09
-	hybridDbPathBoost          = 0.10
-	hybridGenericConfigPenalty = 0.05
-	hybridUiIntentBoost        = 0.08
-	hybridSeoIntentBoost       = 0.08
-	hybridSeoHeadBoost         = 0.10
-	hybridSeoPagePenalty       = 0.04
-	hybridFormIntentBoost      = 0.08
-	hybridStateIntentBoost     = 0.08
-	hybridAuthIntentBoost      = 0.08
-	hybridDataIntentBoost      = 0.08
 	hybridBroadQueryPenalty    = 0.12
 	hybridBuildArtifactPenalty = 0.25
 	hybridTestFilePenalty      = 0.08
@@ -110,30 +95,9 @@ func computeHybridScore(query string, queryTokens []string, candidate storage.Co
 
 	if isBroadImplementationQuery(queryTokens) {
 		if candidate.Category == "source" {
-			score += hybridSourcePathBoost
 		} else {
 			score -= hybridBroadQueryPenalty
 		}
-	}
-
-	if isRoutingQuery(queryTokens) {
-		score += routingNameSignalBoost(candidate.FilePath)
-	}
-
-	if intentBoost := genericIntentBoost(queryTokens, candidate); intentBoost > 0 {
-		score += intentBoost
-	}
-
-	if configBoost := configSpecificBoost(queryTokens, candidate); configBoost != 0 {
-		score += configBoost
-	}
-
-	if dbBoost := databaseSpecificBoost(queryTokens, candidate); dbBoost != 0 {
-		score += dbBoost
-	}
-
-	if seoBoost := seoSpecificBoost(queryTokens, candidate); seoBoost != 0 {
-		score += seoBoost
 	}
 
 	if isTestFilePath(pathLower) {
@@ -246,109 +210,6 @@ func isBroadImplementationQuery(queryTokens []string) bool {
 		}
 	}
 	return len(queryTokens) > 0
-}
-
-func isRoutingQuery(queryTokens []string) bool {
-	for _, token := range queryTokens {
-		switch token {
-		case "routing", "router", "routes", "route", "navigate", "navigation":
-			return true
-		}
-	}
-	return false
-}
-
-func routingNameSignalBoost(path string) float64 {
-	best := 0.0
-	for _, token := range tokenizePathForRanking(path + " " + filepath.Base(path)) {
-		switch token {
-		case "router", "routers":
-			best = math.Max(best, 0.16)
-		case "routes":
-			best = math.Max(best, 0.12)
-		case "navigation", "navigate", "navigations":
-			best = math.Max(best, 0.10)
-		case "route":
-			best = math.Max(best, 0.03)
-		}
-	}
-	return best
-}
-
-func genericIntentBoost(queryTokens []string, candidate storage.CodeChunk) float64 {
-	if len(queryTokens) == 0 {
-		return 0
-	}
-
-	pathTokens := tokenizePathForRanking(candidate.FilePath + " " + filepath.Base(candidate.FilePath))
-
-	boosts := []struct {
-		queryTokens     []string
-		candidateTokens []string
-		boost           float64
-	}{
-		{[]string{"config", "configure", "configured", "configuration", "setup", "initialize", "initialized", "client", "provider", "context", "api"}, []string{"config", "configure", "configuration", "setup", "init", "initialize", "client", "provider", "context", "api"}, hybridConfigIntentBoost},
-		{[]string{"db", "database", "model", "models", "repository", "repo", "api", "client", "connection", "connect"}, []string{"db", "database", "model", "models", "repository", "repo", "api", "client", "connection", "connect", "service"}, hybridDbIntentBoost},
-		{[]string{"ui", "layout", "theme", "navbar", "nav", "menu", "component", "page", "pages"}, []string{"ui", "layout", "theme", "navbar", "nav", "menu", "component", "page", "pages"}, hybridUiIntentBoost},
-		{[]string{"seo", "meta", "metadata", "title", "description", "canonical", "og", "opengraph", "head"}, []string{"seo", "meta", "metadata", "title", "description", "canonical", "og", "opengraph", "head"}, hybridSeoIntentBoost},
-		{[]string{"form", "forms", "contact", "submit", "validation", "input", "field", "recaptcha"}, []string{"form", "forms", "contact", "submit", "validation", "input", "field", "captcha", "recaptcha"}, hybridFormIntentBoost},
-		{[]string{"state", "context", "provider", "reducer", "toggle", "hook", "theme", "menu"}, []string{"state", "context", "provider", "reducer", "toggle", "hook", "theme", "menu"}, hybridStateIntentBoost},
-		{[]string{"auth", "jwt", "token", "login", "register", "user"}, []string{"auth", "jwt", "token", "login", "register", "user"}, hybridAuthIntentBoost},
-		{[]string{"fetch", "load", "loaded", "sort", "sorted", "data", "database", "db", "work", "experience", "repo", "repository"}, []string{"fetch", "load", "sort", "data", "database", "db", "model", "repo", "repository"}, hybridDataIntentBoost},
-	}
-
-	best := 0.0
-	for _, boost := range boosts {
-		if hasAnyToken(queryTokens, boost.queryTokens...) && hasAnyToken(pathTokens, boost.candidateTokens...) {
-			best = math.Max(best, boost.boost)
-		}
-	}
-	return best
-}
-
-func seoSpecificBoost(queryTokens []string, candidate storage.CodeChunk) float64 {
-	if !hasAnyToken(queryTokens, "seo", "meta", "metadata", "title", "description", "canonical", "og", "opengraph", "head") {
-		return 0
-	}
-
-	pathTokens := tokenizePathForRanking(candidate.FilePath + " " + filepath.Base(candidate.FilePath))
-	if hasAnyToken(pathTokens, "head", "document", "metadata", "seo") {
-		return hybridSeoHeadBoost
-	}
-	if hasAnyToken(pathTokens, "page", "pages") && hasAnyToken(queryTokens, "head", "metadata", "seo", "title", "description") {
-		return -hybridSeoPagePenalty
-	}
-	return 0
-}
-
-func configSpecificBoost(queryTokens []string, candidate storage.CodeChunk) float64 {
-	if !hasAnyToken(queryTokens, "config", "configure", "configured", "configuration", "setup", "initialize", "initialized", "client", "provider", "api") {
-		return 0
-	}
-
-	pathTokens := tokenizePathForRanking(candidate.FilePath + " " + filepath.Base(candidate.FilePath))
-	if hasAnyToken(pathTokens, "config", "configure", "configuration", "setup", "init", "initialize") {
-		return hybridConfigPathBoost
-	}
-	if hasAnyToken(pathTokens, "pages", "api") && !hasAnyToken(pathTokens, "config", "configuration") {
-		return -hybridApiRoutePenalty
-	}
-	return 0
-}
-
-func databaseSpecificBoost(queryTokens []string, candidate storage.CodeChunk) float64 {
-	if !hasAnyToken(queryTokens, "db", "database", "model", "models", "repository", "repo", "connection", "connect") {
-		return 0
-	}
-
-	pathTokens := tokenizePathForRanking(candidate.FilePath + " " + filepath.Base(candidate.FilePath))
-	if hasAnyToken(pathTokens, "db", "database", "model", "models", "repository", "repo", "connection", "connect") {
-		return hybridDbPathBoost
-	}
-	if hasAnyToken(pathTokens, "config", "configuration") && !hasAnyToken(pathTokens, "db", "database", "model", "models") {
-		return -hybridGenericConfigPenalty
-	}
-	return 0
 }
 
 func hasAnyToken(tokens []string, candidates ...string) bool {

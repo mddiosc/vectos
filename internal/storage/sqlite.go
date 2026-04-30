@@ -133,6 +133,14 @@ func (s *SQLiteStorage) migrate() error {
 	if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 		return fmt.Errorf("failed to add category column: %w", err)
 	}
+	_, err = s.db.Exec(`ALTER TABLE code_chunks ADD COLUMN signature TEXT`)
+	if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		return fmt.Errorf("failed to add signature column: %w", err)
+	}
+	_, err = s.db.Exec(`ALTER TABLE code_chunks ADD COLUMN purpose TEXT`)
+	if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		return fmt.Errorf("failed to add purpose column: %w", err)
+	}
 
 	return nil
 }
@@ -150,8 +158,8 @@ func (s *SQLiteStorage) SaveChunk(chunk CodeChunk) (int64, error) {
 	}
 
 	query := `
-	INSERT INTO code_chunks (file_path, content, start_line, end_line, language, category, created_at, embedding)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO code_chunks (file_path, content, start_line, end_line, language, category, created_at, embedding, signature, purpose)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	res, err := s.db.Exec(query,
 		chunk.FilePath,
@@ -162,6 +170,8 @@ func (s *SQLiteStorage) SaveChunk(chunk CodeChunk) (int64, error) {
 		chunk.Category,
 		time.Now(),
 		vectorBlob,
+		chunk.Signature,
+		chunk.Purpose,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("failed to save chunk: %w", err)
@@ -188,10 +198,10 @@ func (s *SQLiteStorage) DeleteChunksByPathPrefix(pathPrefix string) error {
 	return nil
 }
 
-// SearchText realiza una búsqueda de texto simple (fallback/keyword search).
+// SearchText performs a simple text search (fallback/keyword search).
 func (s *SQLiteStorage) SearchText(query string) ([]CodeChunk, error) {
-	sqlQuery := `SELECT id, file_path, content, start_line, end_line, language, category, created_at 
-	             FROM code_chunks 
+	sqlQuery := `SELECT id, file_path, content, start_line, end_line, language, category, created_at, signature, purpose
+	             FROM code_chunks
 	             WHERE content LIKE ?`
 
 	rows, err := s.db.Query(sqlQuery, "%"+query+"%")
@@ -204,11 +214,15 @@ func (s *SQLiteStorage) SearchText(query string) ([]CodeChunk, error) {
 	for rows.Next() {
 		var c CodeChunk
 		var category sql.NullString
-		err := rows.Scan(&c.ID, &c.FilePath, &c.Content, &c.StartLine, &c.EndLine, &c.Language, &category, &c.CreatedAt)
+		var signature sql.NullString
+		var purpose sql.NullString
+		err := rows.Scan(&c.ID, &c.FilePath, &c.Content, &c.StartLine, &c.EndLine, &c.Language, &category, &c.CreatedAt, &signature, &purpose)
 		if err != nil {
 			return nil, err
 		}
 		c.Category = categoryOrDefault(category, c.Language)
+		c.Signature = signature.String
+		c.Purpose = purpose.String
 		results = append(results, c)
 	}
 	return results, nil
@@ -293,13 +307,13 @@ func (s *SQLiteStorage) RequiresReindex(provider, model string, dimensions int) 
 	return metadata.Provider != provider || metadata.Model != model || metadata.Dimensions != dimensions, nil
 }
 
-// SearchSemantic realiza una búsqueda por similitud coseno sobre embeddings guardados.
+// SearchSemantic performs cosine similarity search over stored embeddings.
 func (s *SQLiteStorage) SearchSemantic(queryVector []float32, limit int) ([]CodeChunk, error) {
 	if len(queryVector) == 0 {
 		return nil, nil
 	}
 
-	sqlQuery := `SELECT id, file_path, content, start_line, end_line, language, category, created_at, embedding FROM code_chunks WHERE embedding IS NOT NULL AND length(embedding) > 0 AND (category IS NULL OR category NOT IN ('docs', 'dependency_metadata'))`
+	sqlQuery := `SELECT id, file_path, content, start_line, end_line, language, category, created_at, embedding, signature, purpose FROM code_chunks WHERE embedding IS NOT NULL AND length(embedding) > 0 AND (category IS NULL OR category NOT IN ('docs', 'dependency_metadata'))`
 	rows, err := s.db.Query(sqlQuery)
 	if err != nil {
 		return nil, fmt.Errorf("semantic search query failed: %w", err)
@@ -310,11 +324,15 @@ func (s *SQLiteStorage) SearchSemantic(queryVector []float32, limit int) ([]Code
 	for rows.Next() {
 		var c CodeChunk
 		var category sql.NullString
+		var signature sql.NullString
+		var purpose sql.NullString
 		var embeddingBlob []byte
-		if err := rows.Scan(&c.ID, &c.FilePath, &c.Content, &c.StartLine, &c.EndLine, &c.Language, &category, &c.CreatedAt, &embeddingBlob); err != nil {
+		if err := rows.Scan(&c.ID, &c.FilePath, &c.Content, &c.StartLine, &c.EndLine, &c.Language, &category, &c.CreatedAt, &embeddingBlob, &signature, &purpose); err != nil {
 			return nil, err
 		}
 		c.Category = categoryOrDefault(category, c.Language)
+		c.Signature = signature.String
+		c.Purpose = purpose.String
 
 		vector := decodeVector(embeddingBlob)
 		if len(vector) == 0 || len(vector) != len(queryVector) {
