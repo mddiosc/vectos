@@ -18,6 +18,38 @@ Format per release:
 
 ---
 
+## v0.2.0 — 2026-04-30
+
+Feature release focused on reducing agent token consumption by switching MCP search output from chunk-level to file-level, with signature-based pointers replacing truncated code previews.
+
+### Added
+
+- File-level MCP search output with consolidated `signatures`, `line_ranges`, and `relevance` scores
+- `SearchFileResult` type and `CollapseFileResults()` helper for grouping chunks by file and merging overlapping/touching line ranges
+- Confidence-based hint system: results with relevance >= 0.90 return pointer-only (no preview), lower confidence results include a contextual `hint`
+- `signature` and `purpose` columns in `code_chunks` schema, extracted and persisted during indexing via `extractSignature()` and `inferPurpose()`
+
+### Changed
+
+- MCP search payload restructured: per-file `mcpSearchFileResult` entries replace per-chunk `mcpSearchResultEntry` entries
+- Hybrid ranking candidate pool reduced from 25 to 10 for higher-confidence top results
+- Hybrid ranking surface simplified: removed fine-grained per-intent boosts (config, database, SEO, UI, auth, state, form, routing)
+- Hybrid ranking retains high-impact signals: exact phrase match, token/path overlap, actionable code detection, category preference, and build artifact/test penalties
+
+### Fixed
+
+- MCP search output no longer repeats file metadata (file_path, language, category) per chunk
+- Token consumption reduced ~60% for high-confidence queries by removing truncated code previews in favor of function signatures
+
+### Known Limitations
+
+- This remains an experimental/internal release. Stability and compatibility are not guaranteed.
+- Supported download platforms remain `darwin/arm64` and `linux/amd64` only.
+- MCP output format is a breaking change from v0.1.x; agent clients consuming `preview` and `reason` fields will need updating.
+- Existing indexes require reindex to populate `signature` and `purpose` columns; `vectos status` will indicate when reindex is recommended.
+
+---
+
 ## v0.1.9 — 2026-04-29
 
 Patch release focused on token-efficient retrieval, compact search output, and generic ranking improvements for agent navigation.
