@@ -31,6 +31,10 @@ The system SHALL accept a file path or project directory and index supported sou
 - **WHEN** a previously indexed file is deleted or no longer matches the active indexing policy
 - **THEN** the system SHALL remove that file's chunks from the project index
 
+#### Scenario: Chunks are stored with structural metadata
+- **WHEN** the system persists a chunk to the database
+- **THEN** it SHALL store the extracted structural signature (if available) and inferred purpose in dedicated columns alongside the content and embedding
+
 ### Requirement: Go code SHALL be chunked by function boundaries when possible
 The system SHALL chunk Go source files by function boundaries instead of only fixed line windows whenever a function-oriented split can be derived.
 
@@ -41,3 +45,7 @@ The system SHALL chunk Go source files by function boundaries instead of only fi
 #### Scenario: Chunk a Go file prelude
 - **WHEN** a Go file contains package or import declarations before any function
 - **THEN** the system SHALL preserve that prelude as a separate chunk
+
+#### Scenario: Go function chunks are stored with signatures
+- **WHEN** a Go function chunk is created
+- **THEN** the system SHALL extract and store the function signature (the `func ...` declaration line) in the `signature` column
