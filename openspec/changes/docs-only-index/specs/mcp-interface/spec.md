@@ -9,7 +9,7 @@ The system SHALL expose tools for code search and project indexing through MCP.
 
 #### Scenario: MCP client calls documentation search
 - **WHEN** an MCP client calls `search_docs` with a query
-- **THEN** the server SHALL search only the documentation index and return structured results with file path, line ranges, section context, and relevance
+- **THEN** the server SHALL search only the documentation index (`<name>-docs.db`) and return structured results using the same `mcpSearchFileResult` format as `search_code` (file path, line ranges, signatures, relevance)
 
 ## ADDED Requirements
 
@@ -17,8 +17,8 @@ The system SHALL expose tools for code search and project indexing through MCP.
 The system SHALL provide guidance suggesting documentation search when code search yields no results but a documentation index exists.
 
 #### Scenario: Code search returns no results but docs index exists
-- **WHEN** an MCP client calls `search_code` and gets zero results, but a documentation index exists with chunks
-- **THEN** the system SHALL include `TRY_DOCS` in the guidance field and `IDX_TRY_DOCS` in the next_action field
+- **WHEN** an MCP client calls `search_code` and gets zero results, but a documentation index file exists on disk
+- **THEN** the system SHALL include `TRY_DOCS` in the guidance field and suggest using `search_docs` in the next_action field
 
 #### Scenario: Documentation index does not exist
 - **WHEN** an MCP client calls `search_docs` and no documentation index exists

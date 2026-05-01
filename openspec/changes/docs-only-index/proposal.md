@@ -7,7 +7,7 @@ Currently Vectos excludes documentation files (`.md`, `.mdx`, `.rst`, `.txt`, `.
 - **New `search_docs` MCP tool**: A separate tool that searches only the documentation index for a project. Distinct from `search_code` which handles source code.
 - **New `--docs` flag for `index_project`**: When provided, only documentation files are indexed into a separate DB (`<project>-docs.db`). Without the flag, behavior is unchanged (source code only).
 - **Separate documentation database**: Documentation index stored in `<name>-docs.db` alongside the existing `<name>.db` file, both under the same project scope.
-- **New documentation language detection**: Support for `.mdx`, `.rst`, `.adoc`, `.tex` as documentation file types (beyond existing markdown).
+- **New documentation language detection**: Support for `.rst`, `.adoc`, `.tex`, `.txt` as documentation file types (beyond existing `.md`/`.mdx` which already map to `markdown`).
 - **Updated guidance in agent setup**: When `search_code` yields no results, suggest trying `search_docs` as an alternative.
 
 ## Capabilities
@@ -26,6 +26,8 @@ Currently Vectos excludes documentation files (`.md`, `.mdx`, `.rst`, `.txt`, `.
 
 - **New files/APIs**: New `search_docs` tool in MCP server (`mcp_server.go`), new `--docs` flag in CLI (`commands_index.go`, `commands_search.go`).
 - **Storage layer**: `GetDatabasePathForName` or new variant accepts a suffix for the docs DB. Separate database file `<project>-docs.db` created under the same project directory.
-- **Language detection**: New language types (`mdx`, `rst`, `adoc`, `latex`) classified as documentation.
-- **Agent guidance**: Setup helpers (`setup/opencode.go`, `setup/claude.go`, `setup/codex.go`) updated to mention `search_docs` as an option when code search returns no results.
+- **Language detection**: New language types (`rst`, `asciidoc`, `latex`, `text`) classified as documentation. `.mdx` already maps to `markdown` which is already category `docs`.
+- **Agent guidance**: Setup helpers (`internal/setup/opencode.go`, `internal/setup/claude.go`, `internal/setup/codex.go`) updated to mention `search_docs` as an option when code search returns no results.
+- **CLI flags**: `cli_flags.go` and `cli_dispatch.go` updated to register and pass `--docs` flag for index, search, and status commands.
+- **SearchSemantic WHERE clause**: Docs DB search requires bypassing the `category NOT IN ('docs')` filter. `SearchSemantic()` receives an `includeDocs` parameter to control this.
 - **No breaking changes**: Existing `search_code` and `index_project` behavior is unchanged.

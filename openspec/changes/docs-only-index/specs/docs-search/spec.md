@@ -17,7 +17,7 @@ The system SHALL provide a `search_docs` tool in the MCP server that searches on
 
 #### Scenario: Documentation search returns results
 - **WHEN** `search_docs` finds matching documentation chunks
-- **THEN** each result SHALL include file path, line ranges, section context (heading or paragraph), and relevance score
+- **THEN** each result SHALL include file path, line ranges, signatures (section headings extracted via `extractSignature()`), and relevance score — using the same `mcpSearchFileResult` output format as `search_code`
 
 #### Scenario: Documentation search with path scoping
 - **WHEN** an MCP client calls `search_docs` with a `path` parameter

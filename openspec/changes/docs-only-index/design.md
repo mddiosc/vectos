@@ -49,18 +49,26 @@ The goal is to provide a separate documentation index that:
 
 ### Decision 2: Language Detection for Documentation Types
 
-**Choice:** Extend `detectLanguage()` to recognize new file types and update `classifyCategory()` to return `"docs"` for all documentation languages.
+**Choice:** Extend `detectLanguage()` in `cmd/vectos/runtime_paths.go` to recognize new file types and update `classifyCategory()` to return `"docs"` for all documentation languages.
+
+**Important:** `classifyCategory()` exists in **two files** with diverging implementations:
+- `cmd/vectos/runtime_paths.go:361` — used by `shouldIndexLanguage()` and `SaveChunk()` in handlers
+- `internal/indexer/chunker.go:546` — used by `buildSemanticContent()` and `inferPurpose()`
+
+Both copies must be updated with the new doc language mappings to ensure correct category in both chunk storage and embedding enrichment.
 
 **New mappings:**
 
 | Extension | Language | Category |
 |---|---|---|
 | `.md` | markdown | docs |
-| `.mdx` | mdx | docs |
+| `.mdx` | markdown | docs |
 | `.rst` | rst | docs |
 | `.adoc` / `.asciidoc` | asciidoc | docs |
 | `.tex` / `.latex` | latex | docs |
 | `.txt` | text | docs |
+
+**Note:** `.mdx` keeps mapping to `"markdown"` (not `"mdx"`) to preserve existing structural chunking behavior in `supportsStructuredChunking()` and `isStructuredBoundary()` which check for `language == "markdown"`.
 
 **Rationale:** Consistent with existing pattern — `classifyCategory()` maps language → category. Changing `shouldIndexLanguage()` to optionally invert the filter (docs only vs source only) keeps the logic centralized.
 
@@ -90,13 +98,26 @@ The goal is to provide a separate documentation index that:
 
 ### Decision 5: Guidance Suggestion
 
-**Choice:** When `search_code` returns zero chunks AND the docs database exists and has chunks, include `TRY_DOCS: <hint>` in the guidance field.
+**Choice:** When `search_code` returns zero results AND the docs database file exists on disk, include `TRY_DOCS` in the guidance field. Only check file existence (not chunk count) to avoid opening a second DB on every empty code search.
 
-**Rationale:** Agents get contextual hint without automatic fallback behavior. Explicit is better than implicit.
+**Rationale:** Agents get contextual hint without automatic fallback behavior. Explicit is better than implicit. Checking file existence is cheap (single `os.Stat` call) compared to opening and querying the docs DB.
 
 **Alternatives considered:**
 - Auto-query docs DB when code search fails (unpredictable, hides failures)
 - Return two separate result arrays (confusing, mixes concerns)
+
+### Decision 6: SearchSemantic for Docs DB
+
+**Choice:** The docs database will use a variant of `SearchSemantic` that does NOT filter out `category == "docs"`. The current `SearchSemantic` WHERE clause includes `AND (category IS NULL OR category NOT IN ('docs', 'dependency_metadata'))`, which would filter out all documentation chunks and return zero results.
+
+**Options:**
+1. Add an `includeDocs bool` parameter to `SearchSemantic()` that skips the category filter when `true`.
+2. Create a separate `SearchSemanticAll()` method without the category filter.
+3. Since the docs DB only contains docs, simply remove the WHERE clause when querying docs DB (all chunks are valid).
+
+**Choice:** Option 1 — add a parameter to `SearchSemantic`. This keeps the API surface minimal and works for both source and docs databases. The docs handler passes `includeDocs: true`, the code handler passes `includeDocs: false` (default behavior).
+
+**Rationale:** The docs DB only contains documentation chunks, so filtering them out would make the search tool useless. `SearchText()` has no category filter and would work correctly, but `SearchSemantic()` — the primary search path — must also work.
 
 ## Risks / Trade-offs
 
