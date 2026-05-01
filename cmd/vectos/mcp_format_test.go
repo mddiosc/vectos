@@ -10,7 +10,7 @@ import (
 
 func TestBuildMCPMissingIndexPayloadIncludesGuidance(t *testing.T) {
 	payload := buildMCPMissingIndexPayload(&workspace.Scope{Name: "vectos", PrimaryRoot: "/tmp/vectos", Roots: []string{"/tmp/vectos"}})
-	if !strings.Contains(payload.Guidance, "does not have a usable Vectos index") {
+	if payload.Guidance != "IDX_MISSING" {
 		t.Fatalf("unexpected guidance: %q", payload.Guidance)
 	}
 	if !strings.Contains(payload.NextAction, "index_project") {
@@ -40,14 +40,14 @@ func TestBuildMCPSearchPayloadIncludesFileLevelMetadata(t *testing.T) {
 		t.Fatalf("expected one result, got %d", len(payload.Results))
 	}
 	result := payload.Results[0]
-	if result.Rank != 1 || result.FileName != "main.go" {
+	if result.FilePath != "/tmp/vectos/cmd/vectos/main.go" {
 		t.Fatalf("unexpected result metadata: %+v", result)
 	}
 	if len(result.Signatures) == 0 || result.Signatures[0] != "func runMCP(projectBaseDir string, embedConfig config.EmbeddingConfig)" {
 		t.Fatalf("expected signatures, got %+v", result.Signatures)
 	}
-	if result.Relevance != 0.87 {
-		t.Fatalf("expected relevance 0.87, got %f", result.Relevance)
+	if result.Relevance != 87 {
+		t.Fatalf("expected relevance 87, got %d", result.Relevance)
 	}
 }
 
@@ -73,7 +73,7 @@ func TestBuildMCPSearchPayloadHighConfidenceNoHint(t *testing.T) {
 		t.Fatalf("expected one result, got %d", len(payload.Results))
 	}
 	result := payload.Results[0]
-	if result.Relevance >= highConfidenceThreshold && result.Hint != "" {
+	if result.Relevance >= 90 && result.Hint != "" {
 		t.Fatalf("expected no hint for high-confidence result, got %q", result.Hint)
 	}
 }
@@ -101,6 +101,6 @@ func TestBuildMCPSearchPayloadLowConfidenceHasHint(t *testing.T) {
 	}
 	result := payload.Results[0]
 	if result.Hint == "" {
-		t.Fatalf("expected hint for low-confidence result (relevance=%f)", result.Relevance)
+		t.Fatalf("expected hint for low-confidence result (relevance=%d)", result.Relevance)
 	}
 }

@@ -53,9 +53,12 @@ test("works", () => {
 func TestBuildSemanticContentAnnotatesChunkRole(t *testing.T) {
 	semantic := buildSemanticContent("/tmp/Hero.tsx", "tsx", "export function useHeroData() {\n  return 1\n}")
 
-	for _, expected := range []string{"Language: tsx", "Purpose: custom hook", "Signature: export function useHeroData() {"} {
+	for _, expected := range []string{"File: Hero.tsx", "Purpose: custom hook", "Signature: export function useHeroData() {"} {
 		if !strings.Contains(semantic, expected) {
 			t.Fatalf("expected semantic content to include %q, got %q", expected, semantic)
 		}
+	}
+	if strings.Contains(semantic, "Language:") {
+		t.Fatalf("expected semantic content NOT to include Language:, got %q", semantic)
 	}
 }

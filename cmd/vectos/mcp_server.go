@@ -63,7 +63,7 @@ func newMCPServer() *mcpSDK.Server {
 func registerMCPTools(server *mcpSDK.Server, projectBaseDir string, embedConfig config.EmbeddingConfig) {
 	mcpSDK.AddTool(server, &mcpSDK.Tool{
 		Name:        "search_code",
-		Description: "Search through the codebase using semantic search with keyword fallback",
+		Description: "Search through the codebase using semantic search with keyword fallback. Guidance field may contain IDX_MISSING (index not ready) or IDX_STALE (index needs refresh).",
 	}, makeSearchCodeHandler(projectBaseDir, embedConfig))
 
 	mcpSDK.AddTool(server, &mcpSDK.Tool{
