@@ -3,15 +3,15 @@
   "queries": [
     {
       "name": "Fallback to text search",
-      "query": "how does Vectos fall back to text search when embeddings fail",
+      "query": "executeSearch embeddings fail text fallback",
       "expected_files": [
         "cmd/vectos/benchmark.go"
       ],
       "expected_chunks": [
         {
           "file": "cmd/vectos/benchmark.go",
-          "start_line": 48,
-          "end_line": 91
+          "start_line": 49,
+          "end_line": 94
         }
       ]
     },
@@ -24,8 +24,8 @@
       "expected_chunks": [
         {
           "file": "cmd/vectos/runtime_paths.go",
-          "start_line": 95,
-          "end_line": 98
+          "start_line": 376,
+          "end_line": 383
         }
       ]
     },
@@ -38,8 +38,8 @@
       "expected_chunks": [
         {
           "file": "internal/indexer/chunker.go",
-          "start_line": 172,
-          "end_line": 246
+          "start_line": 83,
+          "end_line": 90
         }
       ]
     },
@@ -52,8 +52,8 @@
       "expected_chunks": [
         {
           "file": "cmd/vectos/search_ranking.go",
-          "start_line": 31,
-          "end_line": 90
+          "start_line": 36,
+          "end_line": 64
         }
       ]
     },
@@ -67,7 +67,7 @@
         {
           "file": "internal/workspace/workspace.go",
           "start_line": 157,
-          "end_line": 203
+          "end_line": 204
         }
       ]
     }
