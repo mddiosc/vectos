@@ -39,9 +39,13 @@ func (pm *ProjectManager) GetDatabasePath(currentDir string) (string, error) {
 }
 
 // GetDatabasePathForName determina la ruta de la DB para un nombre lógico de proyecto.
-func (pm *ProjectManager) GetDatabasePathForName(projectName string) (string, error) {
+func (pm *ProjectManager) GetDatabasePathForName(projectName string, suffix ...string) (string, error) {
 	projectKey := normalizeProjectName(projectName)
-	dbName := fmt.Sprintf("%s.db", projectKey)
+	dbSuffix := ""
+	if len(suffix) > 0 {
+		dbSuffix = suffix[0]
+	}
+	dbName := fmt.Sprintf("%s%s.db", projectKey, dbSuffix)
 	return filepath.Join(pm.baseDir, projectKey, dbName), nil
 }
 

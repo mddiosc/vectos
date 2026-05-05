@@ -32,6 +32,13 @@ vectos index .
 vectos search "checkout payment"
 ```
 
+Index and search documentation separately:
+
+```bash
+vectos index . --docs
+vectos search --docs "getting started"
+```
+
 Inside an Nx workspace, you can scope indexing and search to a selected Nx project:
 
 ```bash

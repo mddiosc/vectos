@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"vectos/internal/content"
 	"vectos/internal/embeddings"
 )
 
@@ -19,7 +20,7 @@ var jsTestPattern = regexp.MustCompile(`^(describe|it|test)\s*\(`)
 var pyBlockPattern = regexp.MustCompile(`^(def|class)\s+`)
 var javaBlockPattern = regexp.MustCompile(`^(public|protected|private|static|final|abstract|class|interface|enum|record)\s+`)
 var shellBlockPattern = regexp.MustCompile(`^(function\s+\w+|\w+\s*\(\)\s*\{|if\s|for\s|while\s|case\s)`)
-var markdownBlockPattern = regexp.MustCompile(`^(#{1,4}\s|[-*]\s|\d+\.\s|~~~)`) 
+var markdownBlockPattern = regexp.MustCompile(`^(#{1,4}\s|[-*]\s|\d+\.\s|~~~)`)
 
 // ChunkConfig define los parámetros para la segmentación del código.
 type ChunkConfig struct {
@@ -303,7 +304,7 @@ func isLikelyExpressionTerminator(language, trimmedLine string) bool {
 	if trimmedLine == "" {
 		return true
 	}
-	return strings.HasSuffix(trimmedLine, ";") || strings.HasSuffix(trimmedLine, ")") || strings.HasSuffix(trimmedLine, "/>" ) || strings.HasSuffix(trimmedLine, ">")
+	return strings.HasSuffix(trimmedLine, ";") || strings.HasSuffix(trimmedLine, ")") || strings.HasSuffix(trimmedLine, "/>") || strings.HasSuffix(trimmedLine, ">")
 }
 
 func isStructuredBoundary(language, trimmedLine string) bool {
@@ -401,7 +402,7 @@ func inferPurpose(language, chunkContent string) string {
 		if isExportedChunk(language, chunkContent) {
 			tags = append(tags, "exported api")
 		}
-		category := classifyCategory(language)
+		category := content.ClassifyCategory(language)
 		if category == "docs" {
 			if strings.Contains(lower, "install") || strings.Contains(lower, "usage") {
 				tags = append(tags, "documentation or usage instructions")
@@ -432,7 +433,7 @@ func inferPurpose(language, chunkContent string) string {
 			}
 			return strings.Join(tags, "; ")
 		}
-		if classifyCategory(language) == "infra_config" {
+		if content.ClassifyCategory(language) == "infra_config" {
 			if strings.Contains(lower, "image:") || strings.Contains(lower, "docker") {
 				tags = append(tags, "container or image configuration")
 			}
@@ -537,21 +538,4 @@ func isExportedChunk(language, chunkContent string) bool {
 		}
 	}
 	return false
-}
-
-func classifyCategory(language string) string {
-	switch {
-	case language == "dockerfile", strings.HasPrefix(language, "yaml"), strings.HasPrefix(language, "bazel"):
-		return "infra_config"
-	case language == "shell":
-		return "scripts"
-	case language == "markdown", language == "gitignore":
-		return "docs"
-	case language == "json", language == "toml", language == "properties", language == "xml", language == "makefile", language == "gradle", language == "lockfile":
-		return "dependency_metadata"
-	case language == "ini", language == "config":
-		return "infra_config"
-	default:
-		return "source"
-	}
 }

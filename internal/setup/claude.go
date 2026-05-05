@@ -80,17 +80,7 @@ func (ClaudeCodeAdapter) Remove(ctx Context) error {
 }
 
 func managedClaudeGuidance() string {
-	return strings.Join([]string{
-		claudeGuidanceStart,
-		"## Prefer Vectos MCP",
-		"",
-		"When Vectos MCP tools are available for a project, prefer `vectos_search_code` before using `grep`, `find`, `glob`, or broad file reads.",
-		"",
-		"If the project is not yet indexed or `vectos_search_code` returns no useful results, run `vectos_index_project` and retry `vectos_search_code`.",
-		"",
-		"Use `grep`, `glob`, and direct file reads only as a fallback when Vectos has no useful results or when you need exact pattern matching.",
-		claudeGuidanceEnd,
-	}, "\n")
+	return managedGuidance(claudeGuidanceStart, claudeGuidanceEnd)
 }
 
 func readJSONConfig(path string) (map[string]interface{}, error) {

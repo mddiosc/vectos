@@ -55,10 +55,27 @@ This searches the selected Nx project together with any included dependency root
 
 `search` uses semantic retrieval first when the active index metadata matches the current embedding provider, then falls back to text search if semantic retrieval is unavailable or incompatible.
 
+### Search Documentation
+
+To search the documentation index (separate from source code):
+
+```bash
+vectos search --docs "getting started"
+vectos search --project web --docs "authentication"
+```
+
+This uses the `--docs` flag to search `<project>-docs.db` instead of the source code database.
+
 ### Show index status
 
 ```bash
 vectos status
+```
+
+To see documentation index status instead:
+
+```bash
+vectos status --docs
 ```
 
 Inside an Nx workspace:

@@ -81,17 +81,7 @@ func (CodexAdapter) Remove(ctx Context) error {
 }
 
 func managedCodexGuidance() string {
-	return strings.Join([]string{
-		codexGuidanceStart,
-		"## Prefer Vectos MCP",
-		"",
-		"When Vectos MCP tools are available for a project, prefer `vectos_search_code` before using `grep`, `find`, `glob`, or broad file reads.",
-		"",
-		"If the project is not yet indexed or `vectos_search_code` returns no useful results, run `vectos_index_project` and retry `vectos_search_code`.",
-		"",
-		"Use `grep`, `glob`, and direct file reads only as a fallback when Vectos has no useful results or when you need exact pattern matching.",
-		codexGuidanceEnd,
-	}, "\n")
+	return managedGuidance(codexGuidanceStart, codexGuidanceEnd)
 }
 
 func readTOMLConfig(path string) (map[string]interface{}, error) {

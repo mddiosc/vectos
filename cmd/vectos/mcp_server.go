@@ -22,6 +22,13 @@ type indexProjectInput struct {
 	Path    string `json:"path" jsonschema:"path to a file or directory to index"`
 	Project string `json:"project,omitempty" jsonschema:"optional Nx project name when indexing inside a workspace"`
 	Changed string `json:"changed,omitempty" jsonschema:"optional comma-separated changed file paths for incremental refresh"`
+	Docs    bool   `json:"docs,omitempty" jsonschema:"if true, index only documentation files into a separate docs database"`
+}
+
+type searchDocsInput struct {
+	Query   string `json:"query" jsonschema:"search query for documentation"`
+	Path    string `json:"path,omitempty" jsonschema:"optional project path to scope the search"`
+	Project string `json:"project,omitempty" jsonschema:"optional Nx project name when searching inside a workspace"`
 }
 
 func runMCP(projectBaseDir string, embedConfig config.EmbeddingConfig) {
@@ -65,6 +72,11 @@ func registerMCPTools(server *mcpSDK.Server, projectBaseDir string, embedConfig 
 		Name:        "search_code",
 		Description: "Search through the codebase using semantic search with keyword fallback. Guidance field may contain IDX_MISSING (index not ready) or IDX_STALE (index needs refresh).",
 	}, makeSearchCodeHandler(projectBaseDir, embedConfig))
+
+	mcpSDK.AddTool(server, &mcpSDK.Tool{
+		Name:        "search_docs",
+		Description: "Search through project documentation using semantic search",
+	}, makeSearchDocsHandler(projectBaseDir, embedConfig))
 
 	mcpSDK.AddTool(server, &mcpSDK.Tool{
 		Name:        "index_project",

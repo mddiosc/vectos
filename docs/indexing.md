@@ -73,6 +73,49 @@ Secret-prone `.env` files are intentionally excluded in the current phase, inclu
 
 To reduce search noise, the current default indexing path prioritizes higher-signal content categories. Files classified as `docs` and `dependency_metadata` are detected but skipped during indexing, so semantic retrieval stays focused on source code, scripts, and infrastructure/configuration that are more likely to answer code-navigation queries.
 
+## Documentation Indexing
+
+Vectos supports a separate documentation index alongside the source code index. This allows searching documentation (README, API docs, ADRs) without polluting code search results.
+
+### Supported Documentation Files
+
+In addition to the extensions listed above, Vectos can index these documentation formats:
+
+- `.md` — Markdown (already listed above)
+- `.mdx` — MDX (Markdown + JSX)
+- `.rst` — reStructuredText
+- `.adoc`, `.asciidoc` — AsciiDoc
+- `.tex`, `.latex` — LaTeX
+- `.txt` — Plain text
+
+These files are classified as `docs` category and skipped during normal indexing. To index them, use the `--docs` flag:
+
+```bash
+vectos index . --docs
+```
+
+This creates a separate database at `~/.vectos/projects/<project>/<project>-docs.db`.
+
+### Two-Index Model
+
+Vectos maintains two separate indexes per project:
+
+| Database | Content | Default search |
+|----------|----------|----------------|
+| `<project>.db` | Source code | `search_code` or `vectos search` |
+| `<project>-docs.db` | Documentation | `search_docs` or `vectos search --docs` |
+
+Both indexes share the same project scope and can coexist. The documentation index does not interfere with code search, and vice versa.
+
+### When to Use Documentation Search
+
+- README files, API documentation
+- Architecture decision records (ADRs)
+- Onboarding guides, code of conduct
+- Any `.md`, `.rst`, `.adoc`, `.tex` files in the project
+
+Agents working with documentation-heavy projects benefit from having a separate search capability that does not mix doc chunks with source code chunks.
+
 ## How Retrieval Works
 
 Vectos stores:

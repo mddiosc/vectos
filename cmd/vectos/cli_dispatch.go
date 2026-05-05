@@ -73,7 +73,7 @@ func runIndexCommand(app appContext, args []string) {
 		printSubcommandHelp("index")
 		os.Exit(1)
 	}
-	runIndex(app.projectBaseDir, app.embedConfig, app.flags.indexCmd.Arg(0), *app.flags.indexProject, parseChangedPaths(*app.flags.indexChanged))
+	runIndex(app.projectBaseDir, app.embedConfig, app.flags.indexCmd.Arg(0), *app.flags.indexProject, parseChangedPaths(*app.flags.indexChanged), *app.flags.indexDocs)
 }
 
 func runSearchCommand(app appContext, args []string) {
@@ -88,7 +88,7 @@ func runSearchCommand(app appContext, args []string) {
 		printSubcommandHelp("search")
 		os.Exit(1)
 	}
-	runSearch(app.projectBaseDir, app.embedConfig, app.flags.searchCmd.Arg(0), *app.flags.searchProject, *app.flags.searchFull)
+	runSearch(app.projectBaseDir, app.embedConfig, app.flags.searchCmd.Arg(0), *app.flags.searchProject, *app.flags.searchFull, *app.flags.searchDocs)
 }
 
 func runBenchmarkCommand(app appContext, args []string) {
@@ -114,7 +114,7 @@ func runStatusCommand(app appContext, args []string) {
 	if err := app.flags.statusCmd.Parse(args); err != nil {
 		fatalErr(err)
 	}
-	runStatus(app.projectBaseDir, *app.flags.statusProject)
+	runStatus(app.projectBaseDir, *app.flags.statusProject, *app.flags.statusDocs)
 }
 
 func runMCPCommand(app appContext, args []string) {

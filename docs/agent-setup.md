@@ -22,7 +22,7 @@ vectos setup claude
 vectos setup codex
 ```
 
-Each setup command creates or updates a Vectos MCP entry in the agent's user-wide config and may also manage a small global guidance block so the agent prefers `vectos_search_code` and `vectos_index_project` before broad file-search tools.
+Each setup command creates or updates a Vectos MCP entry in the agent's user-wide config and may also manage a small global guidance block so the agent prefers Vectos search tools before broad file-search tools.
 
 Configuration targets:
 
@@ -31,6 +31,14 @@ Configuration targets:
 - `codex` -> `~/.codex/config.toml` + `~/.codex/AGENTS.md`
 
 If the global guidance file for a target does not exist yet, the setup creates a managed Vectos guidance block. If it already exists, the setup asks before appending the managed Vectos section so unrelated user instructions are preserved.
+
+The managed guidance currently teaches the agent to:
+
+- prefer `vectos_search_code` / `search_code` for source-code lookups
+- prefer `vectos_search_docs` / `search_docs` for README files, ADRs, API docs, and other documentation
+- run `vectos_index_project` / `index_project` when the project is not indexed yet
+- use `docs: true` when it needs a dedicated documentation index
+- use incremental reindex with `changed` file paths after editing files, instead of defaulting to a full reindex
 
 Remove a configured integration:
 
@@ -70,14 +78,21 @@ Suggested MCP server name:
 Currently exposed MCP tools:
 
 - `vectos_search_code`
+- `vectos_search_docs`
 - `vectos_index_project`
 
 Recommended guidance for unsupported clients:
 
 ```text
-When Vectos MCP tools are available for a project, prefer `vectos_search_code` before using `grep`, `find`, `glob`, or broad file reads.
+When Vectos MCP tools are available for a project, prefer Vectos search tools before using `grep`, `find`, `glob`, or broad file reads.
 
-If the project is not yet indexed or `vectos_search_code` returns no useful results, run `vectos_index_project` and retry `vectos_search_code`.
+For source code and implementation lookups, use `vectos_search_code`.
+
+For README files, API docs, ADRs, and other documentation, use `vectos_search_docs`.
+
+If the project is not yet indexed or results are not useful, run `vectos_index_project` and retry. When you need documentation retrieval, index docs separately.
+
+If you create, move, or edit files while working, prefer an incremental refresh with `changed` paths before retrying search. Use a full reindex only when the affected scope is broad or uncertain.
 
 Use `grep`, `glob`, and direct file reads only as a fallback when Vectos has no useful results or when you need exact pattern matching.
 ```
