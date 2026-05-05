@@ -40,8 +40,9 @@ Vectos v0.2.0 reduced MCP search response tokens by ~60% using file-level output
 |---|---|---|
 | Missing index | `"This project does not have a usable Vectos index yet."` | `IDX_MISSING` |
 | Stale index | `"Refresh the project index before trusting semantic ranking."` | `IDX_STALE` |
+| Index action | `"Run index_project for this project or use \`vectos index .\`."` | `IDX_ACTION:index_project or 'vectos index .'` |
 
-The `guidance` field carries only the short error code. The `next_action` field carries the actual command to run (unchanged — keeps the existing `suggestedIndexAction` / `suggestedRefreshAction` strings).
+The `next_action` field carries the actual command to run (unchanged). The `guidance` field carries only the error code.
 
 **Rationale:** The verbose guidance is human-readable but wastes tokens in machine-to-machine protocol. Agents can decode `IDX_MISSING` as "index not ready, run index_project". The command to fix is already in `next_action`.
 
@@ -69,7 +70,7 @@ The `guidance` field carries only the short error code. The `next_action` field 
 
 **Choice:** Compute relative paths using `filepath.Rel(scope.PrimaryRoot, fr.FilePath)` in `buildMCPSearchPayload()`. Use the existing `PrimaryRoot` from the `workspace.Scope` already passed to the function.
 
-**Rationale:** The `Scope` is available in `buildMCPSearchPayload` and contains `PrimaryRoot`. `filepath.Rel` is a pure string operation — negligible overhead. Relative paths are typically 40-100 chars shorter than absolute paths.
+**Rationale:** The `Scope` is available in `buildMCPSearchPayload` and contains `PrimaryRoot`. `filepath.Rel` is a single syscall — negligible overhead. Relative paths are typically 40-100 chars shorter than absolute paths.
 
 **Alternatives considered:**
 - Compute relative path once and cache (already per-request, no caching needed).
@@ -106,11 +107,11 @@ The `guidance` field carries only the short error code. The `next_action` field 
 |---|---|
 | Agent clients parse guidance by exact English string | Document codes in MCP tool description; codes are self-documenting. Provide fallback decoding logic in agent SDKs. |
 | Removing Language/Category degrades embedding quality | Run benchmark before/after; revert if hit rate drops >5%. |
-| Relative path computation adds latency | `filepath.Rel` is a pure string operation; negligible compared to embedding lookup. Falls back to absolute path if `filepath.Rel` fails. |
+| Relative path computation adds latency | `filepath.Rel` is a single syscall; negligible compared to embedding lookup. |
 
 ## Migration Plan
 
-1. **Update MCP tool descriptions** in `mcp_server.go` to document error codes (`IDX_MISSING`, `IDX_STALE`).
+1. **Update MCP tool descriptions** in `mcp_server.go` to document error codes (`IDX_MISSING`, `IDX_STALE`, `IDX_ACTION:*`).
 2. **Update `mcp_format.go`** with guidance codes and field removals.
 3. **Update tests** in `mcp_format_test.go` and `mcp_payload_test.go` with new field expectations.
 4. **Update `buildSemanticContent()`** to remove Language/Category prefix.

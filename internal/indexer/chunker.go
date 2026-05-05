@@ -350,11 +350,7 @@ func (s *SimpleChunker) buildChunk(filePath, language string, chunkLines []strin
 
 func buildSemanticContent(filePath, language, chunkContent string) string {
 	var sections []string
-	sections = append(sections,
-		"File: "+filepath.Base(filePath),
-		"Language: "+language,
-		"Category: "+classifyCategory(language),
-	)
+	sections = append(sections, "File: "+filepath.Base(filePath))
 
 	if signature := extractSignature(language, chunkContent); signature != "" {
 		sections = append(sections, "Signature: "+signature)

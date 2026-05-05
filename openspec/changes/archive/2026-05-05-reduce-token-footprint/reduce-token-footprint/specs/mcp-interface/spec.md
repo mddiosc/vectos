@@ -44,5 +44,5 @@ The system SHALL group multiple chunks from the same file into a single MCP sear
 ## REMOVED Requirements
 
 ### Requirement: MCP search result includes rank, file_name, language, and category fields
-**Reason:** These fields are redundant or derivable by the client. `Rank` is inferable from array position. `FileName` is `filepath.Base(file_path)`. `Language` is derivable from file extension. `Category` is reconstructable from language via `classifyCategory()` logic.
-**Migration:** Agent clients should derive `language` from the file extension of `file_path`, then derive `category` from language using `classifyCategory()` logic, rather than reading these fields directly from the response.
+**Reason:** These fields are redundant or derivable by the client. `Rank` is inferable from array position. `FileName` is `filepath.Base(file_path)`. `Language` is derivable from file extension. `Category` is reconstructable via `classifyCategory(language)` on the client side.
+**Migration:** Agent clients should derive these values from the remaining `file_path` and `language` fields rather than reading them directly from the response.

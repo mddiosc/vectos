@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"path/filepath"
 	"strings"
 
@@ -23,15 +24,11 @@ type mcpSearchPayload struct {
 }
 
 type mcpSearchFileResult struct {
-	Rank      int          `json:"rank"`
-	FilePath  string       `json:"file_path"`
-	FileName  string       `json:"file_name"`
-	Language  string      `json:"language,omitempty"`
-	Category  string      `json:"category,omitempty"`
-	Relevance float64     `json:"relevance,omitempty"`
+	FilePath   string             `json:"file_path"`
+	Relevance  int                `json:"relevance"`
 	LineRanges []storage.LineRange `json:"line_ranges"`
-	Signatures []string    `json:"signatures"`
-	Hint      string       `json:"hint,omitempty"`
+	Signatures []string           `json:"signatures"`
+	Hint       string             `json:"hint,omitempty"`
 }
 
 type mcpIndexPayload struct {
@@ -53,24 +50,26 @@ func buildMCPSearchPayload(scope *workspace.Scope, query string, searchRun searc
 
 	if len(searchRun.FileResults) > 0 {
 		payload.Results = make([]mcpSearchFileResult, 0, len(searchRun.FileResults))
-		for i, fr := range searchRun.FileResults {
+		for _, fr := range searchRun.FileResults {
+			relPath := fr.FilePath
+			if scope != nil && scope.PrimaryRoot != "" {
+				if p, err := filepath.Rel(scope.PrimaryRoot, fr.FilePath); err == nil {
+					relPath = p
+				}
+			}
 			hint := buildHintForFileResult(fr, query)
 			payload.Results = append(payload.Results, mcpSearchFileResult{
-				Rank:       i + 1,
-				FilePath:   fr.FilePath,
-				FileName:   fr.FileName,
-				Language:   fr.Language,
-				Category:   fr.Category,
-				Relevance:  fr.Relevance,
+				FilePath:   relPath,
+				Relevance:  int(math.Round(fr.Relevance * 100)),
 				LineRanges: fr.LineRanges,
 				Signatures: fr.Signatures,
-				Hint:      hint,
+				Hint:       hint,
 			})
 		}
 	}
 
 	if searchRun.Warning != "" {
-		payload.Guidance = "Refresh the project index before trusting semantic ranking."
+		payload.Guidance = "IDX_STALE"
 		payload.NextAction = suggestedRefreshAction(scope)
 	}
 
@@ -106,7 +105,7 @@ func buildHintForFileResult(fr storage.SearchFileResult, query string) string {
 func buildMCPMissingIndexPayload(scope *workspace.Scope) mcpSearchPayload {
 	return mcpSearchPayload{
 		Project:    scopeName(scope),
-		Guidance:   "This project does not have a usable Vectos index yet.",
+		Guidance:   "IDX_MISSING",
 		NextAction: suggestedIndexAction(scope),
 	}
 }

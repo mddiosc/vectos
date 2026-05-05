@@ -83,9 +83,9 @@ func TestMCPSearchPayloadHintForLowConfidence(t *testing.T) {
 		t.Fatal("expected results")
 	}
 	if highConfPayload.Results[0].Hint != "" {
-		t.Fatalf("expected no hint for high-confidence result (relevance=%f), got %q", highConfFile.Relevance, highConfPayload.Results[0].Hint)
+		t.Fatalf("expected no hint for high-confidence result (relevance=%d), got %q", int(highConfFile.Relevance*100), highConfPayload.Results[0].Hint)
 	}
 	if lowConfPayload.Results[0].Hint == "" {
-		t.Fatalf("expected hint for low-confidence result (relevance=%f)", lowConfFile.Relevance)
+		t.Fatalf("expected hint for low-confidence result (relevance=%d)", int(lowConfFile.Relevance*100))
 	}
 }
