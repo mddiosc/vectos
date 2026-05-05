@@ -18,6 +18,42 @@ Format per release:
 
 ---
 
+## v0.3.0 — 2026-05-05
+
+Feature release focused on documentation-aware retrieval, separate docs indexing/search workflows, and lower-noise agent guidance for MCP clients.
+
+### Added
+
+- Separate documentation index per project at `<project>-docs.db`, alongside the existing source-code index
+- `vectos search --docs`, `vectos index --docs`, and `vectos status --docs` flows for documentation-only operations from the CLI
+- `search_docs` MCP tool for searching documentation independently from source code
+- Documentation-format indexing support for `.rst`, `.adoc`, `.asciidoc`, `.tex`, `.latex`, and `.txt` files in docs-only mode
+- Shared managed setup guidance for `opencode`, `claude`, and `codex`, including docs-search and incremental reindex instructions for agents
+- Active OpenSpec coverage for the new `docs-search` capability, with the completed change archived after sync
+
+### Changed
+
+- MCP tool discovery now advertises `search_code`, `search_docs`, and `index_project`
+- MCP and CLI indexing now support dedicated documentation indexing through `docs: true` / `--docs` while preserving the existing source-code index
+- Agent setup guidance now teaches supported clients to prefer Vectos code search, Vectos docs search, and incremental reindex with `changed` paths before falling back to broad file search
+- Shared runtime search execution and content-category classification were consolidated to reduce drift between CLI, MCP, and chunking behavior
+
+### Fixed
+
+- Full documentation reindex now clears stale deleted-doc chunks instead of leaving old results searchable
+- CLI search dispatch now correctly separates normal code search from docs-only search
+- MCP docs guidance paths now resolve docs indexes safely even when no explicit project scope is passed
+- Documentation search results and docs-status reporting now stay consistent after reindex and return the expected file-level MCP payloads
+
+### Known Limitations
+
+- This remains an experimental/internal release. Stability and compatibility are not guaranteed.
+- Supported download platforms remain `darwin/arm64` and `linux/amd64` only.
+- Source code and documentation remain intentionally separated; mixed code-plus-doc search still requires choosing the appropriate tool or index explicitly.
+- Docs retrieval quality still uses the same general chunking and ranking foundations as code retrieval; documentation-specific ranking may need further tuning in future releases.
+
+---
+
 ## v0.2.0 — 2026-04-30
 
 Feature release focused on reducing agent token consumption by switching MCP search output from chunk-level to file-level, with signature-based pointers replacing truncated code previews.
