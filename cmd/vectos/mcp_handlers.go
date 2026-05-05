@@ -13,6 +13,21 @@ import (
 	"vectos/internal/workspace"
 )
 
+func docsIndexHasChunks(pm *storage.ProjectManager, scope *workspace.Scope) (bool, error) {
+	store, err := openStorageForScope(pm, scope, true)
+	if err != nil {
+		return false, err
+	}
+	defer store.Close()
+
+	stats, err := store.Stats()
+	if err != nil {
+		return false, err
+	}
+
+	return stats.ChunkCount > 0, nil
+}
+
 func makeSearchCodeHandler(projectBaseDir string, embedConfig config.EmbeddingConfig) func(context.Context, *mcpSDK.CallToolRequest, searchCodeInput) (*mcpSDK.CallToolResult, any, error) {
 	return func(ctx context.Context, req *mcpSDK.CallToolRequest, input searchCodeInput) (*mcpSDK.CallToolResult, any, error) {
 		scope, err := resolveToolScope(input.Path, input.Project)
@@ -25,7 +40,7 @@ func makeSearchCodeHandler(projectBaseDir string, embedConfig config.EmbeddingCo
 			return nil, nil, fmt.Errorf("failed to initialize project manager: %w", err)
 		}
 
-		store, err := openStorageForScope(pm, scope)
+		store, err := openStorageForScope(pm, scope, false)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to open storage: %w", err)
 		}
@@ -44,6 +59,62 @@ func makeSearchCodeHandler(projectBaseDir string, embedConfig config.EmbeddingCo
 		}
 
 		searchRun, err := executeSearch(store, embedConfig, input.Query, 5)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		payload := buildMCPSearchPayload(scope, input.Query, searchRun)
+		if len(payload.Results) == 0 {
+			hasDocs, docsErr := docsIndexHasChunks(pm, scope)
+			if docsErr == nil && hasDocs {
+				payload.Guidance = "TRY_DOCS"
+				payload.NextAction = "Try search_docs tool instead, or run index_project with docs: true to index documentation."
+			}
+		}
+
+		text, err := stringifyMCPResult(payload)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		return &mcpSDK.CallToolResult{Content: []mcpSDK.Content{&mcpSDK.TextContent{Text: text}}}, nil, nil
+	}
+}
+
+func makeSearchDocsHandler(projectBaseDir string, embedConfig config.EmbeddingConfig) func(context.Context, *mcpSDK.CallToolRequest, searchDocsInput) (*mcpSDK.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcpSDK.CallToolRequest, input searchDocsInput) (*mcpSDK.CallToolResult, any, error) {
+		scope, err := resolveToolScope(input.Path, input.Project)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		pm, err := storage.NewProjectManager(projectBaseDir)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to initialize project manager: %w", err)
+		}
+
+		store, err := openStorageForScope(pm, scope, true)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to open docs storage: %w", err)
+		}
+		defer store.Close()
+
+		stats, err := store.Stats()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to inspect docs index state: %w", err)
+		}
+		if stats.ChunkCount == 0 {
+			payload := buildMCPSearchPayload(scope, input.Query, searchRun{Results: []storage.CodeChunk{}})
+			payload.Guidance = "IDX_DOCS_MISSING"
+			payload.NextAction = "Use index_project with docs: true to index documentation files first."
+			text, err := stringifyMCPResult(payload)
+			if err != nil {
+				return nil, nil, err
+			}
+			return &mcpSDK.CallToolResult{Content: []mcpSDK.Content{&mcpSDK.TextContent{Text: text}}}, nil, nil
+		}
+
+		searchRun, err := executeSearchDocs(store, embedConfig, input.Query, 5)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -74,7 +145,12 @@ func makeIndexProjectHandler(projectBaseDir string, embedConfig config.Embedding
 		if err != nil {
 			return nil, nil, err
 		}
-		store, err := storage.NewSQLiteStorageForProjectName(pm, scope.Name)
+		var store *storage.SQLiteStorage
+		if input.Docs {
+			store, err = storage.NewSQLiteStorageForDocsProjectName(pm, scope.Name)
+		} else {
+			store, err = storage.NewSQLiteStorageForProjectName(pm, scope.Name)
+		}
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to open storage: %w", err)
 		}
@@ -89,7 +165,7 @@ func makeIndexProjectHandler(projectBaseDir string, embedConfig config.Embedding
 		}
 
 		chunker := indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10}, embedClient)
-		paths, skippedPaths, err := collectIndexablePaths(scope.Roots)
+		paths, skippedPaths, err := collectIndexablePaths(scope.Roots, input.Docs)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -100,6 +176,9 @@ func makeIndexProjectHandler(projectBaseDir string, embedConfig config.Embedding
 			if err != nil {
 				return nil, nil, err
 			}
+		}
+		if err := prepareStoreForIndexing(store, changedPaths); err != nil {
+			return nil, nil, err
 		}
 
 		indexedFiles := 0

@@ -11,8 +11,22 @@ import (
 	"vectos/internal/storage"
 )
 
-func runSearch(projectBaseDir string, embedConfig config.EmbeddingConfig, query string, projectName string, full bool) {
+var cliCodeSearch = executeSearch
+var cliDocsSearch = executeSearchDocs
+
+func executeSearchForCLI(store *storage.SQLiteStorage, embedConfig config.EmbeddingConfig, query string, docsOnly bool) (searchRun, error) {
+	if docsOnly {
+		return cliDocsSearch(store, embedConfig, query, 5)
+	}
+	return cliCodeSearch(store, embedConfig, query, 5)
+}
+
+func runSearch(projectBaseDir string, embedConfig config.EmbeddingConfig, query string, projectName string, full bool, docsOnly bool) {
 	fmt.Printf("Searching: %q\n", query)
+
+	if docsOnly {
+		fmt.Printf("Mode: documentation search\n")
+	}
 
 	scope, err := resolveRuntimeScope(projectName)
 	if err != nil {
@@ -24,13 +38,13 @@ func runSearch(projectBaseDir string, embedConfig config.EmbeddingConfig, query 
 		log.Fatalf("error initializing project manager: %v", err)
 	}
 
-	store, err := openStorageForScope(pm, scope)
+	store, err := openStorageForScope(pm, scope, docsOnly)
 	if err != nil {
 		log.Fatalf("error opening database: %v", err)
 	}
 	defer store.Close()
 
-	searchRun, err := executeSearch(store, embedConfig, query, 5)
+	searchRun, err := executeSearchForCLI(store, embedConfig, query, docsOnly)
 	if err != nil {
 		log.Fatalf("error running search: %v", err)
 	}
@@ -47,7 +61,7 @@ func runSearch(projectBaseDir string, embedConfig config.EmbeddingConfig, query 
 	fmt.Print(formatSearchResults(query, results, searchRun.Mode, full))
 }
 
-func runStatus(projectBaseDir string, projectName string) {
+func runStatus(projectBaseDir string, projectName string, docsOnly bool) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("error resolving home directory: %v", err)
@@ -67,7 +81,7 @@ func runStatus(projectBaseDir string, projectName string) {
 		log.Fatalf("error initializing project manager: %v", err)
 	}
 
-	store, err := openStorageForScope(pm, scope)
+	store, err := openStorageForScope(pm, scope, docsOnly)
 	if err != nil {
 		log.Fatalf("error opening database: %v", err)
 	}
@@ -79,6 +93,9 @@ func runStatus(projectBaseDir string, projectName string) {
 	}
 
 	fmt.Println("Vectos status")
+	if docsOnly {
+		fmt.Println("Mode: documentation index")
+	}
 	if scope != nil {
 		fmt.Printf("Project scope: %s\n", scope.Name)
 		if scope.WorkspaceType != "" {

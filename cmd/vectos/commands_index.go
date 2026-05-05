@@ -12,8 +12,19 @@ import (
 	"vectos/internal/workspace"
 )
 
-func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePath string, projectName string, changedPaths []string) {
+func prepareStoreForIndexing(store *storage.SQLiteStorage, changedPaths []string) error {
+	if len(changedPaths) > 0 {
+		return nil
+	}
+	return store.DeleteAllChunks()
+}
+
+func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePath string, projectName string, changedPaths []string, docsOnly bool) {
 	fmt.Printf("Indexing: %s\n", filePath)
+
+	if docsOnly {
+		fmt.Printf("Mode: documentation only\n")
+	}
 
 	absolutePath, err := filepath.Abs(filePath)
 	if err != nil {
@@ -40,7 +51,13 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 	if err != nil {
 		log.Fatalf("error resolving embedding provider: %v", err)
 	}
-	store, err := storage.NewSQLiteStorageForProjectName(pm, scope.Name)
+
+	var store *storage.SQLiteStorage
+	if docsOnly {
+		store, err = storage.NewSQLiteStorageForDocsProjectName(pm, scope.Name)
+	} else {
+		store, err = storage.NewSQLiteStorageForProjectName(pm, scope.Name)
+	}
 	if err != nil {
 		log.Fatalf("error opening database: %v", err)
 	}
@@ -55,7 +72,7 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 	}
 
 	chunker := indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10}, embedClient)
-	paths, skippedPaths, err := collectIndexablePaths(scope.Roots)
+	paths, skippedPaths, err := collectIndexablePaths(scope.Roots, docsOnly)
 	if err != nil {
 		log.Fatalf("error collecting indexable paths: %v", err)
 	}
@@ -65,6 +82,9 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 		if err != nil {
 			log.Fatalf("error filtering changed paths: %v", err)
 		}
+	}
+	if err := prepareStoreForIndexing(store, changedPaths); err != nil {
+		log.Fatalf("error preparing index storage: %v", err)
 	}
 
 	totalFiles := len(paths)

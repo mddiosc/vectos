@@ -8,16 +8,8 @@ import (
 	"strings"
 
 	"vectos/internal/config"
-	"vectos/internal/embeddings"
 	"vectos/internal/storage"
 )
-
-type searchRun struct {
-	Results        []storage.CodeChunk
-	FileResults    []storage.SearchFileResult
-	Mode           string
-	Warning        string
-}
 
 type retrievalBenchmarkFile struct {
 	Name    string                    `json:"name,omitempty"`
@@ -25,9 +17,9 @@ type retrievalBenchmarkFile struct {
 }
 
 type retrievalBenchmarkQuery struct {
-	Name           string                  `json:"name"`
-	Query          string                  `json:"query"`
-	ExpectedFiles  []string                `json:"expected_files,omitempty"`
+	Name           string                   `json:"name"`
+	Query          string                   `json:"query"`
+	ExpectedFiles  []string                 `json:"expected_files,omitempty"`
 	ExpectedChunks []retrievalExpectedChunk `json:"expected_chunks,omitempty"`
 }
 
@@ -46,53 +38,6 @@ type benchmarkQueryResult struct {
 	Results   []storage.CodeChunk
 }
 
-func executeSearch(store *storage.SQLiteStorage, embedConfig config.EmbeddingConfig, query string, limit int) (searchRun, error) {
-	run := searchRun{Mode: "text"}
-
-	embedClient, providerInfo, err := embeddings.ResolveEmbedder(embedConfig)
-	if err != nil {
-		results, textErr := store.SearchText(query)
-		if textErr != nil {
-			return searchRun{}, textErr
-		}
-		run.Results = limitResults(results, limit)
-		return run, nil
-	}
-
-	requiresReindex, err := store.RequiresReindex(providerInfo.Provider, providerInfo.Model, providerInfo.Dimensions)
-	if err == nil && requiresReindex {
-		results, textErr := store.SearchText(query)
-		if textErr != nil {
-			return searchRun{}, textErr
-		}
-		run.Warning = "index metadata does not match current embedding provider; semantic results may be stale until reindex"
-		run.Mode = "text_stale_index"
-		run.Results = limitResults(results, limit)
-		return run, nil
-	}
-
-	queryVector, err := embedClient.GetEmbedding(query)
-	if err == nil {
-		results, semanticErr := store.SearchSemantic(queryVector, hybridCandidateLimit)
-		if semanticErr != nil {
-			return searchRun{}, semanticErr
-		}
-		if len(results) > 0 {
-			run.Mode = "semantic_hybrid"
-			run.Results = rerankHybridResults(query, results, limit)
-			run.FileResults = storage.CollapseFileResults(run.Results, 5)
-			return run, nil
-		}
-	}
-
-	results, textErr := store.SearchText(query)
-	if textErr != nil {
-		return searchRun{}, textErr
-	}
-	run.Results = limitResults(results, limit)
-	return run, nil
-}
-
 func runBenchmark(projectBaseDir string, embedConfig config.EmbeddingConfig, fixturePath string, projectName string) {
 	fixture, absFixturePath, err := loadBenchmarkFile(fixturePath)
 	if err != nil {
@@ -109,7 +54,7 @@ func runBenchmark(projectBaseDir string, embedConfig config.EmbeddingConfig, fix
 		logFatalf("error initializing project manager: %v", err)
 	}
 
-	store, err := openStorageForScope(pm, scope)
+	store, err := openStorageForScope(pm, scope, false)
 	if err != nil {
 		logFatalf("error opening database: %v", err)
 	}

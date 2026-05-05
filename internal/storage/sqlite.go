@@ -102,6 +102,36 @@ func NewSQLiteStorageForProjectName(pm *ProjectManager, projectName string) (*SQ
 	return storage, nil
 }
 
+// NewSQLiteStorageForDocsProjectName inicializa la base de datos de documentación para un nombre lógico de proyecto.
+func NewSQLiteStorageForDocsProjectName(pm *ProjectManager, projectName string) (*SQLiteStorage, error) {
+	_, err := pm.EnsureProjectDirForName(projectName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ensure project directory: %w", err)
+	}
+
+	dbPath, err := pm.GetDatabasePathForName(projectName, "-docs")
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve docs database path: %w", err)
+	}
+
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open docs database: %w", err)
+	}
+
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("failed to ping docs database: %w", err)
+	}
+
+	storage := &SQLiteStorage{db: db, dbPath: dbPath}
+
+	if err := storage.migrate(); err != nil {
+		return nil, fmt.Errorf("failed to migrate docs database: %w", err)
+	}
+
+	return storage, nil
+}
+
 // migrate crea las tablas necesarias si no existen.
 func (s *SQLiteStorage) migrate() error {
 	query := `
@@ -194,6 +224,15 @@ func (s *SQLiteStorage) DeleteChunksByPathPrefix(pathPrefix string) error {
 	_, err := s.db.Exec(`DELETE FROM code_chunks WHERE file_path = ? OR file_path LIKE ?`, pathPrefix, pathPrefix+"/%")
 	if err != nil {
 		return fmt.Errorf("failed to delete chunks by path prefix: %w", err)
+	}
+	return nil
+}
+
+// DeleteAllChunks elimina todos los chunks del índice activo, preservando el metadata del índice.
+func (s *SQLiteStorage) DeleteAllChunks() error {
+	_, err := s.db.Exec(`DELETE FROM code_chunks`)
+	if err != nil {
+		return fmt.Errorf("failed to delete all chunks: %w", err)
 	}
 	return nil
 }
@@ -308,12 +347,15 @@ func (s *SQLiteStorage) RequiresReindex(provider, model string, dimensions int) 
 }
 
 // SearchSemantic performs cosine similarity search over stored embeddings.
-func (s *SQLiteStorage) SearchSemantic(queryVector []float32, limit int) ([]CodeChunk, error) {
+func (s *SQLiteStorage) SearchSemantic(queryVector []float32, limit int, includeDocs bool) ([]CodeChunk, error) {
 	if len(queryVector) == 0 {
 		return nil, nil
 	}
 
-	sqlQuery := `SELECT id, file_path, content, start_line, end_line, language, category, created_at, embedding, signature, purpose FROM code_chunks WHERE embedding IS NOT NULL AND length(embedding) > 0 AND (category IS NULL OR category NOT IN ('docs', 'dependency_metadata'))`
+	sqlQuery := `SELECT id, file_path, content, start_line, end_line, language, category, created_at, embedding, signature, purpose FROM code_chunks WHERE embedding IS NOT NULL AND length(embedding) > 0`
+	if !includeDocs {
+		sqlQuery += ` AND (category IS NULL OR category NOT IN ('docs', 'dependency_metadata'))`
+	}
 	rows, err := s.db.Query(sqlQuery)
 	if err != nil {
 		return nil, fmt.Errorf("semantic search query failed: %w", err)

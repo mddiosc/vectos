@@ -6,11 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"vectos/internal/content"
 	"vectos/internal/storage"
 	"vectos/internal/workspace"
 )
 
-func collectIndexablePaths(inputPaths []string) ([]string, []string, error) {
+func collectIndexablePaths(inputPaths []string, docsOnly bool) ([]string, []string, error) {
 	var paths []string
 	var skippedPaths []string
 	seen := map[string]struct{}{}
@@ -28,7 +29,7 @@ func collectIndexablePaths(inputPaths []string) ([]string, []string, error) {
 
 		if !info.IsDir() {
 			if language, err := detectLanguage(absPath); err == nil {
-				if !shouldIndexLanguage(language) {
+				if !shouldIndexLanguage(language, docsOnly) {
 					if _, ok := skippedSeen[absPath]; !ok {
 						skippedPaths = append(skippedPaths, absPath)
 						skippedSeen[absPath] = struct{}{}
@@ -57,7 +58,7 @@ func collectIndexablePaths(inputPaths []string) ([]string, []string, error) {
 			}
 
 			if language, err := detectLanguage(current); err == nil {
-				if !shouldIndexLanguage(language) {
+				if !shouldIndexLanguage(language, docsOnly) {
 					if _, ok := skippedSeen[current]; !ok {
 						skippedPaths = append(skippedPaths, current)
 						skippedSeen[current] = struct{}{}
@@ -92,8 +93,11 @@ func shouldSkipDir(name string) bool {
 	}
 }
 
-func shouldIndexLanguage(language string) bool {
+func shouldIndexLanguage(language string, docsOnly bool) bool {
 	category := classifyCategory(language)
+	if docsOnly {
+		return category == "docs"
+	}
 	return category != "docs" && category != "dependency_metadata"
 }
 
@@ -216,11 +220,22 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-func openStorageForScope(pm *storage.ProjectManager, scope *workspace.Scope) (*storage.SQLiteStorage, error) {
+func openStorageForScope(pm *storage.ProjectManager, scope *workspace.Scope, docsOnly bool) (*storage.SQLiteStorage, error) {
 	if scope == nil || strings.TrimSpace(scope.Name) == "" {
-		return storage.NewSQLiteStorage(pm)
+		wd, err := os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+		resolved, err := workspace.ResolveScope(wd, "")
+		if err != nil {
+			return nil, err
+		}
+		scope = &resolved
 	}
 
+	if docsOnly {
+		return storage.NewSQLiteStorageForDocsProjectName(pm, scope.Name)
+	}
 	return storage.NewSQLiteStorageForProjectName(pm, scope.Name)
 }
 
@@ -351,6 +366,14 @@ func detectLanguage(path string) (string, error) {
 		return "yaml", nil
 	case ".yaml":
 		return "yaml", nil
+	case ".rst":
+		return "rst", nil
+	case ".adoc", ".asciidoc":
+		return "asciidoc", nil
+	case ".tex", ".latex":
+		return "latex", nil
+	case ".txt":
+		return "text", nil
 	case ".bzl":
 		return "bazel.bzl", nil
 	default:
@@ -359,25 +382,5 @@ func detectLanguage(path string) (string, error) {
 }
 
 func classifyCategory(language string) string {
-	switch {
-	case language == "shell":
-		return "scripts"
-	case language == "markdown", language == "gitignore":
-		return "docs"
-	case language == "json", language == "toml", language == "ini", language == "xml", language == "properties", language == "makefile", language == "gradle", language == "lockfile", language == "config":
-		return classifyMetadataCategory(language)
-	case language == "dockerfile", strings.HasPrefix(language, "yaml"), strings.HasPrefix(language, "bazel"):
-		return "infra_config"
-	default:
-		return "source"
-	}
-}
-
-func classifyMetadataCategory(language string) string {
-	switch language {
-	case "json", "toml", "properties", "xml", "makefile", "gradle", "lockfile":
-		return "dependency_metadata"
-	default:
-		return "infra_config"
-	}
+	return content.ClassifyCategory(language)
 }
