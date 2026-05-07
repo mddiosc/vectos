@@ -18,6 +18,16 @@ func managedGuidance(startMarker string, endMarker string) string {
 		"If you create, move, or edit files while working, prefer an incremental refresh with `changed` paths before retrying search. Use a full reindex only when the affected scope is broad or uncertain.",
 		"",
 		"Use `grep`, `glob`, and direct file reads only as a fallback when Vectos has no useful results or when you need exact pattern matching.",
+		"",
+		"## Nx Monorepo Workflow",
+		"",
+		"When working inside an Nx monorepo, use the `project` parameter to scope search and indexing to a specific Nx project:",
+		"",
+		"- `search_code` and `search_docs`: pass `project: \"<project-name>\"` to scope results to that project and its internal dependencies.",
+		"- `index_project`: pass `project: \"<project-name>\"` to index a specific Nx project. Vectos automatically indexes the project and all its internal dependency libs.",
+		"- `list_projects`: call this tool to discover available Nx project names in the workspace before searching or indexing.",
+		"",
+		"If the search returns guidance `IDX_MISSING`, index the project first with `index_project` using the correct `project` name.",
 		endMarker,
 	}, "\n")
 }
