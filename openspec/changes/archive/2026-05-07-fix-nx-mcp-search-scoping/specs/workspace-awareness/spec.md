@@ -22,11 +22,13 @@ When the system cannot determine which Nx project to use because the path is the
 - **WHEN** `ResolveScope` is called with a path equal to the Nx workspace root and no project name, and the workspace contains exactly one project
 - **THEN** the system SHALL automatically select that project (existing behavior preserved)
 
-## MODIFIED Requirements
-
 ### Requirement: Vectos SHALL require explicit project selection when needed
-Vectos SHALL expose explicit logical-project selection for Nx workspaces when the workspace contains multiple candidate projects. When selection is required, the error message SHALL include the list of available project names to guide the caller.
+Vectos SHALL expose explicit logical-project selection for Nx workspaces when the workspace contains multiple candidate projects.
 
 #### Scenario: Select project from Nx workspace
+- **WHEN** the current repository contains multiple Nx projects
+- **THEN** Vectos SHALL require the caller to identify which Nx project scope to index or search
+
+#### Scenario: Ambiguous selection returns actionable error
 - **WHEN** the current repository contains multiple Nx projects and the requested path does not uniquely identify one
-- **THEN** Vectos SHALL return an error that identifies the ambiguity and lists the available project names so the caller can retry with an explicit project selection
+- **THEN** Vectos SHALL return an error that lists the available project names so the caller can retry with an explicit selection
