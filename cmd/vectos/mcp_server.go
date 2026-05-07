@@ -19,7 +19,7 @@ type searchCodeInput struct {
 }
 
 type indexProjectInput struct {
-	Path    string `json:"path" jsonschema:"path to a file or directory to index"`
+	Path    string `json:"path,omitempty" jsonschema:"optional path to a file or directory to index"`
 	Project string `json:"project,omitempty" jsonschema:"optional Nx project name when indexing inside a workspace"`
 	Changed string `json:"changed,omitempty" jsonschema:"optional comma-separated changed file paths for incremental refresh"`
 	Docs    bool   `json:"docs,omitempty" jsonschema:"if true, index only documentation files into a separate docs database"`
@@ -29,6 +29,14 @@ type searchDocsInput struct {
 	Query   string `json:"query" jsonschema:"search query for documentation"`
 	Path    string `json:"path,omitempty" jsonschema:"optional project path to scope the search"`
 	Project string `json:"project,omitempty" jsonschema:"optional Nx project name when searching inside a workspace"`
+}
+
+type listProjectsInput struct {
+	Path string `json:"path,omitempty" jsonschema:"optional path to detect the Nx workspace"`
+}
+
+type listProjectsOutput struct {
+	Projects []string `json:"projects"`
 }
 
 func runMCP(projectBaseDir string, embedConfig config.EmbeddingConfig) {
@@ -82,6 +90,11 @@ func registerMCPTools(server *mcpSDK.Server, projectBaseDir string, embedConfig 
 		Name:        "index_project",
 		Description: "Index a directory to make it searchable via semantic embeddings",
 	}, makeIndexProjectHandler(projectBaseDir, embedConfig))
+
+	mcpSDK.AddTool(server, &mcpSDK.Tool{
+		Name:        "list_projects",
+		Description: "List available Nx project names in the workspace. Returns an empty array if the path is not inside an Nx workspace.",
+	}, makeListProjectsHandler())
 }
 
 func stringifyMCPResult(result interface{}) (string, error) {

@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+const nxGraphPrintFlag = "--print"
+
 type Scope struct {
 	Name          string   `json:"name"`
 	WorkspaceRoot string   `json:"workspace_root,omitempty"`
@@ -97,7 +99,7 @@ func ResolveScope(path string, projectName string) (Scope, error) {
 		return Scope{}, fmt.Errorf("nx workspace found at %s but no projects were resolved", workspaceRoot)
 	}
 
-	selected, err := selectNxProject(projects, projectName, startDir)
+	selected, err := selectNxProject(projects, projectName, startDir, workspaceRoot)
 	if err != nil {
 		return Scope{}, err
 	}
@@ -333,17 +335,17 @@ func nxGraphCommands(workspaceRoot string) [][]string {
 	commands := make([][]string, 0, 6)
 	localNx := filepath.Join(workspaceRoot, "node_modules", ".bin", "nx")
 	if _, err := os.Stat(localNx); err == nil {
-		commands = append(commands, []string{localNx, "graph", "--print"})
+		commands = append(commands, []string{localNx, "graph", nxGraphPrintFlag})
 	}
 	if _, err := os.Stat(localNx + ".cmd"); err == nil {
-		commands = append(commands, []string{localNx + ".cmd", "graph", "--print"})
+		commands = append(commands, []string{localNx + ".cmd", "graph", nxGraphPrintFlag})
 	}
 	commands = append(commands,
-		[]string{"nx", "graph", "--print"},
-		[]string{"npx", "nx", "graph", "--print"},
-		[]string{"pnpm", "nx", "graph", "--print"},
-		[]string{"yarn", "nx", "graph", "--print"},
-		[]string{"bunx", "nx", "graph", "--print"},
+		[]string{"nx", "graph", nxGraphPrintFlag},
+		[]string{"npx", "nx", "graph", nxGraphPrintFlag},
+		[]string{"pnpm", "nx", "graph", nxGraphPrintFlag},
+		[]string{"yarn", "nx", "graph", nxGraphPrintFlag},
+		[]string{"bunx", "nx", "graph", nxGraphPrintFlag},
 	)
 	return commands
 }
@@ -368,35 +370,54 @@ func runNxGraphCommand(workspaceRoot string, args []string) ([]byte, error) {
 	return output, nil
 }
 
+var ignoredNxDirs = map[string]struct{}{
+	".git": {}, "node_modules": {}, ".opencode": {}, ".vectos": {},
+	"coverage": {}, "playwright-report": {}, "test-results": {},
+	"dist": {}, ".next": {}, "build": {},
+}
+
 func discoverNxProjects(workspaceRoot string) ([]NxProject, error) {
 	projectMap := map[string]string{}
-	err := filepath.Walk(workspaceRoot, func(current string, info os.FileInfo, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if info.IsDir() {
-			switch info.Name() {
-			case ".git", "node_modules", ".opencode", ".vectos", "coverage", "playwright-report", "test-results", "dist", ".next", "build":
-				return filepath.SkipDir
-			default:
-				return nil
-			}
-		}
-		if info.Name() != "project.json" {
-			return nil
-		}
-
-		project, err := readNxProjectFile(current, workspaceRoot)
-		if err != nil {
-			return nil
-		}
-		projectMap[project.Name] = project.Root
-		return nil
+	err := walkNxProjectFiles(workspaceRoot, func(projectFile string) {
+		addNxProjectFromFile(projectMap, projectFile, workspaceRoot)
 	})
 	if err != nil {
 		return nil, err
 	}
+	return nxProjectsFromMap(projectMap), nil
+}
 
+func walkNxProjectFiles(workspaceRoot string, visit func(string)) error {
+	return filepath.Walk(workspaceRoot, func(current string, info os.FileInfo, walkErr error) error {
+		return handleNxWalkEntry(current, info, walkErr, visit)
+	})
+}
+
+func handleNxWalkEntry(current string, info os.FileInfo, walkErr error, visit func(string)) error {
+	if walkErr != nil {
+		return walkErr
+	}
+	if info.IsDir() {
+		if _, skip := ignoredNxDirs[info.Name()]; skip {
+			return filepath.SkipDir
+		}
+		return nil
+	}
+	if info.Name() == "project.json" {
+		visit(current)
+	}
+	return nil
+}
+
+func addNxProjectFromFile(projectMap map[string]string, projectFile string, workspaceRoot string) {
+	project, err := readNxProjectFile(projectFile, workspaceRoot)
+	if err != nil {
+		return // malformed or unreadable project.json is silently skipped
+	}
+	projectMap[project.Name] = project.Root
+}
+
+func nxProjectsFromMap(projectMap map[string]string) []NxProject {
 	projects := make([]NxProject, 0, len(projectMap))
 	for name, root := range projectMap {
 		projects = append(projects, NxProject{Name: name, Root: root})
@@ -404,7 +425,7 @@ func discoverNxProjects(workspaceRoot string) ([]NxProject, error) {
 	sort.Slice(projects, func(i, j int) bool {
 		return projects[i].Name < projects[j].Name
 	})
-	return projects, nil
+	return projects
 }
 
 func readNxProjectFile(projectFile string, workspaceRoot string) (NxProject, error) {
@@ -440,7 +461,7 @@ func readNxProjectFile(projectFile string, workspaceRoot string) (NxProject, err
 	return NxProject{Name: name, Root: root}, nil
 }
 
-func selectNxProject(projects []NxProject, requestedName string, startDir string) (NxProject, error) {
+func selectNxProject(projects []NxProject, requestedName string, startDir string, workspaceRoot string) (NxProject, error) {
 	if requestedName != "" {
 		for _, project := range projects {
 			if project.Name == requestedName {
@@ -448,6 +469,12 @@ func selectNxProject(projects []NxProject, requestedName string, startDir string
 			}
 		}
 		return NxProject{}, fmt.Errorf("nx project %q not found", requestedName)
+	}
+
+	// Check workspace-root ambiguity before containment matching so that a
+	// project with root "." never silently wins when multiple projects exist.
+	if startDir == workspaceRoot && len(projects) > 1 {
+		return NxProject{}, fmt.Errorf("path is the Nx workspace root; please specify a project name. Available projects: %s", strings.Join(nxProjectNames(projects), ", "))
 	}
 
 	for _, project := range projects {
@@ -460,11 +487,15 @@ func selectNxProject(projects []NxProject, requestedName string, startDir string
 		return projects[0], nil
 	}
 
+	return NxProject{}, fmt.Errorf("multiple Nx projects detected; select one explicitly: %s", strings.Join(nxProjectNames(projects), ", "))
+}
+
+func nxProjectNames(projects []NxProject) []string {
 	names := make([]string, 0, len(projects))
 	for _, project := range projects {
 		names = append(names, project.Name)
 	}
-	return NxProject{}, fmt.Errorf("multiple Nx projects detected; select one explicitly: %s", strings.Join(names, ", "))
+	return names
 }
 
 func sameOrUnder(path string, root string) bool {
