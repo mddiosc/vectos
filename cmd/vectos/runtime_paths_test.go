@@ -53,6 +53,43 @@ func TestResolveChangedPathKeepsPrimaryRootRelativePaths(t *testing.T) {
 	}
 }
 
+func TestResolveChangedPathResolvesDependencyRootRelativePaths(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	libRoot := filepath.Join(workspaceRoot, "libs", "lib-ui")
+	srcFile := filepath.Join(libRoot, "src", "button.tsx")
+	if err := os.MkdirAll(filepath.Dir(srcFile), 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	if err := os.WriteFile(srcFile, []byte("// button"), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	// EvalSymlinks resolves macOS /var → /private/var so string comparisons work.
+	realWorkspace, _ := filepath.EvalSymlinks(workspaceRoot)
+	realLibRoot, _ := filepath.EvalSymlinks(libRoot)
+	realSrcFile, _ := filepath.EvalSymlinks(srcFile)
+
+	scope := workspace.Scope{
+		Name:          "app-one",
+		WorkspaceRoot: realWorkspace,
+		PrimaryRoot:   filepath.Join(realWorkspace, "apps", "app-one"),
+		Roots: []string{
+			filepath.Join(realWorkspace, "apps", "app-one"),
+			realLibRoot,
+		},
+		WorkspaceType: "nx",
+	}
+
+	got, err := resolveChangedPath(scope, filepath.Join("src", "button.tsx"))
+	if err != nil {
+		t.Fatalf("resolveChangedPath returned error: %v", err)
+	}
+
+	if got != realSrcFile {
+		t.Fatalf("unexpected path: got %s want %s", got, realSrcFile)
+	}
+}
+
 func TestResolveToolScopeWithProjectOnlyResolvesFullScope(t *testing.T) {
 	workspaceRoot := t.TempDir()
 	writeNxWorkspace(t, workspaceRoot)
