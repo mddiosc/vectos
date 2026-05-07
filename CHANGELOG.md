@@ -18,6 +18,41 @@ Format per release:
 
 ---
 
+## v0.4.0 — 2026-05-07
+
+Feature release focused on Nx monorepo scoping correctness for MCP agents, plus internal code quality improvements across the indexing and handler layers.
+
+### Added
+
+- `list_projects` MCP tool — agents can now discover available Nx project names in a workspace before indexing or searching; returns `{"projects": []}` outside an Nx workspace
+- Nx monorepo workflow section in managed agent guidance — explains the `project` parameter, `list_projects`, and that indexing a project automatically includes its internal dependency libs
+- Complete `Scope` resolution when only `project` is given without `path` — `PrimaryRoot`, `WorkspaceRoot`, and `Roots` are now always populated using CWD as the workspace anchor
+
+### Changed
+
+- `index_project` MCP schema: `path` is now optional — agents can pass only `project` to scope indexing without providing an explicit path
+- Workspace-root ambiguity error now lists available project names — when `path` is the Nx workspace root and multiple projects exist, the error message includes the full list so agents can retry with an explicit selection
+- Workspace-root ambiguity check now runs before project containment matching — prevents a project with root `"."` from being silently auto-selected when multiple projects exist
+- CLI workspace ambiguity errors are now propagated instead of silently returning a nil scope
+- `skippedDirs` and `ignoredNxDirs` are now declared as `map[string]struct{}` tables instead of `switch/case` blocks, consistent across both packages
+- `detectLanguage` now uses a declarative `fileNameMatchers` table and `extLanguages` map instead of two large `switch` blocks
+- MCP handlers refactored to extract named functions (`runSearchCode`, `runSearchDocs`, `runIndexProject`, `runListProjects`) — closures are now single-line delegation
+- `collectIndexablePaths` and `filterChangedPaths` refactored with `pathAccumulator`, `absRoots`, and `toSet` helpers to eliminate duplicated deduplication logic
+- `discoverNxProjects` decomposed into `walkNxProjectFiles`, `handleNxWalkEntry`, `addNxProjectFromFile`, and `nxProjectsFromMap`
+- `nxGraphPrintFlag` extracted as a package-level constant to replace seven inline `"--print"` literals
+
+### Fixed
+
+- MCP search results now always use paths relative to `PrimaryRoot` when `project` is given without `path` — previously returned absolute paths due to incomplete scope resolution
+- `project` parameter outside an Nx workspace now returns an explicit error instead of silently opening the wrong project database
+
+### Known Limitations
+
+- This remains an experimental/internal release. Stability and compatibility are not guaranteed.
+- Supported download platforms remain `darwin/arm64` and `linux/amd64` only.
+
+---
+
 ## v0.3.0 — 2026-05-05
 
 Feature release focused on documentation-aware retrieval, separate docs indexing/search workflows, and lower-noise agent guidance for MCP clients.
