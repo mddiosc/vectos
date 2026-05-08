@@ -116,35 +116,42 @@ func mergeEmbeddingConfig(dst *EmbeddingConfig, src embeddingConfigDisk) {
 		dst.FallbackOrder = src.FallbackOrder
 	}
 
-	if src.Embedded.ModelName != nil && strings.TrimSpace(*src.Embedded.ModelName) != "" {
-		dst.Embedded.ModelName = strings.TrimSpace(*src.Embedded.ModelName)
-	}
-	if src.Embedded.ModelDir != nil && strings.TrimSpace(*src.Embedded.ModelDir) != "" {
-		dst.Embedded.ModelDir = strings.TrimSpace(*src.Embedded.ModelDir)
-	}
-	if src.Embedded.Enabled != nil {
-		dst.Embedded.Enabled = *src.Embedded.Enabled
-	}
-	if src.Embedded.AutoDownload != nil {
-		dst.Embedded.AutoDownload = *src.Embedded.AutoDownload
-	}
-	if src.Embedded.AssetBaseURL != nil && strings.TrimSpace(*src.Embedded.AssetBaseURL) != "" {
-		dst.Embedded.AssetBaseURL = strings.TrimSpace(*src.Embedded.AssetBaseURL)
-	}
-	if src.Embedded.TimeoutS != nil && *src.Embedded.TimeoutS > 0 {
-		dst.Embedded.TimeoutS = *src.Embedded.TimeoutS
-	}
+	mergeEmbeddedConfig(&dst.Embedded, src.Embedded)
+	mergeRemoteConfig(&dst.Remote, src.Remote)
+}
 
-	if src.Remote.BaseURL != nil && strings.TrimSpace(*src.Remote.BaseURL) != "" {
-		dst.Remote.BaseURL = strings.TrimSpace(*src.Remote.BaseURL)
+func mergeEmbeddedConfig(dst *EmbeddedProviderConfig, src embeddedProviderConfigDisk) {
+	if src.ModelName != nil && strings.TrimSpace(*src.ModelName) != "" {
+		dst.ModelName = strings.TrimSpace(*src.ModelName)
 	}
-	if src.Remote.Model != nil && strings.TrimSpace(*src.Remote.Model) != "" {
-		dst.Remote.Model = strings.TrimSpace(*src.Remote.Model)
+	if src.ModelDir != nil && strings.TrimSpace(*src.ModelDir) != "" {
+		dst.ModelDir = strings.TrimSpace(*src.ModelDir)
 	}
-	if src.Remote.TimeoutS != nil && *src.Remote.TimeoutS > 0 {
-		dst.Remote.TimeoutS = *src.Remote.TimeoutS
+	if src.Enabled != nil {
+		dst.Enabled = *src.Enabled
 	}
-	if src.Remote.Enabled != nil {
-		dst.Remote.Enabled = *src.Remote.Enabled
+	if src.AutoDownload != nil {
+		dst.AutoDownload = *src.AutoDownload
+	}
+	if src.AssetBaseURL != nil && strings.TrimSpace(*src.AssetBaseURL) != "" {
+		dst.AssetBaseURL = strings.TrimSpace(*src.AssetBaseURL)
+	}
+	if src.TimeoutS != nil && *src.TimeoutS > 0 {
+		dst.TimeoutS = *src.TimeoutS
+	}
+}
+
+func mergeRemoteConfig(dst *RemoteProviderConfig, src remoteProviderConfigDisk) {
+	if src.BaseURL != nil && strings.TrimSpace(*src.BaseURL) != "" {
+		dst.BaseURL = strings.TrimSpace(*src.BaseURL)
+	}
+	if src.Model != nil && strings.TrimSpace(*src.Model) != "" {
+		dst.Model = strings.TrimSpace(*src.Model)
+	}
+	if src.TimeoutS != nil && *src.TimeoutS > 0 {
+		dst.TimeoutS = *src.TimeoutS
+	}
+	if src.Enabled != nil {
+		dst.Enabled = *src.Enabled
 	}
 }

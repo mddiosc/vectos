@@ -24,12 +24,7 @@ func makeSearchCodeHandler(projectBaseDir string, embedConfig config.EmbeddingCo
 }
 
 func runSearchCode(projectBaseDir string, embedConfig config.EmbeddingConfig, input searchCodeInput) (*mcpSDK.CallToolResult, any, error) {
-	scope, err := resolveToolScope(input.Path, input.Project)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	pm, err := newProjectManager(projectBaseDir)
+	scope, pm, err := resolveScopeAndProjectManager(projectBaseDir, input)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -40,11 +35,9 @@ func runSearchCode(projectBaseDir string, embedConfig config.EmbeddingConfig, in
 	}
 	defer store.Close()
 
-	stats, err := store.Stats()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to inspect index state: %w", err)
-	}
-	if stats.ChunkCount == 0 {
+	if empty, err := isCodeIndexEmpty(store, scope); err != nil {
+		return nil, nil, err
+	} else if empty {
 		return mcpTextResult(buildMCPMissingIndexPayload(scope))
 	}
 
@@ -59,6 +52,31 @@ func runSearchCode(projectBaseDir string, embedConfig config.EmbeddingConfig, in
 	}
 
 	return mcpTextResult(payload)
+}
+
+// resolveScopeAndProjectManager resolves the tool scope and creates a project
+// manager for the given project base directory.
+func resolveScopeAndProjectManager(projectBaseDir string, input searchCodeInput) (*workspace.Scope, *storage.ProjectManager, error) {
+	scope, err := resolveToolScope(input.Path, input.Project)
+	if err != nil {
+		return nil, nil, err
+	}
+	pm, err := newProjectManager(projectBaseDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	return scope, pm, nil
+}
+
+// isCodeIndexEmpty checks whether the code index has any chunks.
+// Returns (true, nil) when the index is empty, (false, nil) when chunks
+// exist, or (false, err) on stats error.
+func isCodeIndexEmpty(store *storage.SQLiteStorage, scope *workspace.Scope) (bool, error) {
+	stats, err := store.Stats()
+	if err != nil {
+		return false, fmt.Errorf("failed to inspect index state: %w", err)
+	}
+	return stats.ChunkCount == 0, nil
 }
 
 func annotateWithDocsGuidance(pm *storage.ProjectManager, scope *workspace.Scope, payload *mcpSearchPayload) {
@@ -141,40 +159,12 @@ func makeIndexProjectHandler(projectBaseDir string, embedConfig config.Embedding
 }
 
 func runIndexProject(projectBaseDir string, embedConfig config.EmbeddingConfig, input indexProjectInput) (*mcpSDK.CallToolResult, any, error) {
-	scope, err := workspace.ResolveScope(input.Path, input.Project)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	pm, err := newProjectManager(projectBaseDir)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	store, err := openIndexStore(pm, scope.Name, input.Docs)
+	scope, store, embedClient, paths, skippedPaths, changedPaths, err := setupIndexRequest(projectBaseDir, embedConfig, input)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer store.Close()
 
-	embedClient, providerInfo, err := embeddings.ResolveEmbedder(embedConfig)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := store.SetIndexMetadata(storage.IndexMetadata{
-		Provider:   providerInfo.Provider,
-		Model:      providerInfo.Model,
-		Dimensions: providerInfo.Dimensions,
-	}); err != nil {
-		return nil, nil, err
-	}
-
-	paths, skippedPaths, err := resolveIndexPaths(scope, input)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	changedPaths := parseChangedPaths(input.Changed)
 	if err := prepareStoreForIndexing(store, changedPaths); err != nil {
 		return nil, nil, err
 	}
@@ -189,6 +179,54 @@ func runIndexProject(projectBaseDir string, embedConfig config.EmbeddingConfig, 
 	}
 
 	return mcpTextResult(buildMCPIndexPayload(scope, changedPaths, indexedFiles, count, len(skippedPaths)))
+}
+
+func setupIndexRequest(projectBaseDir string, embedConfig config.EmbeddingConfig, input indexProjectInput) (
+	scope workspace.Scope,
+	store *storage.SQLiteStorage,
+	embedClient embeddings.Embedder,
+	paths []string,
+	skippedPaths []string,
+	changedPaths []string,
+	err error,
+) {
+	scope, err = workspace.ResolveScope(input.Path, input.Project)
+	if err != nil {
+		return
+	}
+
+	var pm *storage.ProjectManager
+	pm, err = newProjectManager(projectBaseDir)
+	if err != nil {
+		return
+	}
+
+	store, err = openIndexStore(pm, scope.Name, input.Docs)
+	if err != nil {
+		return
+	}
+
+	var providerInfo embeddings.ProviderInfo
+	embedClient, providerInfo, err = embeddings.ResolveEmbedder(embedConfig)
+	if err != nil {
+		return
+	}
+
+	if err = store.SetIndexMetadata(storage.IndexMetadata{
+		Provider:   providerInfo.Provider,
+		Model:      providerInfo.Model,
+		Dimensions: providerInfo.Dimensions,
+	}); err != nil {
+		return
+	}
+
+	paths, skippedPaths, err = resolveIndexPaths(scope, input)
+	if err != nil {
+		return
+	}
+
+	changedPaths = parseChangedPaths(input.Changed)
+	return
 }
 
 func openIndexStore(pm *storage.ProjectManager, projectName string, docs bool) (*storage.SQLiteStorage, error) {

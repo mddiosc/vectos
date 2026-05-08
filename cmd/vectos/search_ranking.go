@@ -65,6 +65,12 @@ func rerankHybridResults(query string, candidates []storage.CodeChunk, limit int
 
 func computeHybridScore(query string, queryTokens []string, candidate storage.CodeChunk) float64 {
 	score := candidate.Score
+	score = applyContentBoosts(score, query, queryTokens, candidate)
+	score = applyPenalties(score, queryTokens, candidate)
+	return score
+}
+
+func applyContentBoosts(score float64, query string, queryTokens []string, candidate storage.CodeChunk) float64 {
 	contentLower := strings.ToLower(candidate.Content)
 	pathLower := strings.ToLower(filepath.ToSlash(candidate.FilePath))
 	pathTokens := tokenizePathForRanking(candidate.FilePath)
@@ -93,11 +99,14 @@ func computeHybridScore(query string, queryTokens []string, candidate storage.Co
 		score += hybridFallbackBoost
 	}
 
-	if isBroadImplementationQuery(queryTokens) {
-		if candidate.Category == "source" {
-		} else {
-			score -= hybridBroadQueryPenalty
-		}
+	return score
+}
+
+func applyPenalties(score float64, queryTokens []string, candidate storage.CodeChunk) float64 {
+	pathLower := strings.ToLower(filepath.ToSlash(candidate.FilePath))
+
+	if isBroadImplementationQuery(queryTokens) && candidate.Category != "source" {
+		score -= hybridBroadQueryPenalty
 	}
 
 	if isTestFilePath(pathLower) {

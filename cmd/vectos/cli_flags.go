@@ -1,6 +1,10 @@
 package main
 
-import "flag"
+import (
+	"flag"
+	"os"
+	"strconv"
+)
 
 type cliFlags struct {
 	indexCmd         *flag.FlagSet
@@ -9,6 +13,7 @@ type cliFlags struct {
 	statusCmd        *flag.FlagSet
 	mcpCmd           *flag.FlagSet
 	setupCmd         *flag.FlagSet
+	serveCmd         *flag.FlagSet
 	indexProject     *string
 	indexChanged     *string
 	indexDocs        *bool
@@ -19,6 +24,7 @@ type cliFlags struct {
 	statusProject    *string
 	statusDocs       *bool
 	setupUninstall   *bool
+	servePort        *int
 }
 
 func newCLIFlags() cliFlags {
@@ -28,6 +34,14 @@ func newCLIFlags() cliFlags {
 	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
 	mcpCmd := flag.NewFlagSet("mcp", flag.ExitOnError)
 	setupCmd := flag.NewFlagSet("setup", flag.ExitOnError)
+	serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
+
+	servePortDefault := 7438
+	if envPort := os.Getenv("VECTOS_PORT"); envPort != "" {
+		if p, err := strconv.Atoi(envPort); err == nil && p > 0 && p <= 65535 {
+			servePortDefault = p
+		}
+	}
 
 	return cliFlags{
 		indexCmd:         indexCmd,
@@ -36,6 +50,7 @@ func newCLIFlags() cliFlags {
 		statusCmd:        statusCmd,
 		mcpCmd:           mcpCmd,
 		setupCmd:         setupCmd,
+		serveCmd:         serveCmd,
 		indexProject:     indexCmd.String("project", "", "Nx project name to index with internal workspace dependencies when inside an Nx workspace"),
 		indexChanged:     indexCmd.String("changed", "", "Comma-separated changed file paths to refresh incrementally"),
 		indexDocs:        indexCmd.Bool("docs", false, "Index only documentation files into a separate docs database"),
@@ -46,6 +61,7 @@ func newCLIFlags() cliFlags {
 		statusProject:    statusCmd.String("project", "", "Nx project name to inspect with internal workspace dependencies when inside an Nx workspace"),
 		statusDocs:       statusCmd.Bool("docs", false, "Show documentation index status instead of source index"),
 		setupUninstall:   setupCmd.Bool("uninstall", false, "Remove the Vectos MCP setup for the selected agent"),
+		servePort:        serveCmd.Int("port", servePortDefault, "Port to listen on (default 7438, overridable via VECTOS_PORT env var)"),
 	}
 }
 

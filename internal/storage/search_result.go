@@ -23,6 +23,13 @@ type SearchFileResult struct {
 	Hint       string      `json:"hint,omitempty"`
 }
 
+type fileEntry struct {
+	result    SearchFileResult
+	sigSet    map[string]struct{}
+	seenLines map[string]struct{}
+	purpose   string
+}
+
 func CollapseFileResults(chunks []CodeChunk, lineWindow int) []SearchFileResult {
 	if len(chunks) == 0 {
 		return nil
@@ -35,55 +42,9 @@ func CollapseFileResults(chunks []CodeChunk, lineWindow int) []SearchFileResult 
 		return chunks[i].FilePath < chunks[j].FilePath
 	})
 
-	type fileEntry struct {
-		result    SearchFileResult
-		sigSet    map[string]struct{}
-		seenLines map[string]struct{}
-		purpose   string
-	}
-
 	byFile := make(map[string]*fileEntry)
-
 	for _, chunk := range chunks {
-		fe, ok := byFile[chunk.FilePath]
-		if !ok {
-			fe = &fileEntry{
-				result: SearchFileResult{
-					FilePath:  chunk.FilePath,
-					FileName:  filepath.Base(chunk.FilePath),
-					Language:  chunk.Language,
-					Category:  chunk.Category,
-					Relevance: chunk.Score,
-				},
-				sigSet:    make(map[string]struct{}),
-				seenLines: make(map[string]struct{}),
-			}
-			byFile[chunk.FilePath] = fe
-		}
-
-		if chunk.Score > fe.result.Relevance {
-			fe.result.Relevance = chunk.Score
-		}
-
-		if chunk.Purpose != "" && fe.purpose == "" {
-			fe.purpose = chunk.Purpose
-		}
-
-		key := fmt.Sprintf("%d-%d", chunk.StartLine, chunk.EndLine)
-		if _, seen := fe.seenLines[key]; !seen {
-			fe.seenLines[key] = struct{}{}
-			fe.result.LineRanges = append(fe.result.LineRanges, LineRange{
-				Start: chunk.StartLine,
-				End:   chunk.EndLine,
-			})
-		}
-
-		if chunk.Signature != "" {
-			if _, exists := fe.sigSet[chunk.Signature]; !exists {
-				fe.sigSet[chunk.Signature] = struct{}{}
-				fe.result.Signatures = append(fe.result.Signatures, chunk.Signature)
-			}
-		}
+		addChunkToFileEntry(byFile, chunk)
 	}
 
 	deduped := make([]SearchFileResult, 0, len(byFile))
@@ -102,6 +63,48 @@ func CollapseFileResults(chunks []CodeChunk, lineWindow int) []SearchFileResult 
 	})
 
 	return deduped
+}
+
+func addChunkToFileEntry(byFile map[string]*fileEntry, chunk CodeChunk) {
+	fe, ok := byFile[chunk.FilePath]
+	if !ok {
+		fe = &fileEntry{
+			result: SearchFileResult{
+				FilePath:  chunk.FilePath,
+				FileName:  filepath.Base(chunk.FilePath),
+				Language:  chunk.Language,
+				Category:  chunk.Category,
+				Relevance: chunk.Score,
+			},
+			sigSet:    make(map[string]struct{}),
+			seenLines: make(map[string]struct{}),
+		}
+		byFile[chunk.FilePath] = fe
+	}
+
+	if chunk.Score > fe.result.Relevance {
+		fe.result.Relevance = chunk.Score
+	}
+
+	if chunk.Purpose != "" && fe.purpose == "" {
+		fe.purpose = chunk.Purpose
+	}
+
+	key := fmt.Sprintf("%d-%d", chunk.StartLine, chunk.EndLine)
+	if _, seen := fe.seenLines[key]; !seen {
+		fe.seenLines[key] = struct{}{}
+		fe.result.LineRanges = append(fe.result.LineRanges, LineRange{
+			Start: chunk.StartLine,
+			End:   chunk.EndLine,
+		})
+	}
+
+	if chunk.Signature != "" {
+		if _, exists := fe.sigSet[chunk.Signature]; !exists {
+			fe.sigSet[chunk.Signature] = struct{}{}
+			fe.result.Signatures = append(fe.result.Signatures, chunk.Signature)
+		}
+	}
 }
 
 func mergeLineRanges(ranges []LineRange, window int) []LineRange {

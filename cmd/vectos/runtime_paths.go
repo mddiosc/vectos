@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"vectos/internal/content"
@@ -11,266 +10,42 @@ import (
 	"vectos/internal/workspace"
 )
 
-func collectIndexablePaths(inputPaths []string, docsOnly bool) ([]string, []string, error) {
-	acc := newPathAccumulator()
-	for _, path := range inputPaths {
-		absPath, err := filepath.Abs(path)
-		if err != nil {
-			return nil, nil, err
-		}
-		info, err := os.Stat(absPath)
-		if err != nil {
-			return nil, nil, err
-		}
-		if !info.IsDir() {
-			if err := acc.addFile(absPath, docsOnly); err != nil {
-				return nil, nil, err
-			}
-			continue
-		}
-		if err := acc.walkDir(absPath, docsOnly); err != nil {
-			return nil, nil, err
-		}
-	}
-	if len(acc.paths) == 0 {
-		return nil, nil, fmt.Errorf("no supported files found in selected scope")
-	}
-	return acc.paths, acc.skipped, nil
-}
+// collectExcludedDirs finds all skipped directories within the given root.
+// It delegates to content.CollectExcludedDirs.
+var collectExcludedDirs = content.CollectExcludedDirs
 
-// pathAccumulator collects indexable and skipped paths, deduplicating both.
-type pathAccumulator struct {
-	paths      []string
-	skipped    []string
-	seenPaths  map[string]struct{}
-	seenSkip   map[string]struct{}
-}
+// parseChangedPaths splits a comma-separated string of changed file paths.
+var parseChangedPaths = content.ParseChangedPaths
 
-func newPathAccumulator() *pathAccumulator {
-	return &pathAccumulator{
-		seenPaths: map[string]struct{}{},
-		seenSkip:  map[string]struct{}{},
-	}
-}
+// collectIndexablePaths walks all given input paths and returns the list of
+// indexable files and the list of skipped (non-indexable) files.
+var collectIndexablePaths = content.CollectIndexablePaths
 
-func (a *pathAccumulator) addFile(absPath string, docsOnly bool) error {
-	language, err := detectLanguage(absPath)
-	if err != nil {
-		return fmt.Errorf("unsupported file type: %s", absPath)
-	}
-	if !shouldIndexLanguage(language, docsOnly) {
-		a.addSkipped(absPath)
-		return nil
-	}
-	a.addIndexable(absPath)
-	return nil
-}
+// filterChangedPaths filters the given paths and skippedPaths to only include
+// entries matching the changed paths, relative to the workspace scope.
+var filterChangedPaths = content.FilterChangedPaths
 
-func (a *pathAccumulator) walkDir(absPath string, docsOnly bool) error {
-	return filepath.Walk(absPath, func(current string, info os.FileInfo, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if info.IsDir() {
-			if shouldSkipDir(info.Name()) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if language, err := detectLanguage(current); err == nil {
-			if !shouldIndexLanguage(language, docsOnly) {
-				a.addSkipped(current)
-			} else {
-				a.addIndexable(current)
-			}
-		}
-		return nil
-	})
-}
+// isWithinRoots checks if the given path is within any of the specified roots.
+var isWithinRoots = content.IsWithinRoots
 
-func (a *pathAccumulator) addIndexable(path string) {
-	if _, ok := a.seenPaths[path]; !ok {
-		a.paths = append(a.paths, path)
-		a.seenPaths[path] = struct{}{}
-	}
-}
+// fileExists reports whether a file exists at the given path.
+var fileExists = content.FileExists
 
-func (a *pathAccumulator) addSkipped(path string) {
-	if _, ok := a.seenSkip[path]; !ok {
-		a.skipped = append(a.skipped, path)
-		a.seenSkip[path] = struct{}{}
-	}
-}
-
-var skippedDirs = map[string]struct{}{
-	".git": {}, "node_modules": {}, ".opencode": {}, ".vectos": {},
-	"coverage": {}, "playwright-report": {}, "test-results": {},
-	"dist": {}, ".next": {}, "build": {},
-}
-
-func shouldSkipDir(name string) bool {
-	_, skip := skippedDirs[name]
-	return skip
-}
-
-func shouldIndexLanguage(language string, docsOnly bool) bool {
-	category := classifyCategory(language)
-	if docsOnly {
-		return category == "docs"
-	}
-	return category != "docs" && category != "dependency_metadata"
-}
-
-func collectExcludedDirs(root string) []string {
-	var excluded []string
-	_ = filepath.Walk(root, func(current string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if info.IsDir() && shouldSkipDir(info.Name()) {
-			excluded = append(excluded, current)
-			return filepath.SkipDir
-		}
-		return nil
-	})
-	return excluded
-}
-
-func parseChangedPaths(raw string) []string {
-	if strings.TrimSpace(raw) == "" {
-		return nil
-	}
-	parts := strings.Split(raw, ",")
-	changed := make([]string, 0, len(parts))
-	for _, part := range parts {
-		trimmed := strings.TrimSpace(part)
-		if trimmed == "" {
-			continue
-		}
-		changed = append(changed, trimmed)
-	}
-	return changed
-}
-
-func filterChangedPaths(scope workspace.Scope, paths, skippedPaths, changedPaths []string) ([]string, []string, error) {
-	allowedRoots, err := absRoots(scope.Roots)
-	if err != nil {
-		return nil, nil, err
-	}
-	pathSet := toSet(paths)
-	skippedSet := toSet(skippedPaths)
-
-	acc := newPathAccumulator()
-	for _, changed := range changedPaths {
-		resolved, err := resolveChangedPath(scope, changed)
-		if err != nil {
-			return nil, nil, err
-		}
-		if !isWithinRoots(resolved, allowedRoots) {
-			continue
-		}
-		if _, ok := pathSet[resolved]; ok {
-			acc.addIndexable(resolved)
-			continue
-		}
-		if _, ok := skippedSet[resolved]; ok || !fileExists(resolved) {
-			acc.addSkipped(resolved)
-		}
-	}
-	return acc.paths, acc.skipped, nil
-}
-
-func absRoots(roots []string) ([]string, error) {
-	abs := make([]string, 0, len(roots))
-	for _, root := range roots {
-		absRoot, err := filepath.Abs(root)
-		if err != nil {
-			return nil, err
-		}
-		abs = append(abs, absRoot)
-	}
-	return abs, nil
-}
-
-func toSet(items []string) map[string]struct{} {
-	s := make(map[string]struct{}, len(items))
-	for _, item := range items {
-		s[item] = struct{}{}
-	}
-	return s
-}
-
+// resolveChangedPath resolves a changed file path against a workspace scope.
+// Exposed as a function for test compatibility.
 func resolveChangedPath(scope workspace.Scope, changed string) (string, error) {
-	if filepath.IsAbs(changed) {
-		return filepath.Clean(changed), nil
-	}
-
-	bases := changedPathBases(scope)
-
-	// First pass: prefer a base where the file exists within scope.
-	for _, base := range bases {
-		resolved, err := filepath.Abs(filepath.Join(base, changed))
-		if err != nil {
-			return "", err
-		}
-		if isWithinRoots(resolved, scope.Roots) && fileExists(resolved) {
-			return resolved, nil
-		}
-	}
-
-	// Second pass: accept a base where the path is within scope even if the
-	// file does not yet exist (new file being indexed for the first time).
-	for _, base := range bases {
-		resolved, err := filepath.Abs(filepath.Join(base, changed))
-		if err != nil {
-			return "", err
-		}
-		if isWithinRoots(resolved, scope.Roots) {
-			return resolved, nil
-		}
-	}
-
-	return filepath.Abs(filepath.Join(scope.PrimaryRoot, changed))
+	return content.ResolveChangedPath(scope, changed)
 }
 
-// changedPathBases returns the ordered list of base directories to try when
-// resolving a relative changed path. Priority: workspace root → primary root →
-// remaining scope roots (dependency libs). Duplicates are skipped.
-func changedPathBases(scope workspace.Scope) []string {
-	seen := map[string]struct{}{}
-	bases := make([]string, 0, 2+len(scope.Roots))
+// detectLanguage determines the programming/markup language for a given file path.
+var detectLanguage = content.DetectLanguage
 
-	add := func(b string) {
-		if b == "" {
-			return
-		}
-		if _, ok := seen[b]; ok {
-			return
-		}
-		seen[b] = struct{}{}
-		bases = append(bases, b)
-	}
+// shouldIndexLanguage reports whether a file with the given language should be indexed.
+var shouldIndexLanguage = content.ShouldIndexLanguage
 
-	add(scope.WorkspaceRoot)
-	add(scope.PrimaryRoot)
-	for _, root := range scope.Roots {
-		add(root)
-	}
-	return bases
-}
-
-func isWithinRoots(path string, roots []string) bool {
-	for _, root := range roots {
-		if path == root || strings.HasPrefix(path, root+string(os.PathSeparator)) {
-			return true
-		}
-	}
-	return false
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
+// classifyCategory maps a language to its content category.
+func classifyCategory(language string) string {
+	return content.ClassifyCategory(language)
 }
 
 func openStorageForScope(pm *storage.ProjectManager, scope *workspace.Scope, docsOnly bool) (*storage.SQLiteStorage, error) {
@@ -320,94 +95,4 @@ func resolveToolScope(path string, projectName string) (*workspace.Scope, error)
 		return nil, err
 	}
 	return &scope, nil
-}
-
-// fileNameMatchers maps special filenames (or filename patterns) to a language.
-// Each entry is tried in order; the first match wins.
-type fileNameMatcher struct {
-	match func(baseName, lowerBase string) bool
-	lang  string
-}
-
-var fileNameMatchers = []fileNameMatcher{
-	{func(b, _ string) bool { return b == "Dockerfile" || strings.HasPrefix(b, "Dockerfile.") }, "dockerfile"},
-	{func(b, _ string) bool { return b == "Makefile" }, "makefile"},
-	{func(b, _ string) bool { return b == ".editorconfig" }, "ini"},
-	{func(b, _ string) bool { return b == ".gitignore" || b == ".prettierignore" || b == ".eslintignore" }, "gitignore"},
-	{func(b, _ string) bool {
-		return b == ".npmrc" || b == ".yarnrc" || b == ".nvmrc" || b == ".prettierrc" || b == ".tool-versions"
-	}, "config"},
-	{func(b, _ string) bool { return b == "gradlew" || b == "mvnw" }, "shell"},
-	{func(b, _ string) bool { return strings.HasSuffix(b, ".gradle.kts") }, "gradle"},
-	{func(b, _ string) bool { return strings.HasSuffix(b, ".lock") || b == "bun.lockb" }, "lockfile"},
-	{func(_, lb string) bool {
-		return strings.HasPrefix(lb, "docker-compose") && (strings.HasSuffix(lb, ".yml") || strings.HasSuffix(lb, ".yaml"))
-	}, "yaml.compose"},
-	{func(b, _ string) bool { return b == "BUILD" || b == "BUILD.bazel" }, "bazel.build"},
-	{func(b, _ string) bool { return b == "WORKSPACE" }, "bazel.workspace"},
-	{func(b, _ string) bool { return b == "MODULE.bazel" }, "bazel.module"},
-}
-
-// extLanguages maps lowercase file extensions to a language name.
-var extLanguages = map[string]string{
-	".go":       "go",
-	".js":       "javascript",
-	".mjs":      "javascript",
-	".cjs":      "javascript",
-	".jsx":      "jsx",
-	".ts":       "typescript",
-	".mts":      "typescript",
-	".cts":      "typescript",
-	".tsx":      "tsx",
-	".py":       "python",
-	".java":     "java",
-	".kt":       "kotlin",
-	".kts":      "kotlin",
-	".json":     "json",
-	".sh":       "shell",
-	".md":       "markdown",
-	".mdx":      "markdown",
-	".toml":     "toml",
-	".ini":      "ini",
-	".conf":     "config",
-	".xml":      "xml",
-	".properties": "properties",
-	".gradle":   "gradle",
-	".sql":      "sql",
-	".proto":    "proto",
-	".graphql":  "graphql",
-	".gql":      "graphql",
-	".css":      "css",
-	".scss":     "scss",
-	".sass":     "sass",
-	".less":     "less",
-	".yml":      "yaml",
-	".yaml":     "yaml",
-	".rst":      "rst",
-	".adoc":     "asciidoc",
-	".asciidoc": "asciidoc",
-	".tex":      "latex",
-	".latex":    "latex",
-	".txt":      "text",
-	".bzl":      "bazel.bzl",
-}
-
-func detectLanguage(path string) (string, error) {
-	baseName := filepath.Base(path)
-	lowerBase := strings.ToLower(baseName)
-
-	for _, m := range fileNameMatchers {
-		if m.match(baseName, lowerBase) {
-			return m.lang, nil
-		}
-	}
-
-	if lang, ok := extLanguages[strings.ToLower(filepath.Ext(path))]; ok {
-		return lang, nil
-	}
-	return "", fmt.Errorf("unsupported file type: %s", path)
-}
-
-func classifyCategory(language string) string {
-	return content.ClassifyCategory(language)
 }

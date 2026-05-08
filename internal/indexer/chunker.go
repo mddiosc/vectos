@@ -137,25 +137,7 @@ func (s *SimpleChunker) chunkGoFile(filePath, language string, lines []string) (
 		}
 
 		start := i + 1
-		braceDepth := 0
-		seenOpeningBrace := false
-		endIndex := i
-
-		for ; endIndex < len(lines); endIndex++ {
-			line := lines[endIndex]
-			braceDepth += strings.Count(line, "{")
-			if strings.Contains(line, "{") {
-				seenOpeningBrace = true
-			}
-			braceDepth -= strings.Count(line, "}")
-			if seenOpeningBrace && braceDepth <= 0 {
-				break
-			}
-		}
-
-		if endIndex >= len(lines) {
-			endIndex = len(lines) - 1
-		}
+		endIndex := findGoBlockEnd(lines, i)
 
 		chunks = append(chunks, s.buildChunk(filePath, language, lines[i:endIndex+1], start, endIndex+1))
 		i = endIndex + 1
@@ -170,6 +152,23 @@ func (s *SimpleChunker) chunkGoFile(filePath, language string, lines []string) (
 	}
 
 	return chunks, nil
+}
+
+func findGoBlockEnd(lines []string, startIdx int) int {
+	braceDepth := 0
+	seenOpeningBrace := false
+	for i := startIdx; i < len(lines); i++ {
+		line := lines[i]
+		braceDepth += strings.Count(line, "{")
+		if strings.Contains(line, "{") {
+			seenOpeningBrace = true
+		}
+		braceDepth -= strings.Count(line, "}")
+		if seenOpeningBrace && braceDepth <= 0 {
+			return i
+		}
+	}
+	return len(lines) - 1
 }
 
 func (s *SimpleChunker) chunkStructuredFile(filePath, language string, lines []string) []ChunkResult {
@@ -388,84 +387,63 @@ func extractSignature(language, chunkContent string) string {
 
 func inferPurpose(language, chunkContent string) string {
 	if language != "go" {
-		lower := strings.ToLower(chunkContent)
-		var tags []string
-		if isReactComponentChunk(language, chunkContent) {
-			tags = append(tags, "react component")
-		}
-		if isHookChunk(language, chunkContent) {
-			tags = append(tags, "custom hook")
-		}
-		if isTestChunk(language, chunkContent) {
-			tags = append(tags, "test block")
-		}
-		if isExportedChunk(language, chunkContent) {
-			tags = append(tags, "exported api")
-		}
-		category := content.ClassifyCategory(language)
-		if category == "docs" {
-			if strings.Contains(lower, "install") || strings.Contains(lower, "usage") {
-				tags = append(tags, "documentation or usage instructions")
-			}
-			if len(tags) == 0 {
-				return "documentation content"
-			}
-			return strings.Join(tags, "; ")
-		}
-		if category == "scripts" {
-			if strings.Contains(lower, "#!/bin/") {
-				tags = append(tags, "shell script entrypoint")
-			}
-			if strings.Contains(lower, "export ") || strings.Contains(lower, "set -") {
-				tags = append(tags, "environment or execution setup")
-			}
-			if len(tags) == 0 {
-				return "script or automation block"
-			}
-			return strings.Join(tags, "; ")
-		}
-		if category == "dependency_metadata" {
-			if strings.Contains(lower, "dependencies") || strings.Contains(lower, "require") {
-				tags = append(tags, "dependency or project metadata")
-			}
-			if len(tags) == 0 {
-				return "project or dependency metadata"
-			}
-			return strings.Join(tags, "; ")
-		}
-		if content.ClassifyCategory(language) == "infra_config" {
-			if strings.Contains(lower, "image:") || strings.Contains(lower, "docker") {
-				tags = append(tags, "container or image configuration")
-			}
-			if strings.Contains(lower, "service") || strings.Contains(lower, "services:") {
-				tags = append(tags, "service configuration")
-			}
-			if strings.Contains(lower, "rule") || strings.Contains(lower, "load(") {
-				tags = append(tags, "build or workspace configuration")
-			}
-			if len(tags) == 0 {
-				return "infrastructure or configuration block"
-			}
-			return strings.Join(tags, "; ")
-		}
-		if strings.Contains(lower, "fetch") || strings.Contains(lower, "axios") {
-			tags = append(tags, "network or api access")
-		}
-		if strings.Contains(lower, "def ") || strings.Contains(lower, "function ") || strings.Contains(lower, "=>") {
-			tags = append(tags, "function or callable block")
-		}
-		if strings.Contains(lower, "class ") {
-			tags = append(tags, "class definition")
-		}
-		if strings.Contains(lower, "return") {
-			tags = append(tags, "returns computed values")
-		}
-		if len(tags) == 0 {
-			return "code block"
-		}
-		return strings.Join(tags, "; ")
+		return inferNonGoPurpose(language, chunkContent)
+	}
+	return inferGoPurpose(chunkContent)
+}
+
+func inferNonGoPurpose(language, chunkContent string) string {
+	lower := strings.ToLower(chunkContent)
+	var tags []string
+
+	if isReactComponentChunk(language, chunkContent) {
+		tags = append(tags, "react component")
+	}
+	if isHookChunk(language, chunkContent) {
+		tags = append(tags, "custom hook")
+	}
+	if isTestChunk(language, chunkContent) {
+		tags = append(tags, "test block")
+	}
+	if isExportedChunk(language, chunkContent) {
+		tags = append(tags, "exported api")
 	}
 
+	category := content.ClassifyCategory(language)
+
+	if result, done := inferDocsCategory(lower, category, tags); done {
+		return result
+	}
+	if result, done := inferScriptsCategory(lower, category, tags); done {
+		return result
+	}
+	if result, done := inferDependencyCategory(lower, category, tags); done {
+		return result
+	}
+	// Note: replicates original double call to ClassifyCategory
+	if result, done := inferInfraCategory(lower, language, tags); done {
+		return result
+	}
+
+	if strings.Contains(lower, "fetch") || strings.Contains(lower, "axios") {
+		tags = append(tags, "network or api access")
+	}
+	if strings.Contains(lower, "def ") || strings.Contains(lower, "function ") || strings.Contains(lower, "=>") {
+		tags = append(tags, "function or callable block")
+	}
+	if strings.Contains(lower, "class ") {
+		tags = append(tags, "class definition")
+	}
+	if strings.Contains(lower, "return") {
+		tags = append(tags, "returns computed values")
+	}
+	if len(tags) == 0 {
+		return "code block"
+	}
+	return strings.Join(tags, "; ")
+}
+
+func inferGoPurpose(chunkContent string) string {
 	lower := strings.ToLower(chunkContent)
 	var tags []string
 
@@ -488,8 +466,68 @@ func inferPurpose(language, chunkContent string) string {
 	if len(tags) == 0 {
 		return "code block"
 	}
-
 	return strings.Join(tags, "; ")
+}
+
+func inferDocsCategory(lower, category string, tags []string) (string, bool) {
+	if category != "docs" {
+		return "", false
+	}
+	if strings.Contains(lower, "install") || strings.Contains(lower, "usage") {
+		tags = append(tags, "documentation or usage instructions")
+	}
+	if len(tags) == 0 {
+		return "documentation content", true
+	}
+	return strings.Join(tags, "; "), true
+}
+
+func inferScriptsCategory(lower, category string, tags []string) (string, bool) {
+	if category != "scripts" {
+		return "", false
+	}
+	if strings.Contains(lower, "#!/bin/") {
+		tags = append(tags, "shell script entrypoint")
+	}
+	if strings.Contains(lower, "export ") || strings.Contains(lower, "set -") {
+		tags = append(tags, "environment or execution setup")
+	}
+	if len(tags) == 0 {
+		return "script or automation block", true
+	}
+	return strings.Join(tags, "; "), true
+}
+
+func inferDependencyCategory(lower, category string, tags []string) (string, bool) {
+	if category != "dependency_metadata" {
+		return "", false
+	}
+	if strings.Contains(lower, "dependencies") || strings.Contains(lower, "require") {
+		tags = append(tags, "dependency or project metadata")
+	}
+	if len(tags) == 0 {
+		return "project or dependency metadata", true
+	}
+	return strings.Join(tags, "; "), true
+}
+
+func inferInfraCategory(lower, language string, tags []string) (string, bool) {
+	if content.ClassifyCategory(language) != "infra_config" {
+		return "", false
+	}
+	if strings.Contains(lower, "image:") || strings.Contains(lower, "docker") {
+		tags = append(tags, "container or image configuration")
+	}
+	if strings.Contains(lower, "service") || strings.Contains(lower, "services:") {
+		tags = append(tags, "service configuration")
+	}
+	if strings.Contains(lower, "rule") || strings.Contains(lower, "load(") {
+		tags = append(tags, "build or workspace configuration")
+	}
+	if len(tags) == 0 {
+		return "infrastructure or configuration block", true
+	}
+	return strings.Join(tags, "; "), true
 }
 
 func isReactComponentChunk(language, chunkContent string) bool {
