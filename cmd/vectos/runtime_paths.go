@@ -205,22 +205,58 @@ func resolveChangedPath(scope workspace.Scope, changed string) (string, error) {
 		return filepath.Clean(changed), nil
 	}
 
-	bases := []string{scope.PrimaryRoot}
-	if scope.WorkspaceRoot != "" && scope.WorkspaceRoot != scope.PrimaryRoot {
-		bases = append([]string{scope.WorkspaceRoot}, bases...)
-	}
+	bases := changedPathBases(scope)
 
+	// First pass: prefer a base where the file exists within scope.
 	for _, base := range bases {
 		resolved, err := filepath.Abs(filepath.Join(base, changed))
 		if err != nil {
 			return "", err
 		}
-		if isWithinRoots(resolved, scope.Roots) || fileExists(resolved) {
+		if isWithinRoots(resolved, scope.Roots) && fileExists(resolved) {
+			return resolved, nil
+		}
+	}
+
+	// Second pass: accept a base where the path is within scope even if the
+	// file does not yet exist (new file being indexed for the first time).
+	for _, base := range bases {
+		resolved, err := filepath.Abs(filepath.Join(base, changed))
+		if err != nil {
+			return "", err
+		}
+		if isWithinRoots(resolved, scope.Roots) {
 			return resolved, nil
 		}
 	}
 
 	return filepath.Abs(filepath.Join(scope.PrimaryRoot, changed))
+}
+
+// changedPathBases returns the ordered list of base directories to try when
+// resolving a relative changed path. Priority: workspace root → primary root →
+// remaining scope roots (dependency libs). Duplicates are skipped.
+func changedPathBases(scope workspace.Scope) []string {
+	seen := map[string]struct{}{}
+	bases := make([]string, 0, 2+len(scope.Roots))
+
+	add := func(b string) {
+		if b == "" {
+			return
+		}
+		if _, ok := seen[b]; ok {
+			return
+		}
+		seen[b] = struct{}{}
+		bases = append(bases, b)
+	}
+
+	add(scope.WorkspaceRoot)
+	add(scope.PrimaryRoot)
+	for _, root := range scope.Roots {
+		add(root)
+	}
+	return bases
 }
 
 func isWithinRoots(path string, roots []string) bool {
