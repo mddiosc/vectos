@@ -16,7 +16,11 @@ func TestManagedGuidanceMentionsDocsSearchAndDocsIndexing(t *testing.T) {
 		"vectos_index_project",
 		"index_project",
 		"docs: true",
-		"changed",
+		// Consolidated incremental reindex mention
+		"incremental refresh",
+		// Nx lib coverage wording
+		"VECTOS_NX_INCLUDE_E2E",
+		"internal dependency libs",
 	}
 
 	for _, want := range checks {

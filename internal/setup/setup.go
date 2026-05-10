@@ -7,6 +7,13 @@ import (
 	"strings"
 )
 
+// Options controls setup behavior.
+type Options struct {
+	Uninstall    bool
+	SkipGuidance bool
+	AssumeYes    bool
+}
+
 type Adapter interface {
 	Name() string
 	Validate() error
@@ -17,13 +24,15 @@ type Adapter interface {
 type Context struct {
 	Executable string
 	HomeDir    string
+	Options    Options
 }
 
-func Run(agent string, uninstall bool) error {
+func Run(agent string, opts Options) error {
 	ctx, err := newContext()
 	if err != nil {
 		return err
 	}
+	ctx.Options = opts
 
 	adapter, err := resolveAdapter(agent)
 	if err != nil {
@@ -34,7 +43,7 @@ func Run(agent string, uninstall bool) error {
 		return err
 	}
 
-	if uninstall {
+	if opts.Uninstall {
 		return adapter.Remove(ctx)
 	}
 

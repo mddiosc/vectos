@@ -20,6 +20,7 @@ type Scope struct {
 	WorkspaceRoot string   `json:"workspace_root,omitempty"`
 	PrimaryRoot   string   `json:"primary_root"`
 	Roots         []string `json:"roots"`
+	Warnings      []string `json:"warnings,omitempty"`
 	WorkspaceType string   `json:"workspace_type,omitempty"`
 }
 
@@ -105,8 +106,11 @@ func ResolveScope(path string, projectName string) (Scope, error) {
 	}
 
 	roots := []string{selected.Root}
+	var warnings []string
 	if resolvedRoots, err := resolveNxProjectRoots(workspaceRoot, selected, projects); err == nil && len(resolvedRoots) > 0 {
 		roots = resolvedRoots
+	} else if err != nil {
+		warnings = append(warnings, fmt.Sprintf("Nx graph resolution failed for %s: %v — falling back to primary project root only", selected.Name, err))
 	}
 
 	return Scope{
@@ -114,6 +118,7 @@ func ResolveScope(path string, projectName string) (Scope, error) {
 		WorkspaceRoot: workspaceRoot,
 		PrimaryRoot:   selected.Root,
 		Roots:         roots,
+		Warnings:      warnings,
 		WorkspaceType: "nx",
 	}, nil
 }
@@ -269,42 +274,10 @@ func nxExcludedProjects(graph nxGraphData, projectMap map[string]NxProject) map[
 }
 
 func shouldExcludeNxProject(name string, projectType string, graphRoot string, projectMap map[string]NxProject) bool {
-	if strings.EqualFold(strings.TrimSpace(projectType), "e2e") {
-		return true
-	}
-
-	root := strings.ToLower(strings.TrimSpace(graphRoot))
-	if root == "" {
-		if project, ok := projectMap[name]; ok {
-			root = strings.ToLower(project.Root)
-		}
-	}
-	lowerName := strings.ToLower(strings.TrimSpace(name))
-
-	return hasExcludedProjectMarker(lowerName) || hasExcludedProjectMarker(root)
-}
-
-func hasExcludedProjectMarker(value string) bool {
-	if value == "" {
+	if os.Getenv("VECTOS_NX_INCLUDE_E2E") == "1" {
 		return false
 	}
-	markers := []string{
-		"-e2e",
-		"/e2e",
-		"\\e2e",
-		"storybook",
-		"stories",
-		"/docs",
-		"\\docs",
-		"docs-",
-		"-docs",
-	}
-	for _, marker := range markers {
-		if strings.Contains(value, marker) {
-			return true
-		}
-	}
-	return false
+	return strings.EqualFold(strings.TrimSpace(projectType), "e2e")
 }
 
 func readNxGraph(workspaceRoot string) (nxGraphData, error) {

@@ -18,6 +18,25 @@ Format per release:
 
 ---
 
+## Unreleased
+
+### Added
+
+- New `--yes`/`-y` and `--no-guidance` flags for `vectos setup` — non-interactive setup flows
+- `VECTOS_NX_INCLUDE_E2E=1` environment variable to include e2e Nx projects in scope resolution
+- `vectos index` now prints detected internal workspace libs and resolver warnings during indexing
+
+### Changed
+
+- Nx dependency expansion no longer excludes libs by name heuristics (`docs`, `stories`, etc.) — only `type: "e2e"` projects are excluded by default
+- `Scope.Warnings` field surfaces Nx graph resolution failures in-band instead of silently falling back
+
+### Fixed
+
+- `vectos setup` no longer requires a TTY/interactive terminal for guidance updates — always appends or replaces managed blocks without prompting
+
+---
+
 ## v0.4.0 — 2026-05-07
 
 Feature release focused on Nx monorepo scoping correctness for MCP agents, plus internal code quality improvements across the indexing and handler layers.

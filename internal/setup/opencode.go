@@ -69,14 +69,15 @@ func (OpenCodeAdapter) Apply(ctx Context) error {
 		return err
 	}
 
-	agentsPath := filepath.Join(ctx.HomeDir, opencodeConfigDir, "opencode", "AGENTS.md")
-	agentsChanged, err := ensureManagedGuidance(agentsPath, managedOpenCodeGuidance(), opencodeGuidanceStart, opencodeGuidanceEnd, "OpenCode", "opencode")
-	if err != nil {
-		return err
-	}
-
-	if agentsChanged {
-		fmt.Printf("Updated global OpenCode guidance at %s to prefer Vectos tools.\n", agentsPath)
+	if !ctx.Options.SkipGuidance {
+		agentsPath := filepath.Join(ctx.HomeDir, opencodeConfigDir, "opencode", "AGENTS.md")
+		agentsChanged, err := ensureManagedGuidance(agentsPath, managedOpenCodeGuidance(), opencodeGuidanceStart, opencodeGuidanceEnd)
+		if err != nil {
+			return err
+		}
+		if agentsChanged {
+			fmt.Printf("Updated global OpenCode guidance at %s to prefer Vectos tools.\n", agentsPath)
+		}
 	}
 
 	// Install the OpenCode plugin for auto-reindex on file changes

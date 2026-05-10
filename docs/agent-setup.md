@@ -24,13 +24,20 @@ vectos setup codex
 
 Each setup command creates or updates a Vectos MCP entry in the agent's user-wide config and may also manage a small global guidance block so the agent prefers Vectos search tools before broad file-search tools.
 
+Flags:
+
+```
+--no-guidance    Skip global guidance updates (only configure MCP)
+--yes, -y        Answer yes to all prompts (non-interactive mode)
+```
+
 Configuration targets:
 
 - `opencode` -> `~/.config/opencode/opencode.json` + `~/.config/opencode/AGENTS.md`
 - `claude` -> `~/.claude.json` + `~/.claude/CLAUDE.md`
 - `codex` -> `~/.codex/config.toml` + `~/.codex/AGENTS.md`
 
-If the global guidance file for a target does not exist yet, the setup creates a managed Vectos guidance block. If it already exists, the setup asks before appending the managed Vectos section so unrelated user instructions are preserved.
+If the global guidance file for a target does not exist yet, the setup creates a managed Vectos guidance block. If it already exists, the setup appends or replaces the managed Vectos block automatically. Guidance updates are unconditional — use `--no-guidance` to skip them.
 
 The managed guidance currently teaches the agent to:
 
@@ -46,6 +53,12 @@ Remove a configured integration:
 vectos setup opencode --uninstall
 vectos setup claude --uninstall
 vectos setup codex --uninstall
+```
+
+To reinstall without touching the guidance block:
+
+```bash
+vectos setup opencode --no-guidance
 ```
 
 This removes only the Vectos-managed MCP entry and the Vectos-managed guidance block for that agent. It does not delete unrelated user config.
@@ -80,6 +93,7 @@ Currently exposed MCP tools:
 - `vectos_search_code`
 - `vectos_search_docs`
 - `vectos_index_project`
+- `vectos_list_projects`
 
 Recommended guidance for unsupported clients:
 
