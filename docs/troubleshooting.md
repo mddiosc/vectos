@@ -1,5 +1,15 @@
 # Troubleshooting
 
+Start by running the diagnostic command:
+
+```bash
+vectos doctor
+```
+
+This checks installation, embedding provider health, and index consistency in
+one step. It reports pass/warn/fail results with actionable hints and exits
+with code 0 when all critical checks pass.
+
 ## `vectos: command not found`
 
 Possible causes:
@@ -102,6 +112,7 @@ Common reasons:
 Checks:
 
 ```bash
+vectos doctor
 vectos status
 ```
 

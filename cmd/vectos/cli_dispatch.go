@@ -46,6 +46,8 @@ func runCLI(app appContext, args []string) {
 		runServeCommand(app, commandArgs)
 	case "setup":
 		runSetupCommand(app, commandArgs)
+	case "doctor":
+		runDoctorCommand(app, commandArgs)
 	case "version":
 		runVersionCommand(commandArgs)
 	default:

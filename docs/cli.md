@@ -97,6 +97,19 @@ Example output includes:
 - provider health
 - whether reindexing is required
 
+### Run diagnostics
+
+```bash
+vectos doctor
+```
+
+The `doctor` command checks installation, runtime readiness, embedding provider
+health, and index consistency in one step. It reports each check with a
+pass/warn/fail marker and an actionable hint if something is wrong.
+
+`doctor` is read-only and safe to run at any time. It exits with code 0 when
+all critical checks pass.
+
 ### Start the MCP server manually
 
 ```bash
