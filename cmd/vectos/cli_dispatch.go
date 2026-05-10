@@ -6,6 +6,7 @@ import (
 
 	"vectos/internal/buildinfo"
 	"vectos/internal/config"
+	setupinternal "vectos/internal/setup"
 )
 
 type appContext struct {
@@ -143,7 +144,11 @@ func runSetupCommand(app appContext, args []string) {
 		printSubcommandHelp("setup")
 		os.Exit(1)
 	}
-	runSetup(app.flags.setupCmd.Arg(0), *app.flags.setupUninstall)
+	runSetup(app.flags.setupCmd.Arg(0), setupinternal.Options{
+		Uninstall:    *app.flags.setupUninstall,
+		SkipGuidance: *app.flags.setupNoGuidance,
+		AssumeYes:    *app.flags.setupYes,
+	})
 }
 
 func runVersionCommand(args []string) {

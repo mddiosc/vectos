@@ -42,13 +42,15 @@ func (CodexAdapter) Apply(ctx Context) error {
 		return err
 	}
 
-	agentsPath := filepath.Join(ctx.HomeDir, ".codex", "AGENTS.md")
-	changed, err := ensureManagedGuidance(agentsPath, managedCodexGuidance(), codexGuidanceStart, codexGuidanceEnd, "Codex", "codex")
-	if err != nil {
-		return err
-	}
-	if changed {
-		fmt.Printf("Updated global Codex guidance at %s to prefer Vectos tools.\n", agentsPath)
+	if !ctx.Options.SkipGuidance {
+		agentsPath := filepath.Join(ctx.HomeDir, ".codex", "AGENTS.md")
+		changed, err := ensureManagedGuidance(agentsPath, managedCodexGuidance(), codexGuidanceStart, codexGuidanceEnd)
+		if err != nil {
+			return err
+		}
+		if changed {
+			fmt.Printf("Updated global Codex guidance at %s to prefer Vectos tools.\n", agentsPath)
+		}
 	}
 
 	return nil

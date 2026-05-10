@@ -34,6 +34,18 @@ func resolveAndPrintScope(absolutePath, projectName string) workspace.Scope {
 		fmt.Printf("Workspace: %s (%s)\n", scope.WorkspaceRoot, scope.WorkspaceType)
 	}
 	fmt.Printf("Root: %s\n", scope.PrimaryRoot)
+	if scope.IsWorkspace() && len(scope.Roots) > 1 {
+		fmt.Println("Internal libs:")
+		for i, root := range scope.Roots {
+			if i == 0 {
+				continue // skip primary root, already printed
+			}
+			fmt.Printf("  - %s\n", root)
+		}
+	}
+	for _, w := range scope.Warnings {
+		fmt.Printf("Warning: %s\n", w)
+	}
 	return scope
 }
 

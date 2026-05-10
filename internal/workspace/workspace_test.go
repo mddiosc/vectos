@@ -79,9 +79,12 @@ func TestResolveScopeFallsBackToPrimaryRootWhenNxGraphUnavailable(t *testing.T) 
 	if !reflect.DeepEqual(scope.Roots, wantRoots) {
 		t.Fatalf("unexpected fallback roots: got %v want %v", scope.Roots, wantRoots)
 	}
+	if len(scope.Warnings) == 0 {
+		t.Fatal("expected non-empty Warnings when nx graph is unavailable")
+	}
 }
 
-func TestResolveScopeExcludesE2EAndDocsProjects(t *testing.T) {
+func TestResolveScopeExcludesE2EProjectsByNameType(t *testing.T) {
 	resetNxGraphCacheForTest()
 	workspaceRoot := t.TempDir()
 	writeTestFile(t, filepath.Join(workspaceRoot, "nx.json"), "{}")
@@ -115,12 +118,53 @@ func TestResolveScopeExcludesE2EAndDocsProjects(t *testing.T) {
 		t.Fatalf("ResolveScope returned error: %v", err)
 	}
 
+	// docs-site (type "lib") is now included — only e2e type is excluded
 	wantRoots := []string{
 		filepath.Join(workspaceRoot, "apps", "app-two"),
+		filepath.Join(workspaceRoot, "libs", "docs"),
 		filepath.Join(workspaceRoot, "libs", "lib-ui"),
 	}
 	if !reflect.DeepEqual(scope.Roots, wantRoots) {
 		t.Fatalf("unexpected roots with exclusions: got %v want %v", scope.Roots, wantRoots)
+	}
+}
+
+func TestResolveScopeE2eOverrideViaEnv(t *testing.T) {
+	resetNxGraphCacheForTest()
+	workspaceRoot := t.TempDir()
+	writeTestFile(t, filepath.Join(workspaceRoot, "nx.json"), "{}")
+	writeTestFile(t, filepath.Join(workspaceRoot, "apps", "app-two", "project.json"), `{"name":"app-two","root":"apps/app-two"}`)
+	writeTestFile(t, filepath.Join(workspaceRoot, "apps", "app-two-e2e", "project.json"), `{"name":"app-two-e2e","root":"apps/app-two-e2e"}`)
+
+	t.Setenv("VECTOS_NX_INCLUDE_E2E", "1")
+
+	originalReader := nxGraphReader
+	nxGraphReader = func(root string) (nxGraphData, error) {
+		return nxGraphData{
+			Dependencies: map[string][]nxGraphDependency{
+				"app-two": {{Target: "app-two-e2e"}},
+			},
+			Projects: []nxGraphProject{
+				{Name: "app-two", Type: "app"},
+				{Name: "app-two-e2e", Type: "e2e"},
+			},
+		}, nil
+	}
+	t.Cleanup(func() {
+		nxGraphReader = originalReader
+	})
+
+	scope, err := ResolveScope(filepath.Join(workspaceRoot, "apps", "app-two"), "app-two")
+	if err != nil {
+		t.Fatalf("ResolveScope returned error: %v", err)
+	}
+
+	wantRoots := []string{
+		filepath.Join(workspaceRoot, "apps", "app-two"),
+		filepath.Join(workspaceRoot, "apps", "app-two-e2e"),
+	}
+	if !reflect.DeepEqual(scope.Roots, wantRoots) {
+		t.Fatalf("unexpected roots with VECTOS_NX_INCLUDE_E2E=1: got %v want %v", scope.Roots, wantRoots)
 	}
 }
 

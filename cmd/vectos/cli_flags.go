@@ -24,6 +24,8 @@ type cliFlags struct {
 	statusProject       *string
 	statusDocs          *bool
 	setupUninstall      *bool
+	setupYes            *bool
+	setupNoGuidance     *bool
 	servePort           *int
 	serveProjectBaseDir *string
 }
@@ -62,6 +64,8 @@ func newCLIFlags() cliFlags {
 		statusProject:       statusCmd.String("project", "", "Nx project name to inspect with internal workspace dependencies when inside an Nx workspace"),
 		statusDocs:          statusCmd.Bool("docs", false, "Show documentation index status instead of source index"),
 		setupUninstall:      setupCmd.Bool("uninstall", false, "Remove the Vectos MCP setup for the selected agent"),
+		setupYes:            setupCmd.Bool("yes", false, "Answer yes to all prompts (non-interactive mode)"),
+		setupNoGuidance:     setupCmd.Bool("no-guidance", false, "Skip global guidance updates"),
 		servePort:           serveCmd.Int("port", servePortDefault, "Port to listen on (default 7438, overridable via VECTOS_PORT env var)"),
 		serveProjectBaseDir: serveCmd.String("project-base-dir", "", "Directory for project index databases (default ~/.vectos/projects)"),
 	}
@@ -95,6 +99,10 @@ func normalizeSetupArgs(args []string) ([]string, bool) {
 		case "--help", "-h":
 			showHelp = true
 		case "--uninstall":
+			flags = append(flags, arg)
+		case "--yes", "-y":
+			flags = append(flags, "--yes")
+		case "--no-guidance":
 			flags = append(flags, arg)
 		default:
 			positionals = append(positionals, arg)

@@ -41,13 +41,15 @@ func (ClaudeCodeAdapter) Apply(ctx Context) error {
 		return err
 	}
 
-	claudePath := filepath.Join(ctx.HomeDir, ".claude", "CLAUDE.md")
-	changed, err := ensureManagedGuidance(claudePath, managedClaudeGuidance(), claudeGuidanceStart, claudeGuidanceEnd, "Claude Code", "claude")
-	if err != nil {
-		return err
-	}
-	if changed {
-		fmt.Printf("Updated global Claude Code guidance at %s to prefer Vectos tools.\n", claudePath)
+	if !ctx.Options.SkipGuidance {
+		claudePath := filepath.Join(ctx.HomeDir, ".claude", "CLAUDE.md")
+		changed, err := ensureManagedGuidance(claudePath, managedClaudeGuidance(), claudeGuidanceStart, claudeGuidanceEnd)
+		if err != nil {
+			return err
+		}
+		if changed {
+			fmt.Printf("Updated global Claude Code guidance at %s to prefer Vectos tools.\n", claudePath)
+		}
 	}
 
 	return nil

@@ -154,7 +154,7 @@ Current Nx-supported flow:
 - discover Nx projects from `project.json`
 - resolve the selected Nx project's root
 - expand internal Nx project dependencies into additional logical roots when the Nx project graph is available
-- exclude non-code helper projects such as common `e2e`, `storybook`, and `docs` targets from the logical root set by default
+- exclude only projects with Nx type `"e2e"` from the logical root set by default (name-based heuristics removed; all internal libs are included)
 - index/search/status against that logical project scope
 
 Current limitation:
@@ -218,9 +218,9 @@ Roots:
 
 Vectos uses the Nx project graph to discover those related projects. It does not infer dependencies from matching names or folder structure.
 
-By default, Vectos excludes common helper projects such as `e2e`, `storybook`, and `docs` from the expanded root set.
+By default, Vectos excludes only projects whose Nx type is `"e2e"` from the expanded root set. All internal dependency libs — regardless of name — are included. Set `VECTOS_NX_INCLUDE_E2E=1` to override and include e2e projects.
 
-When the Nx graph is unavailable, Vectos falls back to the selected project's `PrimaryRoot` only.
+When the Nx graph is unavailable, Vectos falls back to the selected project's `PrimaryRoot` only. When this happens, Vectos surfaces a warning so you know the scope is incomplete.
 
 ## Reindex Behavior
 

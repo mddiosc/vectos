@@ -24,16 +24,16 @@ func main() {
 	}, os.Args[1:])
 }
 
-func runSetup(agent string, uninstall bool) {
+func runSetup(agent string, opts setupinternal.Options) {
 	action := "setting up"
-	if uninstall {
+	if opts.Uninstall {
 		action = "removing"
 	}
 
-	if err := setupinternal.Run(agent, uninstall); err != nil {
+	if err := setupinternal.Run(agent, opts); err != nil {
 		log.Fatalf("error %s %s: %v", action, agent, err)
 	}
-	if uninstall {
+	if opts.Uninstall {
 		fmt.Printf("Vectos setup removed for %s.\n", agent)
 		return
 	}
