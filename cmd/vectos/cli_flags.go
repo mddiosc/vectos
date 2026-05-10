@@ -14,6 +14,7 @@ type cliFlags struct {
 	mcpCmd              *flag.FlagSet
 	setupCmd            *flag.FlagSet
 	serveCmd            *flag.FlagSet
+	doctorCmd           *flag.FlagSet
 	indexProject        *string
 	indexChanged        *string
 	indexDocs           *bool
@@ -38,6 +39,7 @@ func newCLIFlags() cliFlags {
 	mcpCmd := flag.NewFlagSet("mcp", flag.ExitOnError)
 	setupCmd := flag.NewFlagSet("setup", flag.ExitOnError)
 	serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
+	doctorCmd := flag.NewFlagSet("doctor", flag.ExitOnError)
 
 	servePortDefault := 7438
 	if envPort := os.Getenv("VECTOS_PORT"); envPort != "" {
@@ -54,6 +56,7 @@ func newCLIFlags() cliFlags {
 		mcpCmd:              mcpCmd,
 		setupCmd:            setupCmd,
 		serveCmd:            serveCmd,
+		doctorCmd:           doctorCmd,
 		indexProject:        indexCmd.String("project", "", "Nx project name to index with internal workspace dependencies when inside an Nx workspace"),
 		indexChanged:        indexCmd.String("changed", "", "Comma-separated changed file paths to refresh incrementally"),
 		indexDocs:           indexCmd.Bool("docs", false, "Index only documentation files into a separate docs database"),
