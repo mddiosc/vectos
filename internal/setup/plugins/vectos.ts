@@ -58,6 +58,15 @@ async function isVectosRunning(): Promise<boolean> {
   }
 }
 
+async function waitForVectosReady(): Promise<boolean> {
+  const deadline = Date.now() + 5000
+  while (Date.now() < deadline) {
+    if (await isVectosRunning()) return true
+    await new Promise((r) => setTimeout(r, 250))
+  }
+  return false
+}
+
 // ─── Plugin Export ──────────────────────────────────────────────────────────
 
 export const VectosPlugin: Plugin = async (ctx) => {
@@ -123,8 +132,8 @@ export const VectosPlugin: Plugin = async (ctx) => {
         stderr: "ignore",
         stdin: "ignore",
       })
-      // Wait for server to become ready
-      await new Promise((r) => setTimeout(r, 1000))
+      // Wait and retry health until the server is ready.
+      await waitForVectosReady()
     } catch {
       // Binary not found or can't start — plugin will silently no-op
     }

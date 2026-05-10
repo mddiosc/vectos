@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"vectos/internal/config"
 	"vectos/internal/content"
@@ -69,6 +71,13 @@ func (sc *storeCache) closeAll() {
 	}
 }
 
+func (sc *storeCache) Close() error {
+	sc.closeAll()
+	return nil
+}
+
+var _ io.Closer = (*storeCache)(nil)
+
 func configureServeLogging() {
 	home, _ := os.UserHomeDir()
 	logPath := filepath.Join(home, ".vectos", "vectos-serve.log")
@@ -85,31 +94,46 @@ func configureServeLogging() {
 func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port int) {
 	configureServeLogging()
 
-	// Load embedding model once at startup.
-	embedClient, providerInfo, err := embeddings.ResolveEmbedder(embedConfig)
-	if err != nil {
-		log.Fatalf("error resolving embedding provider: %v", err)
-	}
-
 	pm, err := storage.NewProjectManager(projectBaseDir)
 	if err != nil {
 		log.Fatalf("error initializing project manager: %v", err)
 	}
 
 	cache := newStoreCache(pm)
-	chunker := indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10}, embedClient)
+	var chunker *indexer.SimpleChunker
+	var providerInfo embeddings.ProviderInfo
 
 	reindexFn := func(req server.ReindexRequest) server.ReindexResponse {
 		return reindexProject(cache, chunker, providerInfo, req)
 	}
 
 	srv := server.NewServer(port, reindexFn)
-	if err := srv.ListenAndServe(); err != nil {
+	srv.SetReady(false)
+	srv.AddCloser(cache)
+
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- srv.ListenAndServe()
+	}()
+
+	select {
+	case err := <-serveErr:
 		log.Fatalf("server error: %v", err)
+	case <-time.After(100 * time.Millisecond):
 	}
 
-	// Close cached stores on shutdown.
-	cache.closeAll()
+	// Load embedding model once at startup while /health reports starting.
+	embedClient, provider, err := embeddings.ResolveEmbedder(embedConfig)
+	if err != nil {
+		log.Fatalf("error resolving embedding provider: %v", err)
+	}
+	chunker = indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10}, embedClient)
+	providerInfo = provider
+	srv.SetReady(true)
+
+	if err := <-serveErr; err != nil {
+		log.Fatalf("server error: %v", err)
+	}
 }
 
 func reindexProject(cache *storeCache, chunker *indexer.SimpleChunker, providerInfo embeddings.ProviderInfo, req server.ReindexRequest) server.ReindexResponse {
@@ -235,6 +259,10 @@ func runServeCommand(app appContext, args []string) {
 	if port <= 0 || port > 65535 {
 		log.Fatalf("invalid port: %d", port)
 	}
+	projectBaseDir := app.projectBaseDir
+	if *app.flags.serveProjectBaseDir != "" {
+		projectBaseDir = *app.flags.serveProjectBaseDir
+	}
 
-	runServe(app.projectBaseDir, app.embedConfig, port)
+	runServe(projectBaseDir, app.embedConfig, port)
 }

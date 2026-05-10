@@ -7,24 +7,25 @@ import (
 )
 
 type cliFlags struct {
-	indexCmd         *flag.FlagSet
-	searchCmd        *flag.FlagSet
-	benchmarkCmd     *flag.FlagSet
-	statusCmd        *flag.FlagSet
-	mcpCmd           *flag.FlagSet
-	setupCmd         *flag.FlagSet
-	serveCmd         *flag.FlagSet
-	indexProject     *string
-	indexChanged     *string
-	indexDocs        *bool
-	searchProject    *string
-	searchFull       *bool
-	searchDocs       *bool
-	benchmarkProject *string
-	statusProject    *string
-	statusDocs       *bool
-	setupUninstall   *bool
-	servePort        *int
+	indexCmd            *flag.FlagSet
+	searchCmd           *flag.FlagSet
+	benchmarkCmd        *flag.FlagSet
+	statusCmd           *flag.FlagSet
+	mcpCmd              *flag.FlagSet
+	setupCmd            *flag.FlagSet
+	serveCmd            *flag.FlagSet
+	indexProject        *string
+	indexChanged        *string
+	indexDocs           *bool
+	searchProject       *string
+	searchFull          *bool
+	searchDocs          *bool
+	benchmarkProject    *string
+	statusProject       *string
+	statusDocs          *bool
+	setupUninstall      *bool
+	servePort           *int
+	serveProjectBaseDir *string
 }
 
 func newCLIFlags() cliFlags {
@@ -44,24 +45,25 @@ func newCLIFlags() cliFlags {
 	}
 
 	return cliFlags{
-		indexCmd:         indexCmd,
-		searchCmd:        searchCmd,
-		benchmarkCmd:     benchmarkCmd,
-		statusCmd:        statusCmd,
-		mcpCmd:           mcpCmd,
-		setupCmd:         setupCmd,
-		serveCmd:         serveCmd,
-		indexProject:     indexCmd.String("project", "", "Nx project name to index with internal workspace dependencies when inside an Nx workspace"),
-		indexChanged:     indexCmd.String("changed", "", "Comma-separated changed file paths to refresh incrementally"),
-		indexDocs:        indexCmd.Bool("docs", false, "Index only documentation files into a separate docs database"),
-		searchProject:    searchCmd.String("project", "", "Nx project name to search with internal workspace dependencies when inside an Nx workspace"),
-		searchFull:       searchCmd.Bool("full", false, "Show full chunk content instead of compact snippets"),
-		searchDocs:       searchCmd.Bool("docs", false, "Search documentation index instead of source code"),
-		benchmarkProject: benchmarkCmd.String("project", "", "Nx project name to benchmark with internal workspace dependencies when inside an Nx workspace"),
-		statusProject:    statusCmd.String("project", "", "Nx project name to inspect with internal workspace dependencies when inside an Nx workspace"),
-		statusDocs:       statusCmd.Bool("docs", false, "Show documentation index status instead of source index"),
-		setupUninstall:   setupCmd.Bool("uninstall", false, "Remove the Vectos MCP setup for the selected agent"),
-		servePort:        serveCmd.Int("port", servePortDefault, "Port to listen on (default 7438, overridable via VECTOS_PORT env var)"),
+		indexCmd:            indexCmd,
+		searchCmd:           searchCmd,
+		benchmarkCmd:        benchmarkCmd,
+		statusCmd:           statusCmd,
+		mcpCmd:              mcpCmd,
+		setupCmd:            setupCmd,
+		serveCmd:            serveCmd,
+		indexProject:        indexCmd.String("project", "", "Nx project name to index with internal workspace dependencies when inside an Nx workspace"),
+		indexChanged:        indexCmd.String("changed", "", "Comma-separated changed file paths to refresh incrementally"),
+		indexDocs:           indexCmd.Bool("docs", false, "Index only documentation files into a separate docs database"),
+		searchProject:       searchCmd.String("project", "", "Nx project name to search with internal workspace dependencies when inside an Nx workspace"),
+		searchFull:          searchCmd.Bool("full", false, "Show full chunk content instead of compact snippets"),
+		searchDocs:          searchCmd.Bool("docs", false, "Search documentation index instead of source code"),
+		benchmarkProject:    benchmarkCmd.String("project", "", "Nx project name to benchmark with internal workspace dependencies when inside an Nx workspace"),
+		statusProject:       statusCmd.String("project", "", "Nx project name to inspect with internal workspace dependencies when inside an Nx workspace"),
+		statusDocs:          statusCmd.Bool("docs", false, "Show documentation index status instead of source index"),
+		setupUninstall:      setupCmd.Bool("uninstall", false, "Remove the Vectos MCP setup for the selected agent"),
+		servePort:           serveCmd.Int("port", servePortDefault, "Port to listen on (default 7438, overridable via VECTOS_PORT env var)"),
+		serveProjectBaseDir: serveCmd.String("project-base-dir", "", "Directory for project index databases (default ~/.vectos/projects)"),
 	}
 }
 

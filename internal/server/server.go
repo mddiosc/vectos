@@ -56,6 +56,11 @@ func NewServer(port int, reindexFn ReindexFunc) *Server {
 	return s
 }
 
+// SetReady updates whether the server can accept reindex requests.
+func (s *Server) SetReady(ready bool) {
+	s.ready.Store(ready)
+}
+
 // ListenAndServe starts the HTTP server and blocks until a fatal error or
 // shutdown. It listens on 127.0.0.1 to ensure localhost-only access.
 func (s *Server) ListenAndServe() error {
@@ -127,6 +132,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleReindex(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if !s.ready.Load() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "starting"})
 		return
 	}
 

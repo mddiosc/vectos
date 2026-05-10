@@ -205,6 +205,13 @@ func setupIndexRequest(projectBaseDir string, embedConfig config.EmbeddingConfig
 	if err != nil {
 		return
 	}
+	defer func() {
+		if err != nil {
+			if closeErr := store.Close(); closeErr != nil {
+				err = fmt.Errorf("%w; additionally failed to close storage: %v", err, closeErr)
+			}
+		}
+	}()
 
 	var providerInfo embeddings.ProviderInfo
 	embedClient, providerInfo, err = embeddings.ResolveEmbedder(embedConfig)

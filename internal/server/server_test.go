@@ -196,6 +196,32 @@ func TestReindexEndpoint_MissingPath(t *testing.T) {
 	}
 }
 
+func TestReindexEndpoint_NotReady(t *testing.T) {
+	srv := NewServer(0, nil)
+	srv.SetReady(false)
+
+	body := fmt.Sprintf(`{"path":"%s"}`, t.TempDir())
+	req := httptest.NewRequest(http.MethodPost, "/reindex", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	srv.handleReindex(w, req)
+
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("expected status 503, got %d", resp.StatusCode)
+	}
+
+	var result map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response body: %v", err)
+	}
+	if result["status"] != "starting" {
+		t.Errorf("expected status=starting, got %q", result["status"])
+	}
+}
+
 func TestReindexEndpoint_InvalidJSON(t *testing.T) {
 	srv := NewServer(0, nil)
 
