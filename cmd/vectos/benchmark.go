@@ -73,12 +73,7 @@ func runBenchmark(projectBaseDir string, embedConfig config.EmbeddingConfig, fix
 		projectLabel = scope.Name
 	}
 
-	fmt.Printf("Benchmark: %s\n", benchmarkName(fixture, absFixturePath))
-	fmt.Printf("Fixture: %s\n", absFixturePath)
-	fmt.Printf("Project: %s\n", projectLabel)
-	fmt.Printf("Indexed files: %d\n", stats.FileCount)
-	fmt.Printf("Indexed chunks: %d\n", stats.ChunkCount)
-	fmt.Println()
+	printBenchmarkHeader(fixture, absFixturePath, projectLabel, &stats)
 
 	windows := []int{3, 5}
 	results := make([]benchmarkQueryResult, 0, len(fixture.Queries))
@@ -107,30 +102,47 @@ func runBenchmark(projectBaseDir string, embedConfig config.EmbeddingConfig, fix
 		}
 		results = append(results, result)
 
-		fmt.Printf("[%d/%d] %s\n", i+1, len(fixture.Queries), query.Name)
-		fmt.Printf("Query: %s\n", query.Query)
-		fmt.Printf("Expected: %s\n", formatExpectedTargets(query))
-		fmt.Printf("Mode: %s\n", searchResult.Mode)
-		if searchResult.Warning != "" {
-			fmt.Printf("Warning: %s\n", searchResult.Warning)
-		}
-		fmt.Printf("Top 3: %s\n", hitLabel(topHits[3]))
-		fmt.Printf("Top 5: %s\n", hitLabel(topHits[5]))
-		fmt.Println("Results:")
-		if len(searchResult.Results) == 0 {
-			fmt.Println("  none")
-		} else {
-			for idx, chunk := range searchResult.Results {
-				fmt.Printf("  %d. %s:%d-%d", idx+1, chunk.FilePath, chunk.StartLine, chunk.EndLine)
-				if chunk.Score != 0 {
-					fmt.Printf(" score=%.4f", chunk.Score)
-				}
-				fmt.Println()
-			}
-		}
-		fmt.Println()
+		printBenchmarkQueryResult(i+1, len(fixture.Queries), query, &searchResult, topHits)
 	}
 
+	printBenchmarkAggregate(results, hitCounts, windows)
+}
+
+func printBenchmarkHeader(fixture retrievalBenchmarkFile, absFixturePath, projectLabel string, stats *storage.IndexStats) {
+	fmt.Printf("Benchmark: %s\n", benchmarkName(fixture, absFixturePath))
+	fmt.Printf("Fixture: %s\n", absFixturePath)
+	fmt.Printf("Project: %s\n", projectLabel)
+	fmt.Printf("Indexed files: %d\n", stats.FileCount)
+	fmt.Printf("Indexed chunks: %d\n", stats.ChunkCount)
+	fmt.Println()
+}
+
+func printBenchmarkQueryResult(index, total int, query retrievalBenchmarkQuery, searchResult *searchRun, topHits map[int]bool) {
+	fmt.Printf("[%d/%d] %s\n", index, total, query.Name)
+	fmt.Printf("Query: %s\n", query.Query)
+	fmt.Printf("Expected: %s\n", formatExpectedTargets(query))
+	fmt.Printf("Mode: %s\n", searchResult.Mode)
+	if searchResult.Warning != "" {
+		fmt.Printf("Warning: %s\n", searchResult.Warning)
+	}
+	fmt.Printf("Top 3: %s\n", hitLabel(topHits[3]))
+	fmt.Printf("Top 5: %s\n", hitLabel(topHits[5]))
+	fmt.Println("Results:")
+	if len(searchResult.Results) == 0 {
+		fmt.Println("  none")
+	} else {
+		for idx, chunk := range searchResult.Results {
+			fmt.Printf("  %d. %s:%d-%d", idx+1, chunk.FilePath, chunk.StartLine, chunk.EndLine)
+			if chunk.Score != 0 {
+				fmt.Printf(" score=%.4f", chunk.Score)
+			}
+			fmt.Println()
+		}
+	}
+	fmt.Println()
+}
+
+func printBenchmarkAggregate(results []benchmarkQueryResult, hitCounts map[int]int, windows []int) {
 	totalQueries := len(results)
 	fmt.Println("Aggregate results")
 	for _, window := range windows {
@@ -167,34 +179,59 @@ func validateBenchmarkFile(fixture retrievalBenchmarkFile) error {
 	}
 
 	for i, query := range fixture.Queries {
-		label := fmt.Sprintf("query %d", i+1)
-		if strings.TrimSpace(query.Name) != "" {
-			label = fmt.Sprintf("query %q", query.Name)
+		label := benchmarkQueryLabel(i, query)
+		if err := validateBenchmarkQueryBasics(label, query); err != nil {
+			return err
 		}
-		if strings.TrimSpace(query.Name) == "" {
-			return fmt.Errorf("%s must include a name", label)
+		if err := validateExpectedFiles(label, query.ExpectedFiles); err != nil {
+			return err
 		}
-		if strings.TrimSpace(query.Query) == "" {
-			return fmt.Errorf("%s must include a query", label)
-		}
-		if len(query.ExpectedFiles) == 0 && len(query.ExpectedChunks) == 0 {
-			return fmt.Errorf("%s must include at least one expected file or expected chunk", label)
-		}
-		for _, file := range query.ExpectedFiles {
-			if strings.TrimSpace(file) == "" {
-				return fmt.Errorf("%s contains an empty expected file entry", label)
-			}
-		}
-		for _, chunk := range query.ExpectedChunks {
-			if strings.TrimSpace(chunk.File) == "" {
-				return fmt.Errorf("%s contains an expected chunk without a file", label)
-			}
-			if chunk.StartLine <= 0 || chunk.EndLine <= 0 || chunk.EndLine < chunk.StartLine {
-				return fmt.Errorf("%s contains an invalid expected chunk line range for %s", label, chunk.File)
-			}
+		if err := validateExpectedChunks(label, query.ExpectedChunks); err != nil {
+			return err
 		}
 	}
 
+	return nil
+}
+
+func benchmarkQueryLabel(index int, query retrievalBenchmarkQuery) string {
+	if strings.TrimSpace(query.Name) != "" {
+		return fmt.Sprintf("query %q", query.Name)
+	}
+	return fmt.Sprintf("query %d", index+1)
+}
+
+func validateBenchmarkQueryBasics(label string, query retrievalBenchmarkQuery) error {
+	if strings.TrimSpace(query.Name) == "" {
+		return fmt.Errorf("%s must include a name", label)
+	}
+	if strings.TrimSpace(query.Query) == "" {
+		return fmt.Errorf("%s must include a query", label)
+	}
+	if len(query.ExpectedFiles) == 0 && len(query.ExpectedChunks) == 0 {
+		return fmt.Errorf("%s must include at least one expected file or expected chunk", label)
+	}
+	return nil
+}
+
+func validateExpectedFiles(label string, files []string) error {
+	for _, file := range files {
+		if strings.TrimSpace(file) == "" {
+			return fmt.Errorf("%s contains an empty expected file entry", label)
+		}
+	}
+	return nil
+}
+
+func validateExpectedChunks(label string, chunks []retrievalExpectedChunk) error {
+	for _, chunk := range chunks {
+		if strings.TrimSpace(chunk.File) == "" {
+			return fmt.Errorf("%s contains an expected chunk without a file", label)
+		}
+		if chunk.StartLine <= 0 || chunk.EndLine <= 0 || chunk.EndLine < chunk.StartLine {
+			return fmt.Errorf("%s contains an invalid expected chunk line range for %s", label, chunk.File)
+		}
+	}
 	return nil
 }
 

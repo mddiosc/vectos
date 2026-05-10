@@ -1,4 +1,7 @@
-## ADDED Requirements
+## Purpose
+Define the MCP server interface exposed to agent clients for code search, docs search, indexing, project listing, and recovery guidance.
+
+## Requirements
 
 ### Requirement: The system SHALL expose an MCP server over stdio
 The system SHALL provide a Model Context Protocol server over stdio so external agents can discover and call Vectos tools.
@@ -8,7 +11,7 @@ The system SHALL provide a Model Context Protocol server over stdio so external 
 - **THEN** the server SHALL complete the MCP initialization handshake and advertise tool capabilities
 
 ### Requirement: The MCP server SHALL expose code search and indexing tools
-The system SHALL expose tools for code search and project indexing through MCP.
+The system SHALL expose tools for code search and project indexing through MCP. The MCP server remains the primary interface for agent tools. The new HTTP server (`vectos serve`) provides a complementary API for programmatic reindex triggers from the OpenCode plugin, but does not replace MCP.
 
 #### Scenario: MCP client lists available tools
 - **WHEN** an MCP client requests the available tools
@@ -114,4 +117,3 @@ The system SHALL expose `list_projects` as an MCP tool so agents can discover av
 #### Scenario: MCP client calls list_projects in an Nx workspace
 - **WHEN** an MCP client calls `list_projects` inside an Nx workspace
 - **THEN** the server SHALL return a JSON object with an array of sorted project names
-

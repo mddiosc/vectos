@@ -208,6 +208,25 @@ func providerInfoFromStatus(status ProviderStatus) ProviderInfo {
 }
 
 func (e *EmbeddedEmbedder) ensureModelReady() error {
+	if err := e.downloadAndValidateAssets(); err != nil {
+		return err
+	}
+	if err := e.initializeRuntime(); err != nil {
+		return err
+	}
+	if err := e.createONNXSession(); err != nil {
+		return err
+	}
+
+	e.status.Ready = true
+	e.status.Missing = nil
+	e.status.Message = "embedded provider ready"
+	return nil
+}
+
+// downloadAndValidateAssets ensures the model directory exists and all
+// required asset files are present, downloading them if auto-download is enabled.
+func (e *EmbeddedEmbedder) downloadAndValidateAssets() error {
 	if err := os.MkdirAll(e.modelDir, 0755); err != nil {
 		e.status.Message = fmt.Sprintf("failed to create embedded model directory: %v", err)
 		return err
@@ -229,7 +248,12 @@ func (e *EmbeddedEmbedder) ensureModelReady() error {
 		e.status.Message = fmt.Sprintf("embedded model assets missing in %s: %s", e.modelDir, strings.Join(missing, ", "))
 		return fmt.Errorf("%s", e.status.Message)
 	}
+	return nil
+}
 
+// initializeRuntime ensures the ONNX Runtime shared library is present and
+// the runtime environment is initialized.
+func (e *EmbeddedEmbedder) initializeRuntime() error {
 	runtimePath, err := e.ensureRuntimeLibrary()
 	if err != nil {
 		e.status.Message = err.Error()
@@ -240,7 +264,12 @@ func (e *EmbeddedEmbedder) ensureModelReady() error {
 		e.status.Message = err.Error()
 		return err
 	}
+	return nil
+}
 
+// createONNXSession loads the tokenizer, inspects the ONNX model, and
+// creates the inference session.
+func (e *EmbeddedEmbedder) createONNXSession() error {
 	tk, err := pretrained.FromFile(filepath.Join(e.modelDir, "tokenizer.json"))
 	if err != nil {
 		e.status.Message = fmt.Sprintf("failed to load tokenizer: %v", err)
@@ -279,10 +308,6 @@ func (e *EmbeddedEmbedder) ensureModelReady() error {
 		return err
 	}
 	e.session = session
-
-	e.status.Ready = true
-	e.status.Missing = nil
-	e.status.Message = "embedded provider ready"
 	return nil
 }
 
@@ -498,12 +523,21 @@ func (e *EmbeddedEmbedder) downloadRuntimeLibrary(spec runtimeArchiveSpec, local
 		return fmt.Errorf("failed to download ONNX Runtime archive: status %d", resp.StatusCode)
 	}
 
+	if err := downloadArchive(resp.Body, tmpArchivePath); err != nil {
+		return err
+	}
+	defer os.Remove(tmpArchivePath)
+
+	return extractTarMember(tmpArchivePath, spec.ArchivePath, localPath)
+}
+
+func downloadArchive(body io.Reader, tmpArchivePath string) error {
 	archiveFile, err := os.Create(tmpArchivePath)
 	if err != nil {
 		return fmt.Errorf("failed to create temporary ONNX Runtime archive: %w", err)
 	}
 
-	_, copyErr := io.Copy(archiveFile, resp.Body)
+	_, copyErr := io.Copy(archiveFile, body)
 	closeErr := archiveFile.Close()
 	if copyErr != nil {
 		_ = os.Remove(tmpArchivePath)
@@ -513,12 +547,6 @@ func (e *EmbeddedEmbedder) downloadRuntimeLibrary(spec runtimeArchiveSpec, local
 		_ = os.Remove(tmpArchivePath)
 		return fmt.Errorf("failed to finalize ONNX Runtime archive: %w", closeErr)
 	}
-	defer os.Remove(tmpArchivePath)
-
-	if err := extractTarMember(tmpArchivePath, spec.ArchivePath, localPath); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -548,35 +576,38 @@ func extractTarMember(archivePath, memberPath, localPath string) error {
 			continue
 		}
 
-		tmpPath := localPath + ".tmp"
-		out, err := os.Create(tmpPath)
-		if err != nil {
-			return fmt.Errorf("failed to create extracted ONNX Runtime library: %w", err)
-		}
-
-		_, copyErr := io.Copy(out, tarReader)
-		closeErr := out.Close()
-		if copyErr != nil {
-			_ = os.Remove(tmpPath)
-			return fmt.Errorf("failed to extract ONNX Runtime library: %w", copyErr)
-		}
-		if closeErr != nil {
-			_ = os.Remove(tmpPath)
-			return fmt.Errorf("failed to finalize extracted ONNX Runtime library: %w", closeErr)
-		}
-		if err := os.Chmod(tmpPath, 0755); err != nil {
-			_ = os.Remove(tmpPath)
-			return fmt.Errorf("failed to set ONNX Runtime library permissions: %w", err)
-		}
-		if err := os.Rename(tmpPath, localPath); err != nil {
-			_ = os.Remove(tmpPath)
-			return fmt.Errorf("failed to install ONNX Runtime library: %w", err)
-		}
-
-		return nil
+		return extractSingleFile(tarReader, localPath)
 	}
 
 	return fmt.Errorf("failed to find %s in ONNX Runtime archive", memberPath)
+}
+
+func extractSingleFile(tarReader *tar.Reader, localPath string) error {
+	tmpPath := localPath + ".tmp"
+	out, err := os.Create(tmpPath)
+	if err != nil {
+		return fmt.Errorf("failed to create extracted ONNX Runtime library: %w", err)
+	}
+
+	_, copyErr := io.Copy(out, tarReader)
+	closeErr := out.Close()
+	if copyErr != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("failed to extract ONNX Runtime library: %w", copyErr)
+	}
+	if closeErr != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("failed to finalize extracted ONNX Runtime library: %w", closeErr)
+	}
+	if err := os.Chmod(tmpPath, 0755); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("failed to set ONNX Runtime library permissions: %w", err)
+	}
+	if err := os.Rename(tmpPath, localPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("failed to install ONNX Runtime library: %w", err)
+	}
+	return nil
 }
 
 func (e *EmbeddedEmbedder) downloadMissingAssets(missing []string) error {

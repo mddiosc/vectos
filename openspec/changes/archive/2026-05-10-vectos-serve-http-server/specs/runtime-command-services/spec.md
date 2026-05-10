@@ -1,9 +1,7 @@
-## Purpose
-Define how Vectos CLI runtime command logic is organized and preserved as commands are split by operational concern.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Runtime command logic SHALL be organized by operational concern
+
 The system SHALL organize command runtime logic so indexing, search/status, serving, and shared runtime helpers are separated into maintainable groupings. The `serve` command SHALL be added alongside existing commands.
 
 #### Scenario: A developer modifies command runtime behavior
@@ -15,6 +13,7 @@ The system SHALL organize command runtime logic so indexing, search/status, serv
 - **THEN** the system SHALL start an HTTP server on port 7438 (or configured port) that keeps the embedding model in memory and exposes `/health` and `/reindex` endpoints
 
 ### Requirement: Runtime refactors SHALL preserve existing command semantics
+
 The system SHALL preserve existing command behavior while runtime functions are extracted into smaller files. The new `serve` command SHALL not affect existing commands.
 
 #### Scenario: User runs an existing command after the refactor

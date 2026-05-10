@@ -1,6 +1,7 @@
 package setup
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,7 +14,12 @@ type OpenCodeAdapter struct{}
 const (
 	opencodeGuidanceStart = "<!-- vectos-opencode-guidance:start -->"
 	opencodeGuidanceEnd   = "<!-- vectos-opencode-guidance:end -->"
+	opencodePluginFile    = "vectos.ts"
+	opencodeConfigDir     = ".config" // XDG-style config directory
 )
+
+//go:embed plugins/vectos.ts
+var opencodePluginSource string
 
 func (OpenCodeAdapter) Name() string {
 	return "opencode"
@@ -24,7 +30,7 @@ func (OpenCodeAdapter) Validate() error {
 }
 
 func (OpenCodeAdapter) Apply(ctx Context) error {
-	configPath := filepath.Join(ctx.HomeDir, ".config", "opencode", "opencode.json")
+	configPath := filepath.Join(ctx.HomeDir, opencodeConfigDir, "opencode", "opencode.json")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
 		return err
 	}
@@ -63,7 +69,7 @@ func (OpenCodeAdapter) Apply(ctx Context) error {
 		return err
 	}
 
-	agentsPath := filepath.Join(ctx.HomeDir, ".config", "opencode", "AGENTS.md")
+	agentsPath := filepath.Join(ctx.HomeDir, opencodeConfigDir, "opencode", "AGENTS.md")
 	agentsChanged, err := ensureManagedGuidance(agentsPath, managedOpenCodeGuidance(), opencodeGuidanceStart, opencodeGuidanceEnd, "OpenCode", "opencode")
 	if err != nil {
 		return err
@@ -73,20 +79,44 @@ func (OpenCodeAdapter) Apply(ctx Context) error {
 		fmt.Printf("Updated global OpenCode guidance at %s to prefer Vectos tools.\n", agentsPath)
 	}
 
+	// Install the OpenCode plugin for auto-reindex on file changes
+	pluginsDir := filepath.Join(ctx.HomeDir, opencodeConfigDir, "opencode", "plugins")
+	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create plugins directory: %w", err)
+	}
+
+	pluginPath := filepath.Join(pluginsDir, opencodePluginFile)
+	if err := os.WriteFile(pluginPath, []byte(opencodePluginSource), 0644); err != nil {
+		return fmt.Errorf("failed to install OpenCode plugin: %w", err)
+	}
+
+	fmt.Printf("Installed OpenCode plugin at %s\n", pluginPath)
+
 	return nil
 }
 
 func (OpenCodeAdapter) Remove(ctx Context) error {
-	configPath := filepath.Join(ctx.HomeDir, ".config", "opencode", "opencode.json")
+	configPath := filepath.Join(ctx.HomeDir, opencodeConfigDir, "opencode", "opencode.json")
 	removedConfig, err := removeOpenCodeMCPEntry(configPath)
 	if err != nil {
 		return err
 	}
 
-	agentsPath := filepath.Join(ctx.HomeDir, ".config", "opencode", "AGENTS.md")
+	agentsPath := filepath.Join(ctx.HomeDir, opencodeConfigDir, "opencode", "AGENTS.md")
 	removedGuidance, err := removeManagedGuidance(agentsPath, opencodeGuidanceStart, opencodeGuidanceEnd)
 	if err != nil {
 		return err
+	}
+
+	// Remove the OpenCode plugin
+	pluginPath := filepath.Join(ctx.HomeDir, opencodeConfigDir, "opencode", "plugins", opencodePluginFile)
+	removedPlugin := false
+	if _, err := os.Stat(pluginPath); err == nil {
+		if err := os.Remove(pluginPath); err != nil {
+			fmt.Printf("Warning: failed to remove OpenCode plugin at %s: %v\n", pluginPath, err)
+		} else {
+			removedPlugin = true
+		}
 	}
 
 	if removedConfig {
@@ -95,7 +125,10 @@ func (OpenCodeAdapter) Remove(ctx Context) error {
 	if removedGuidance {
 		fmt.Printf("Removed Vectos guidance block from %s.\n", agentsPath)
 	}
-	if !removedConfig && !removedGuidance {
+	if removedPlugin {
+		fmt.Printf("Removed OpenCode plugin at %s.\n", pluginPath)
+	}
+	if !removedConfig && !removedGuidance && !removedPlugin {
 		fmt.Println("No Vectos-managed OpenCode setup was found to remove.")
 	}
 

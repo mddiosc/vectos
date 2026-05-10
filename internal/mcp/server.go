@@ -159,19 +159,34 @@ func (s *Server) readMessage() ([]byte, error) {
 	}
 
 	if first == '{' {
-		line, err := s.reader.ReadBytes('\n')
-		if err != nil && err != io.EOF {
-			return nil, err
-		}
-		return bytes.TrimSpace(line), nil
+		return s.readJSONLine()
 	}
 
-	contentLength := 0
+	return s.readContentLengthMessage()
+}
 
+func (s *Server) readJSONLine() ([]byte, error) {
+	line, err := s.reader.ReadBytes('\n')
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+	return bytes.TrimSpace(line), nil
+}
+
+func (s *Server) readContentLengthMessage() ([]byte, error) {
+	contentLength, err := s.readContentLengthHeaders()
+	if err != nil {
+		return nil, err
+	}
+	return s.readExactPayload(contentLength)
+}
+
+func (s *Server) readContentLengthHeaders() (int, error) {
+	contentLength := 0
 	for {
 		line, err := s.reader.ReadString('\n')
 		if err != nil {
-			return nil, err
+			return 0, err
 		}
 
 		trimmed := strings.TrimRight(line, "\r\n")
@@ -179,31 +194,45 @@ func (s *Server) readMessage() ([]byte, error) {
 			break
 		}
 
-		parts := strings.SplitN(trimmed, ":", 2)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid header line: %s", trimmed)
+		parsed, err := s.parseHeaderContentLength(trimmed)
+		if err != nil {
+			return 0, err
 		}
-
-		name := strings.ToLower(strings.TrimSpace(parts[0]))
-		value := strings.TrimSpace(parts[1])
-		if name == "content-length" {
-			parsed, err := strconv.Atoi(value)
-			if err != nil {
-				return nil, fmt.Errorf("invalid content-length: %w", err)
-			}
+		if parsed > 0 {
 			contentLength = parsed
 		}
 	}
 
 	if contentLength <= 0 {
-		return nil, fmt.Errorf("missing content-length header")
+		return 0, fmt.Errorf("missing content-length header")
+	}
+	return contentLength, nil
+}
+
+func (s *Server) parseHeaderContentLength(line string) (int, error) {
+	parts := strings.SplitN(line, ":", 2)
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("invalid header line: %s", line)
 	}
 
+	name := strings.ToLower(strings.TrimSpace(parts[0]))
+	value := strings.TrimSpace(parts[1])
+	if name != "content-length" {
+		return 0, nil
+	}
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid content-length: %w", err)
+	}
+	return parsed, nil
+}
+
+func (s *Server) readExactPayload(contentLength int) ([]byte, error) {
 	payload := make([]byte, contentLength)
 	if _, err := io.ReadFull(s.reader, payload); err != nil {
 		return nil, err
 	}
-
 	return payload, nil
 }
 
@@ -244,91 +273,111 @@ func (s *Server) writeMessage(v interface{}) error {
 func (s *Server) handleRequest(req JSONRPCRequest) (JSONRPCResponse, bool, error) {
 	switch req.Method {
 	case "initialize":
-		var params InitializeParams
-		if len(req.Params) > 0 {
-			if err := json.Unmarshal(req.Params, &params); err != nil {
-				return JSONRPCResponse{}, true, fmt.Errorf("invalid initialize parameters: %w", err)
-			}
-		}
-		log.Printf("mcp initialize params protocolVersion=%s clientInfo=%v", params.ProtocolVersion, params.ClientInfo)
+		return s.handleInitialize(req)
+	case "notifications/initialized":
+		return s.handleNotInitialized(req)
+	case "ping":
+		return s.handlePing(req)
+	case "tools/list":
+		return s.handleToolsList(req)
+	case "tools/call":
+		return s.handleToolsCall(req)
+	default:
+		return JSONRPCResponse{}, true, fmt.Errorf("method not found: %s", req.Method)
+	}
+}
 
-		protocolVersion := params.ProtocolVersion
-		if protocolVersion == "" {
-			protocolVersion = "2024-11-05"
+func (s *Server) handleInitialize(req JSONRPCRequest) (JSONRPCResponse, bool, error) {
+	var params InitializeParams
+	if len(req.Params) > 0 {
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return JSONRPCResponse{}, true, fmt.Errorf("invalid initialize parameters: %w", err)
 		}
+	}
+	log.Printf("mcp initialize params protocolVersion=%s clientInfo=%v", params.ProtocolVersion, params.ClientInfo)
 
-		return JSONRPCResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Result: InitializeResult{
-				ProtocolVersion: protocolVersion,
-				Capabilities: map[string]interface{}{
-					"tools": map[string]interface{}{
-						"listChanged": false,
-					},
+	protocolVersion := params.ProtocolVersion
+	if protocolVersion == "" {
+		protocolVersion = "2024-11-05"
+	}
+
+	return JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      req.ID,
+		Result: InitializeResult{
+			ProtocolVersion: protocolVersion,
+			Capabilities: map[string]interface{}{
+				"tools": map[string]interface{}{
+					"listChanged": false,
 				},
+			},
 			ServerInfo: map[string]string{
 				"name":    "vectos",
 				"version": s.version,
 			},
-			},
-		}, true, nil
-	case "notifications/initialized":
-		return JSONRPCResponse{}, false, nil
-	case "ping":
-		return JSONRPCResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Result:  map[string]interface{}{},
-		}, true, nil
-	case "tools/list":
-		var toolsList []Tool
-		for _, tool := range s.tools {
-			toolsList = append(toolsList, tool)
-		}
-		return JSONRPCResponse{
-			JSONRPC: "2.0",
-			ID:      req.ID,
-			Result:  ListToolsResponse{Tools: toolsList},
-		}, true, nil
-	case "tools/call":
-		var params CallToolParams
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			return JSONRPCResponse{}, true, fmt.Errorf("invalid tools/call parameters: %w", err)
-		}
+		},
+	}, true, nil
+}
 
-		handler, ok := s.handlers[params.Name]
-		if !ok {
-			return JSONRPCResponse{}, true, fmt.Errorf("tool not found: %s", params.Name)
-		}
+func (s *Server) handleNotInitialized(req JSONRPCRequest) (JSONRPCResponse, bool, error) {
+	return JSONRPCResponse{}, false, nil
+}
 
-		result, err := handler(params.Arguments)
-		if err != nil {
-			return JSONRPCResponse{
-				JSONRPC: "2.0",
-				ID:      req.ID,
-				Result: ToolCallResult{
-					Content: []ToolContent{{Type: "text", Text: err.Error()}},
-					IsError: true,
-				},
-			}, true, nil
-		}
+func (s *Server) handlePing(req JSONRPCRequest) (JSONRPCResponse, bool, error) {
+	return JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      req.ID,
+		Result:  map[string]interface{}{},
+	}, true, nil
+}
 
-		text, err := stringifyResult(result)
-		if err != nil {
-			return JSONRPCResponse{}, true, fmt.Errorf("failed to encode tool result: %w", err)
-		}
+func (s *Server) handleToolsList(req JSONRPCRequest) (JSONRPCResponse, bool, error) {
+	var toolsList []Tool
+	for _, tool := range s.tools {
+		toolsList = append(toolsList, tool)
+	}
+	return JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      req.ID,
+		Result:  ListToolsResponse{Tools: toolsList},
+	}, true, nil
+}
 
+func (s *Server) handleToolsCall(req JSONRPCRequest) (JSONRPCResponse, bool, error) {
+	var params CallToolParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return JSONRPCResponse{}, true, fmt.Errorf("invalid tools/call parameters: %w", err)
+	}
+
+	handler, ok := s.handlers[params.Name]
+	if !ok {
+		return JSONRPCResponse{}, true, fmt.Errorf("tool not found: %s", params.Name)
+	}
+
+	result, err := handler(params.Arguments)
+	if err != nil {
 		return JSONRPCResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
 			Result: ToolCallResult{
-				Content: []ToolContent{{Type: "text", Text: text}},
+				Content: []ToolContent{{Type: "text", Text: err.Error()}},
+				IsError: true,
 			},
 		}, true, nil
-	default:
-		return JSONRPCResponse{}, true, fmt.Errorf("method not found: %s", req.Method)
 	}
+
+	text, err := stringifyResult(result)
+	if err != nil {
+		return JSONRPCResponse{}, true, fmt.Errorf("failed to encode tool result: %w", err)
+	}
+
+	return JSONRPCResponse{
+		JSONRPC: "2.0",
+		ID:      req.ID,
+		Result: ToolCallResult{
+			Content: []ToolContent{{Type: "text", Text: text}},
+		},
+	}, true, nil
 }
 
 func stringifyResult(result interface{}) (string, error) {

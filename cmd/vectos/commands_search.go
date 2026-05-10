@@ -9,6 +9,7 @@ import (
 	"vectos/internal/config"
 	"vectos/internal/embeddings"
 	"vectos/internal/storage"
+	"vectos/internal/workspace"
 )
 
 var cliCodeSearch = executeSearch
@@ -92,6 +93,12 @@ func runStatus(projectBaseDir string, projectName string, docsOnly bool) {
 		log.Fatalf("error reading index stats: %v", err)
 	}
 
+	printIndexStats(&stats, scope, docsOnly)
+	printProviderHealth(embedConfig)
+	checkAndPrintReindexStatus(store, embedConfig)
+}
+
+func printIndexStats(stats *storage.IndexStats, scope *workspace.Scope, docsOnly bool) {
 	fmt.Println("Vectos status")
 	if docsOnly {
 		fmt.Println("Mode: documentation index")
@@ -116,22 +123,27 @@ func runStatus(projectBaseDir string, projectName string, docsOnly bool) {
 		fmt.Printf("Embedding model: %s\n", stats.Model)
 		fmt.Printf("Embedding dimensions: %d\n", stats.Dimensions)
 	}
+}
 
+func printProviderHealth(embedConfig config.EmbeddingConfig) {
 	providerStatuses := embeddings.InspectProviders(embedConfig)
-	if len(providerStatuses) > 0 {
-		fmt.Println("Provider health:")
-		for _, provider := range providerStatuses {
-			state := "not ready"
-			if provider.Ready {
-				state = "ready"
-			}
-			fmt.Printf("- %s (%s): %s\n", provider.Provider, provider.Model, state)
-			if provider.Message != "" {
-				fmt.Printf("  %s\n", provider.Message)
-			}
+	if len(providerStatuses) == 0 {
+		return
+	}
+	fmt.Println("Provider health:")
+	for _, provider := range providerStatuses {
+		state := "not ready"
+		if provider.Ready {
+			state = "ready"
+		}
+		fmt.Printf("- %s (%s): %s\n", provider.Provider, provider.Model, state)
+		if provider.Message != "" {
+			fmt.Printf("  %s\n", provider.Message)
 		}
 	}
+}
 
+func checkAndPrintReindexStatus(store *storage.SQLiteStorage, embedConfig config.EmbeddingConfig) {
 	if _, providerInfo, err := embeddings.ResolveEmbedder(embedConfig); err == nil {
 		requiresReindex, err := store.RequiresReindex(providerInfo.Provider, providerInfo.Model, providerInfo.Dimensions)
 		if err == nil && requiresReindex {

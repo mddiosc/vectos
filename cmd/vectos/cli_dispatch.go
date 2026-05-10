@@ -41,6 +41,8 @@ func runCLI(app appContext, args []string) {
 		runStatusCommand(app, commandArgs)
 	case "mcp":
 		runMCPCommand(app, commandArgs)
+	case "serve":
+		runServeCommand(app, commandArgs)
 	case "setup":
 		runSetupCommand(app, commandArgs)
 	case "version":
