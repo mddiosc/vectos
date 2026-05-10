@@ -18,6 +18,31 @@ Format per release:
 
 ---
 
+## v0.5.0 — 2026-05-10
+
+Feature release focused on adding HTTP serving support while tightening incremental reindex behavior and agent-facing setup guidance.
+
+### Added
+
+- HTTP server mode with silent reindexing for serve workflows
+
+### Changed
+
+- CLI help text now reflects the docs flows and current MCP tool surface more accurately
+- Managed setup guidance is now applied unconditionally so supported agent clients always receive the expected Vectos instructions
+
+### Fixed
+
+- Incremental reindex changed paths now resolve against all scope roots instead of only a partial scope view
+- Nx scope handling no longer incorrectly includes excluded library/helper paths in the cases covered by `#18`
+
+### Known Limitations
+
+- This remains an experimental/internal release. Stability and compatibility are not guaranteed.
+- Supported download platforms remain `darwin/arm64` and `linux/amd64` only.
+
+---
+
 ## v0.4.0 — 2026-05-07
 
 Feature release focused on Nx monorepo scoping correctness for MCP agents, plus internal code quality improvements across the indexing and handler layers.
