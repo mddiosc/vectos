@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 
 	"vectos/internal/config"
@@ -121,10 +122,7 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 	}
 	fmt.Println("Processing files...")
 
-	indexedFiles, count := indexPathsIntoStore(env.store, env.chunker, paths)
-	if indexedFiles > 0 {
-		fmt.Printf("Progress: %d/%d files, %d chunks indexed\n", indexedFiles, totalFiles, count)
-	}
+	indexedFiles, count := indexPathsIntoStore(env.store, env.chunker, paths, os.Stdout)
 
 	fmt.Println("Cleaning excluded directories...")
 	cleanupExcludedAndSkipped(env.store, scope, skippedPaths)

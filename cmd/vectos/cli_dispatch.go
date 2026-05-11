@@ -82,11 +82,12 @@ func runIndexCommand(app appContext, args []string) {
 }
 
 func runSearchCommand(app appContext, args []string) {
-	if hasHelpFlag(args) {
+	searchArgs, showHelp := normalizeSearchArgs(args)
+	if showHelp {
 		printSubcommandHelp("search")
 		os.Exit(0)
 	}
-	if err := app.flags.searchCmd.Parse(args); err != nil {
+	if err := app.flags.searchCmd.Parse(searchArgs); err != nil {
 		fatalErr(err)
 	}
 	if app.flags.searchCmd.NArg() < 1 {
@@ -97,11 +98,12 @@ func runSearchCommand(app appContext, args []string) {
 }
 
 func runBenchmarkCommand(app appContext, args []string) {
-	if hasHelpFlag(args) {
+	benchArgs, showHelp := normalizeBenchmarkArgs(args)
+	if showHelp {
 		printSubcommandHelp("benchmark")
 		os.Exit(0)
 	}
-	if err := app.flags.benchmarkCmd.Parse(args); err != nil {
+	if err := app.flags.benchmarkCmd.Parse(benchArgs); err != nil {
 		fatalErr(err)
 	}
 	if app.flags.benchmarkCmd.NArg() < 1 {
