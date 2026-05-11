@@ -18,6 +18,27 @@ Format per release:
 
 ---
 
+## v0.5.1 — 2026-05-11
+
+Patch release focused on diagnostic tooling and incremental indexing quality improvements.
+
+### Added
+
+- `vectos doctor` diagnostic command to help debug configuration and embedding provider health
+- Progress reporting during indexing operations for better visibility into long-running jobs
+
+### Fixed
+
+- `--project` flag now works correctly with `search` and `benchmark` subcommands
+- Indexing progress is now visible during incremental and full reindex operations
+
+### Known Limitations
+
+- This remains an experimental/internal release. Stability and compatibility are not guaranteed.
+- Supported download platforms remain `darwin/arm64` and `linux/amd64` only.
+
+---
+
 ## v0.5.0 — 2026-05-10
 
 Feature release focused on adding HTTP serving support while tightening incremental reindex behavior and agent-facing setup guidance.
