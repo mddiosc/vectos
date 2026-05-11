@@ -74,7 +74,11 @@ func newCLIFlags() cliFlags {
 	}
 }
 
-func normalizeIndexArgs(args []string) ([]string, bool) {
+// normalizePositionalArgs moves all leading positional (non-flag) arguments to
+// after the flags block so that Go's flag.Parse can see flags that follow
+// positionals.  Returns the re-ordered slice and whether the caller should
+// print help and exit.
+func normalizePositionalArgs(args []string) (reordered []string, showHelp bool) {
 	if len(args) == 0 {
 		return args, false
 	}
@@ -85,11 +89,36 @@ func normalizeIndexArgs(args []string) ([]string, bool) {
 		}
 	}
 
-	if len(args) > 0 && !isFlagArg(args[0]) {
-		return append(args[1:], args[0]), false
+	if !isFlagArg(args[0]) {
+		// Find where the contiguous leading positional args end.
+		split := 1
+		for split < len(args) && !isFlagArg(args[split]) {
+			split++
+		}
+		// No flags at all — nothing to reorder.
+		if split == len(args) {
+			return args, false
+		}
+		// Move all leading positionals after the flags block.
+		reordered := make([]string, 0, len(args))
+		reordered = append(reordered, args[split:]...)
+		reordered = append(reordered, args[:split]...)
+		return reordered, false
 	}
 
 	return args, false
+}
+
+func normalizeIndexArgs(args []string) ([]string, bool) {
+	return normalizePositionalArgs(args)
+}
+
+func normalizeSearchArgs(args []string) ([]string, bool) {
+	return normalizePositionalArgs(args)
+}
+
+func normalizeBenchmarkArgs(args []string) ([]string, bool) {
+	return normalizePositionalArgs(args)
 }
 
 func normalizeSetupArgs(args []string) ([]string, bool) {

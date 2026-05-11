@@ -178,7 +178,7 @@ func reindexProject(cache *storeCache, chunker *indexer.SimpleChunker, providerI
 	}
 
 	// Index each path.
-	indexedFiles, count := indexPathsIntoStore(store, chunker, paths)
+	indexedFiles, count := indexPathsIntoStore(store, chunker, paths, nil)
 
 	// Clean up excluded directories and skipped paths.
 	cleanupExcludedAndSkipped(store, scope, skippedPaths)
@@ -191,42 +191,78 @@ func reindexProject(cache *storeCache, chunker *indexer.SimpleChunker, providerI
 	}
 }
 
-func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleChunker, paths []string) (int, int) {
+// progressInterval computes a print-every-N interval so that ~10 updates are
+// shown for a full index, bounded to [1, 100].
+func progressInterval(total int) int {
+	switch {
+	case total < 10:
+		return 1
+	case total > 1000:
+		return 100
+	default:
+		return total / 10
+	}
+}
+
+// indexSingleFile indexes one file and returns (indexedOK, chunksCreated).
+func indexSingleFile(store *storage.SQLiteStorage, chunker *indexer.SimpleChunker, path string) (bool, int) {
+	language, err := content.DetectLanguage(path)
+	if err != nil {
+		log.Printf("warning: skipping %s — unsupported language: %v", path, err)
+		return false, 0
+	}
+	chunks, err := chunker.ChunkFile(path, language)
+	if err != nil {
+		log.Printf("warning: failed to chunk %s: %v", path, err)
+		return false, 0
+	}
+	if err := store.DeleteChunksByPath(path); err != nil {
+		log.Printf("warning: failed to clear previous chunks for %s: %v", path, err)
+		return false, 0
+	}
+
+	created := 0
+	for _, c := range chunks {
+		if _, err := store.SaveChunk(storage.CodeChunk{
+			FilePath:  path,
+			Content:   c.Content,
+			StartLine: c.StartLine,
+			EndLine:   c.EndLine,
+			Language:  language,
+			Category:  content.ClassifyCategory(language),
+			Vector:    c.Vector,
+			Signature: c.Signature,
+			Purpose:   c.Purpose,
+		}); err != nil {
+			log.Printf("warning: failed to save chunk for %s: %v", path, err)
+			continue
+		}
+		created++
+	}
+	return true, created
+}
+
+func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleChunker, paths []string, progress io.Writer) (int, int) {
 	indexedFiles := 0
 	count := 0
+	total := len(paths)
+	reportEvery := progressInterval(total)
+
 	for _, path := range paths {
-		language, err := content.DetectLanguage(path)
-		if err != nil {
-			log.Printf("warning: skipping %s — unsupported language: %v", path, err)
+		ok, created := indexSingleFile(store, chunker, path)
+		if !ok {
 			continue
-		}
-		chunks, err := chunker.ChunkFile(path, language)
-		if err != nil {
-			log.Printf("warning: failed to chunk %s: %v", path, err)
-			continue
-		}
-		if err := store.DeleteChunksByPath(path); err != nil {
-			log.Printf("warning: failed to clear previous chunks for %s: %v", path, err)
-			continue
-		}
-		for _, c := range chunks {
-			if _, err := store.SaveChunk(storage.CodeChunk{
-				FilePath:  path,
-				Content:   c.Content,
-				StartLine: c.StartLine,
-				EndLine:   c.EndLine,
-				Language:  language,
-				Category:  content.ClassifyCategory(language),
-				Vector:    c.Vector,
-				Signature: c.Signature,
-				Purpose:   c.Purpose,
-			}); err != nil {
-				log.Printf("warning: failed to save chunk for %s: %v", path, err)
-				continue
-			}
-			count++
 		}
 		indexedFiles++
+		count += created
+
+		if progress != nil && indexedFiles%reportEvery == 0 && indexedFiles < total {
+			fmt.Fprintf(progress, "Progress: %d/%d files, %d chunks indexed\n", indexedFiles, total, count)
+		}
+	}
+
+	if progress != nil && indexedFiles > 0 {
+		fmt.Fprintf(progress, "Progress: %d/%d files, %d chunks indexed\n", indexedFiles, total, count)
 	}
 	return indexedFiles, count
 }
