@@ -123,3 +123,208 @@ func TestBuildSemanticContentAnnotatesChunkRole(t *testing.T) {
 		t.Fatalf("expected semantic content NOT to include Language:, got %q", semantic)
 	}
 }
+
+// 3.1: interface chunk receives "type definition" tag
+func TestInferPurpose_InterfaceChunk(t *testing.T) {
+	purpose := inferNonGoPurpose("typescript", "interface UserProps {\n  name: string\n  email: string\n}")
+	if !strings.Contains(purpose, "type definition") {
+		t.Fatalf("expected 'type definition' in purpose, got %q", purpose)
+	}
+}
+
+// 3.2: type alias chunk receives "type definition" tag
+func TestInferPurpose_TypeAliasChunk(t *testing.T) {
+	purpose := inferNonGoPurpose("typescript", "type UserRole = \"admin\" | \"editor\" | \"viewer\"")
+	if !strings.Contains(purpose, "type definition") {
+		t.Fatalf("expected 'type definition' in purpose, got %q", purpose)
+	}
+}
+
+// 3.3: enum chunk receives "enumeration" tag
+func TestInferPurpose_EnumChunk(t *testing.T) {
+	purpose := inferNonGoPurpose("typescript", "enum Status {\n  Active,\n  Inactive,\n  Pending\n}")
+	if !strings.Contains(purpose, "enumeration") {
+		t.Fatalf("expected 'enumeration' in purpose, got %q", purpose)
+	}
+}
+
+// 3.4: async function chunk receives "async function" tag
+func TestInferPurpose_AsyncFunction(t *testing.T) {
+	purpose := inferNonGoPurpose("typescript", "async function fetchUserData(id: string): Promise<User> {\n  return await fetch(`/api/users/${id}`)\n}")
+	if !strings.Contains(purpose, "async function") {
+		t.Fatalf("expected 'async function' in purpose, got %q", purpose)
+	}
+}
+
+// 3.5: chunk with both component and async gets both tags (tags are additive)
+func TestInferPurpose_ComponentAndAsync(t *testing.T) {
+	// Use a component that contains an async arrow function, so both detections fire
+	purpose := inferNonGoPurpose("tsx", "export function UserProfile({ id }: Props) {\n  const fetch = async () => { return await api.get(id) }\n  return <div>Profile</div>\n}")
+	if !strings.Contains(purpose, "react component") {
+		t.Fatalf("expected 'react component' in purpose, got %q", purpose)
+	}
+	if !strings.Contains(purpose, "async function") {
+		t.Fatalf("expected 'async function' in purpose, got %q", purpose)
+	}
+}
+
+// 3.6: regular function without async does NOT get "async function" tag
+func TestInferPurpose_RegularFunctionNoAsync(t *testing.T) {
+	purpose := inferNonGoPurpose("typescript", "function formatDate(date: Date): string {\n  return date.toISOString()\n}")
+	if strings.Contains(purpose, "async function") {
+		t.Fatalf("expected NO 'async function' tag for regular function, got %q", purpose)
+	}
+	if !strings.Contains(purpose, "function or callable block") {
+		t.Fatalf("expected 'function or callable block' in purpose, got %q", purpose)
+	}
+}
+
+// 3.7: export interface gets both "type definition" and "exported api"
+func TestInferPurpose_ExportInterface(t *testing.T) {
+	purpose := inferNonGoPurpose("typescript", "export interface ApiResponse<T> {\n  data: T\n  error?: string\n}")
+	if !strings.Contains(purpose, "type definition") {
+		t.Fatalf("expected 'type definition' in purpose, got %q", purpose)
+	}
+	if !strings.Contains(purpose, "exported api") {
+		t.Fatalf("expected 'exported api' in purpose, got %q", purpose)
+	}
+}
+
+// 3.8: interface/enum are recognized as structural boundaries in isStructuredBoundary()
+func TestIsStructuredBoundary_TypescriptStructures(t *testing.T) {
+	tests := []struct {
+		line     string
+		language string
+		want     bool
+	}{
+		{"interface Foo {}", "typescript", true},
+		{"export interface Bar<T> {", "typescript", true},
+		{"enum Colors {", "typescript", true},
+		{"const enum Direction {", "typescript", true},
+		{"export enum Status {", "typescript", true},
+		{"interface Foo {}", "javascript", true},
+		{"enum Colors {", "javascript", true},
+		{"type Alias = string", "typescript", false},
+		{"import { Foo } from './foo'", "typescript", false},
+		{"const x = 1;", "typescript", false},
+	}
+
+	for _, tt := range tests {
+		got := isStructuredBoundary(tt.language, tt.line)
+		if got != tt.want {
+			t.Errorf("isStructuredBoundary(%q, %q) = %v, want %v", tt.language, tt.line, got, tt.want)
+		}
+	}
+}
+
+// 3.9: table-driven test for all new patterns (valid and invalid inputs)
+func TestInferPurpose_TableDriven(t *testing.T) {
+	tests := []struct {
+		name     string
+		language string
+		content  string
+		contains []string
+		excludes []string
+	}{
+		{
+			name:     "interface gets type definition",
+			language: "typescript",
+			content:  "interface UserProps {\n  name: string\n}",
+			contains: []string{"type definition"},
+			excludes: []string{"enumeration", "async function"},
+		},
+		{
+			name:     "exported interface gets type definition and exported api",
+			language: "typescript",
+			content:  "export interface ApiResponse<T> {\n  data: T\n}",
+			contains: []string{"type definition", "exported api"},
+		},
+		{
+			name:     "type alias gets type definition",
+			language: "typescript",
+			content:  "type UserRole = \"admin\" | \"editor\"",
+			contains: []string{"type definition"},
+			excludes: []string{"enumeration", "async function"},
+		},
+		{
+			name:     "generic type alias gets type definition",
+			language: "typescript",
+			content:  "type ApiResponse<T> = { data: T; error?: string }",
+			contains: []string{"type definition"},
+		},
+		{
+			name:     "enum gets enumeration",
+			language: "typescript",
+			content:  "enum Status {\n  Active,\n  Inactive\n}",
+			contains: []string{"enumeration"},
+			excludes: []string{"type definition", "async function"},
+		},
+		{
+			name:     "const enum gets enumeration",
+			language: "typescript",
+			content:  "const enum Direction {\n  Up,\n  Down\n}",
+			contains: []string{"enumeration"},
+		},
+		{
+			name:     "exported enum gets enumeration and exported api",
+			language: "typescript",
+			content:  "export enum LogLevel {\n  Debug,\n  Error\n}",
+			contains: []string{"enumeration", "exported api"},
+		},
+		{
+			name:     "async function gets async function tag",
+			language: "typescript",
+			content:  "async function fetchData(url: string) {\n  return await fetch(url)\n}",
+			contains: []string{"async function"},
+		},
+		{
+			name:     "async arrow gets async function tag",
+			language: "typescript",
+			content:  "const fetchData = async (url: string) => {\n  return await fetch(url)\n}",
+			contains: []string{"async function"},
+		},
+		{
+			name:     "export async gets async function and exported api",
+			language: "typescript",
+			content:  "export async function loadData() {\n  return await fetch('/api')\n}",
+			contains: []string{"async function", "exported api"},
+		},
+		{
+			name:     "regular function without async does NOT get async function",
+			language: "typescript",
+			content:  "function formatDate(date: Date): string {\n  return date.toISOString()\n}",
+			contains: []string{"function or callable block"},
+			excludes: []string{"async function"},
+		},
+		{
+			name:     "non-JS/TS language ignores new patterns",
+			language: "python",
+			content:  "interface = {}\ndef foo():\n  pass",
+			contains: []string{"function or callable block"},
+			excludes: []string{"type definition", "enumeration", "async function"},
+		},
+		{
+			name:     "non-JS/TS language with enum-like content does not get enumeration",
+			language: "python",
+			content:  "from enum import Enum\nclass Color(Enum):\n  RED = 1",
+			contains: []string{"class definition"},
+			excludes: []string{"enumeration"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			purpose := inferNonGoPurpose(tt.language, tt.content)
+			for _, c := range tt.contains {
+				if !strings.Contains(purpose, c) {
+					t.Errorf("purpose %q should contain %q", purpose, c)
+				}
+			}
+			for _, e := range tt.excludes {
+				if strings.Contains(purpose, e) {
+					t.Errorf("purpose %q should NOT contain %q", purpose, e)
+				}
+			}
+		})
+	}
+}

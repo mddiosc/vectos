@@ -18,7 +18,7 @@ The system SHALL accept a file path or project directory and index supported sou
 
 #### Scenario: Index a TypeScript or React file with structural boundaries
 - **WHEN** the system indexes a supported TypeScript, TSX, JSX, or JavaScript frontend file
-- **THEN** it SHALL prefer meaningful structural chunk boundaries such as components, hooks, exported functions, classes, or test blocks when those boundaries can be derived safely
+- **THEN** it SHALL prefer meaningful structural chunk boundaries such as components, hooks, exported functions, classes, interfaces, type aliases, enums, or test blocks when those boundaries can be derived safely
 
 #### Scenario: Fall back safely for unsupported frontend structure
 - **WHEN** the system cannot derive safe structural boundaries for a supported TypeScript or React file
@@ -34,7 +34,7 @@ The system SHALL accept a file path or project directory and index supported sou
 
 #### Scenario: Chunks are stored with structural metadata
 - **WHEN** the system persists a chunk to the database
-- **THEN** it SHALL store the extracted structural signature (if available) and inferred purpose in dedicated columns alongside the content and embedding
+- **THEN** it SHALL store the extracted structural signature (if available) and inferred purpose in dedicated columns alongside the content and embedding. The purpose SHALL include TypeScript-specific tags (type definition, enumeration, async function) when applicable.
 
 ### Requirement: Go code SHALL be chunked by function boundaries when possible
 The system SHALL chunk Go source files by function boundaries instead of only fixed line windows whenever a function-oriented split can be derived.
@@ -101,7 +101,7 @@ The system SHALL accept a file path or project directory and index supported sou
 
 #### Scenario: Index a TypeScript or React file with structural boundaries
 - **WHEN** the system indexes a supported TypeScript, TSX, JSX, or JavaScript frontend file
-- **THEN** it SHALL prefer meaningful structural chunk boundaries such as components, hooks, exported functions, classes, or test blocks when those boundaries can be derived safely
+- **THEN** it SHALL prefer meaningful structural chunk boundaries such as components, hooks, exported functions, classes, interfaces, type aliases, enums, or test blocks when those boundaries can be derived safely
 
 #### Scenario: Fall back safely for unsupported frontend structure
 - **WHEN** the system cannot derive safe structural boundaries for a supported TypeScript or React file
@@ -117,7 +117,7 @@ The system SHALL accept a file path or project directory and index supported sou
 
 #### Scenario: Chunks are stored with structural metadata
 - **WHEN** the system persists a chunk to the database
-- **THEN** it SHALL store the extracted structural signature (if available) and inferred purpose in dedicated columns alongside the content and embedding
+- **THEN** it SHALL store the extracted structural signature (if available) and inferred purpose in dedicated columns alongside the content and embedding. The purpose SHALL include TypeScript-specific tags (type definition, enumeration, async function) when applicable.
 
 ## ADDED Requirements
 
