@@ -384,13 +384,30 @@ func (s *SQLiteStorage) SearchTextRanked(query string, limit int) ([]CodeChunk, 
 		limit = 25
 	}
 
-	// First retrieve candidates via LIKE (same as SearchText but with limit)
-	sqlQuery := `SELECT id, file_path, content, start_line, end_line, language, category, created_at, signature, purpose
-	             FROM code_chunks
-	             WHERE content LIKE ?
-	             LIMIT ?`
+	// Split query into terms and build OR-connected LIKE clauses so
+	// multi-word queries match documents containing any of the terms.
+	terms := meaningfulTerms(query)
+	if len(terms) == 0 {
+		return nil, nil
+	}
 
-	rows, err := s.db.Query(sqlQuery, "%"+escapeLikeTerm(query)+"%", limit*5) // oversample for scoring
+	clauses := make([]string, 0, len(terms)+1)
+	args := make([]interface{}, 0, len(terms)+2)
+	// Always include full phrase match
+	clauses = append(clauses, "content LIKE ?")
+	args = append(args, "%"+escapeLikeTerm(query)+"%")
+	for _, term := range terms {
+		clauses = append(clauses, "content LIKE ?")
+		args = append(args, "%"+escapeLikeTerm(term)+"%")
+	}
+	args = append(args, limit*5)
+
+	sqlQuery := fmt.Sprintf(`SELECT id, file_path, content, start_line, end_line, language, category, created_at, signature, purpose
+	             FROM code_chunks
+	             WHERE %s
+	             LIMIT ?`, strings.Join(clauses, " OR "))
+
+	rows, err := s.db.Query(sqlQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("keyword search failed: %w", err)
 	}
@@ -428,6 +445,30 @@ func (s *SQLiteStorage) SearchTextRanked(query string, limit int) ([]CodeChunk, 
 	return candidates, nil
 }
 
+// meaningfulTerms splits a query into significant terms (>=2 chars, not stopwords).
+func meaningfulTerms(query string) []string {
+	words := strings.Fields(strings.ToLower(query))
+	terms := make([]string, 0, len(words))
+	for _, w := range words {
+		if len(w) < 2 {
+			continue
+		}
+		if isStopWord(w) {
+			continue
+		}
+		terms = append(terms, w)
+	}
+	return terms
+}
+
+func isStopWord(w string) bool {
+	switch w {
+	case "the", "and", "for", "with", "that", "this", "from", "into", "only", "part", "flow", "code", "how", "does", "what", "where", "when", "why":
+		return true
+	}
+	return false
+}
+
 // computeKeywordScore calculates a relevance score for a chunk given a query.
 // Uses term frequency in content + filename match bonus.
 func computeKeywordScore(content, filePath, query string) float64 {
@@ -461,7 +502,37 @@ func computeKeywordScore(content, filePath, query string) float64 {
 		}
 	}
 
+	// Config/lock files get reduced keyword weight — they contain
+	// code-related words as configuration values, not as implementations.
+	if isKeywordNoiseFile(base) {
+		score *= 0.3
+	}
+
 	return score
+}
+
+// isKeywordNoiseFile returns true for config files, lockfiles, and other
+// files whose keyword matches are usually misleading noise.
+func isKeywordNoiseFile(filename string) bool {
+	lower := strings.ToLower(filename)
+	for _, pattern := range keywordNoisePatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+var keywordNoisePatterns = []string{
+	"eslint.config",
+	"tailwind.config",
+	"vite.config",
+	"vitest.config",
+	"playwright.config",
+	"tsconfig",
+	"postcss.config",
+	".lock",
+	"package.json",
 }
 
 // Stats devuelve un resumen del índice del proyecto activo.
@@ -551,17 +622,27 @@ func (s *SQLiteStorage) SearchSemantic(queryVector []float32, limit int, include
 		return nil, nil
 	}
 
-	// Use vector index when available.
+	// Use vector index when available and chunk count is sufficient.
 	s.vectIdxMu.RLock()
 	idx := s.vectIdx
 	s.vectIdxMu.RUnlock()
 
-	if idx != nil {
+	// For small indexes (< 1000 chunks), linear scan is faster and more accurate
+	// than HNSW approximate search.
+	if idx != nil && s.chunkCount() >= 1000 {
 		return s.searchViaIndex(idx, queryVector, limit, includeDocs)
 	}
 
-	log.Println("vectorindex: no index loaded — falling back to linear scan")
+	if idx == nil {
+		log.Println("vectorindex: no index loaded — falling back to linear scan")
+	}
 	return s.searchLinearScan(queryVector, limit, includeDocs)
+}
+
+func (s *SQLiteStorage) chunkCount() int {
+	var count int
+	s.db.QueryRow("SELECT COUNT(*) FROM code_chunks WHERE embedding IS NOT NULL AND length(embedding) > 0").Scan(&count)
+	return count
 }
 
 // searchViaIndex uses the HNSW index for approximate nearest neighbor search,

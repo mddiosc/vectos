@@ -9,6 +9,7 @@ import (
 // skippedDirs lists directories that should be excluded from indexing.
 var skippedDirs = map[string]struct{}{
 	".git": {}, "node_modules": {}, ".opencode": {}, ".vectos": {},
+	".agents": {}, ".claude": {}, ".codex": {},
 	"coverage": {}, "playwright-report": {}, "test-results": {},
 	"dist": {}, ".next": {}, "build": {},
 }
@@ -21,15 +22,36 @@ func ShouldSkipDir(name string) bool {
 
 // sensitiveFilenames is the set of exact filenames that should never be indexed.
 var sensitiveFilenames = map[string]bool{
-	".env":               true,
-	".env.local":         true,
-	".env.production":    true,
-	".env.development":   true,
-	"id_rsa":             true,
-	"id_ecdsa":           true,
-	"id_ed25519":         true,
-	"credentials.json":   true,
-	"service-account.json": true,
+	".env":                  true,
+	".env.local":            true,
+	".env.production":       true,
+	".env.development":      true,
+	"id_rsa":                true,
+	"id_ecdsa":              true,
+	"id_ed25519":            true,
+	"credentials.json":      true,
+	"service-account.json":  true,
+	// Lockfiles — never useful for code search
+	"pnpm-lock.yaml":  true,
+	"package-lock.json": true,
+	"yarn.lock":        true,
+	"Cargo.lock":       true,
+	"Gemfile.lock":     true,
+	"go.sum":           true,
+	"composer.lock":    true,
+	"poetry.lock":      true,
+	"Pipfile.lock":     true,
+	// Config files — contain code-related words as config values, not implementations
+	"eslint.config.js":  true,
+	"eslint.config.mjs": true,
+	"eslint.config.cjs": true,
+	".eslintrc.js":      true,
+	".eslintrc.cjs":     true,
+	".eslintrc.json":    true,
+	".eslintrc.yaml":    true,
+	".eslintrc.yml":     true,
+	"tailwind.config.js": true,
+	"tailwind.config.ts": true,
 }
 
 // sensitiveExtensions is the set of file extensions that indicate sensitive content.

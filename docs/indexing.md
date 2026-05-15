@@ -3,7 +3,7 @@
 ## What Vectos Does
 
 - Indexes source files into per-project SQLite databases under `~/.vectos/projects/`
-- Generates embeddings for code chunks using a configurable embedding provider
+- Generates embeddings for code chunks using a configurable embedding provider (default: **jina-embeddings-v3**, a code+text-aware model with 1024 dimensions and 8192 token context)
 - Supports hybrid retrieval:
   - semantic search with cosine similarity over stored embeddings
   - text fallback when semantic search is unavailable or insufficient

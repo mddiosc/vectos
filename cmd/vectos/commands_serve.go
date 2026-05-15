@@ -88,7 +88,8 @@ func configureServeLogging() {
 	logPath := filepath.Join(home, ".vectos", "vectos-serve.log")
 	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err == nil {
 		if f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
-			log.SetOutput(f)
+			// Write to both log file and stderr so user sees errors
+			log.SetOutput(io.MultiWriter(f, os.Stderr))
 			log.Printf("starting vectos serve")
 			return
 		}

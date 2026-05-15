@@ -49,6 +49,11 @@ var embeddedModelAssets = map[string][]embeddedAssetSpec{
 		{LocalName: "tokenizer.json", RemotePath: "tokenizer.json"},
 		{LocalName: "model.onnx", RemotePath: "onnx/model.onnx"},
 	},
+	"jina-embeddings-v3": {
+		{LocalName: "config.json", RemotePath: "config.json"},
+		{LocalName: "tokenizer.json", RemotePath: "tokenizer.json"},
+		{LocalName: "model.onnx", RemotePath: "onnx/model.onnx"},
+	},
 }
 
 var runtimeArchiveSpecs = map[string]runtimeArchiveSpec{

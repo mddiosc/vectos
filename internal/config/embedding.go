@@ -13,10 +13,14 @@ const (
 	ProviderEmbedded = "embedded"
 	ProviderRemote   = "remote"
 
-	DefaultEmbeddedModel = "bge-small-en-v1.5"
-	DefaultEmbeddedAssetBaseURL = "https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main"
-	DefaultRemoteModel   = "text-embedding-nomic-embed-text-v1.5"
+	DefaultEmbeddedModel          = "jina-embeddings-v3"
+	DefaultEmbeddedAssetBaseURL   = "https://huggingface.co/jinaai/jina-embeddings-v3/resolve/main"
+	DefaultBGEAssetBaseURL        = "https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main"
+	DefaultRemoteModel            = "text-embedding-nomic-embed-text-v1.5"
 )
+
+// SupportedEmbeddedModels lists the model names accepted in embedded model_name config.
+var SupportedEmbeddedModels = []string{"jina-embeddings-v3", "bge-small-en-v1.5"}
 
 // ValidateAssetBaseURL validates the embedded provider's asset_base_url.
 // Returns nil if the URL is empty; otherwise checks scheme (HTTPS only),
@@ -165,7 +169,7 @@ func DefaultEmbeddingConfig(homeDir string) EmbeddingConfig {
 			IndexType:           "hnsw",
 			HNSW_M:              16,
 			HNSW_EfConstruction: 200,
-			HNSW_EfSearch:       100,
+			HNSW_EfSearch:       200,
 			Compression:         "none",
 		},
 	}
@@ -191,7 +195,11 @@ func mergeEmbeddingConfig(dst *EmbeddingConfig, src embeddingConfigDisk) error {
 
 func mergeEmbeddedConfig(dst *EmbeddedProviderConfig, src embeddedProviderConfigDisk) error {
 	if src.ModelName != nil && strings.TrimSpace(*src.ModelName) != "" {
-		dst.ModelName = strings.TrimSpace(*src.ModelName)
+		modelName := strings.TrimSpace(*src.ModelName)
+		if !isSupportedEmbeddedModel(modelName) {
+			return fmt.Errorf("unsupported embedded model %q: must be one of %v", modelName, SupportedEmbeddedModels)
+		}
+		dst.ModelName = modelName
 	}
 	if src.ModelDir != nil && strings.TrimSpace(*src.ModelDir) != "" {
 		dst.ModelDir = strings.TrimSpace(*src.ModelDir)
@@ -250,4 +258,13 @@ func mergeVectorIndexConfig(dst *VectorIndexConfig, src vectorIndexConfigDisk) e
 		dst.Compression = strings.TrimSpace(*src.Compression)
 	}
 	return nil
+}
+
+func isSupportedEmbeddedModel(name string) bool {
+	for _, m := range SupportedEmbeddedModels {
+		if m == name {
+			return true
+		}
+	}
+	return false
 }

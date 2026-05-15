@@ -2,7 +2,7 @@
 
 Vectos is a local-first code context engine for AI agents.
 
-It indexes source code into project-scoped SQLite databases, generates embeddings for code chunks, and exposes search and indexing tools over MCP so agent clients can use the indexed codebase as structured context.
+It indexes source code into project-scoped SQLite databases, generates code-aware embeddings using **jina-embeddings-v3** (1024-dim, 8192-token context, supports code + text + multilingual), and exposes search and indexing tools over MCP so agent clients can use the indexed codebase as structured context.
 
 Vectos is designed to be useful as a standalone product. It can also work alongside session-memory systems such as Engram, but it does not depend on them.
 
