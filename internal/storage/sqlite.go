@@ -384,13 +384,30 @@ func (s *SQLiteStorage) SearchTextRanked(query string, limit int) ([]CodeChunk, 
 		limit = 25
 	}
 
-	// First retrieve candidates via LIKE (same as SearchText but with limit)
-	sqlQuery := `SELECT id, file_path, content, start_line, end_line, language, category, created_at, signature, purpose
-	             FROM code_chunks
-	             WHERE content LIKE ?
-	             LIMIT ?`
+	// Split query into terms and build OR-connected LIKE clauses so
+	// multi-word queries match documents containing any of the terms.
+	terms := meaningfulTerms(query)
+	if len(terms) == 0 {
+		return nil, nil
+	}
 
-	rows, err := s.db.Query(sqlQuery, "%"+escapeLikeTerm(query)+"%", limit*5) // oversample for scoring
+	clauses := make([]string, 0, len(terms)+1)
+	args := make([]interface{}, 0, len(terms)+2)
+	// Always include full phrase match
+	clauses = append(clauses, "content LIKE ?")
+	args = append(args, "%"+escapeLikeTerm(query)+"%")
+	for _, term := range terms {
+		clauses = append(clauses, "content LIKE ?")
+		args = append(args, "%"+escapeLikeTerm(term)+"%")
+	}
+	args = append(args, limit*5)
+
+	sqlQuery := fmt.Sprintf(`SELECT id, file_path, content, start_line, end_line, language, category, created_at, signature, purpose
+	             FROM code_chunks
+	             WHERE %s
+	             LIMIT ?`, strings.Join(clauses, " OR "))
+
+	rows, err := s.db.Query(sqlQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("keyword search failed: %w", err)
 	}
@@ -426,6 +443,30 @@ func (s *SQLiteStorage) SearchTextRanked(query string, limit int) ([]CodeChunk, 
 		candidates = candidates[:limit]
 	}
 	return candidates, nil
+}
+
+// meaningfulTerms splits a query into significant terms (>=2 chars, not stopwords).
+func meaningfulTerms(query string) []string {
+	words := strings.Fields(strings.ToLower(query))
+	terms := make([]string, 0, len(words))
+	for _, w := range words {
+		if len(w) < 2 {
+			continue
+		}
+		if isStopWord(w) {
+			continue
+		}
+		terms = append(terms, w)
+	}
+	return terms
+}
+
+func isStopWord(w string) bool {
+	switch w {
+	case "the", "and", "for", "with", "that", "this", "from", "into", "only", "part", "flow", "code", "how", "does", "what", "where", "when", "why":
+		return true
+	}
+	return false
 }
 
 // computeKeywordScore calculates a relevance score for a chunk given a query.

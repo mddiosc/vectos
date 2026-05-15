@@ -9,6 +9,7 @@ import (
 // skippedDirs lists directories that should be excluded from indexing.
 var skippedDirs = map[string]struct{}{
 	".git": {}, "node_modules": {}, ".opencode": {}, ".vectos": {},
+	".agents": {}, ".claude": {}, ".codex": {},
 	"coverage": {}, "playwright-report": {}, "test-results": {},
 	"dist": {}, ".next": {}, "build": {},
 }
