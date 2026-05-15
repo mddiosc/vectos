@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"vectos/internal/config"
 	"vectos/internal/embeddings"
 	"vectos/internal/storage"
@@ -22,7 +23,7 @@ func executeSearch(store *storage.SQLiteStorage, embedConfig config.EmbeddingCon
 	requiresReindex, err := store.RequiresReindex(providerInfo.Provider, providerInfo.Model, providerInfo.Dimensions)
 	if err == nil && requiresReindex {
 		return textSearchFallback(store, query, limit, "text_stale_index",
-			"index metadata does not match current embedding provider; semantic results may be stale until reindex")
+			fmt.Sprintf("index uses different embedding model; reindex required for accurate semantic results (current: %s/%dd, index may differ)", providerInfo.Model, providerInfo.Dimensions))
 	}
 
 	run, ok, err := trySemanticSearch(embedClient, store, query, limit)

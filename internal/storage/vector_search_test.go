@@ -173,3 +173,62 @@ func TestIndexStalenessDetection(t *testing.T) {
 		t.Fatal("expected loaded hash to differ from current hash")
 	}
 }
+
+func TestRequiresReindex_ModelMismatch(t *testing.T) {
+	store, cleanup := newTestSQLiteStorage(t)
+	defer cleanup()
+
+	// No metadata → should not require reindex
+	requires, err := store.RequiresReindex("embedded", "jina-embeddings-v3", 1024)
+	if err != nil {
+		t.Fatalf("RequiresReindex (no metadata): %v", err)
+	}
+	if requires {
+		t.Error("RequiresReindex should return false when no metadata exists")
+	}
+
+	// Set metadata for bge-small
+	if err := store.SetIndexMetadata(IndexMetadata{
+		Provider:   "embedded",
+		Model:      "bge-small-en-v1.5",
+		Dimensions: 384,
+	}); err != nil {
+		t.Fatalf("SetIndexMetadata: %v", err)
+	}
+
+	// Same model → should not require reindex
+	requires, err = store.RequiresReindex("embedded", "bge-small-en-v1.5", 384)
+	if err != nil {
+		t.Fatalf("RequiresReindex (same model): %v", err)
+	}
+	if requires {
+		t.Error("RequiresReindex should return false when model matches")
+	}
+
+	// Different model → should require reindex
+	requires, err = store.RequiresReindex("embedded", "jina-embeddings-v3", 1024)
+	if err != nil {
+		t.Fatalf("RequiresReindex (different model): %v", err)
+	}
+	if !requires {
+		t.Error("RequiresReindex should return true when model differs")
+	}
+
+	// Different dimensions → should require reindex
+	requires, err = store.RequiresReindex("embedded", "bge-small-en-v1.5", 768)
+	if err != nil {
+		t.Fatalf("RequiresReindex (different dims): %v", err)
+	}
+	if !requires {
+		t.Error("RequiresReindex should return true when dimensions differ")
+	}
+
+	// Different provider → should require reindex
+	requires, err = store.RequiresReindex("remote", "bge-small-en-v1.5", 384)
+	if err != nil {
+		t.Fatalf("RequiresReindex (different provider): %v", err)
+	}
+	if !requires {
+		t.Error("RequiresReindex should return true when provider differs")
+	}
+}
