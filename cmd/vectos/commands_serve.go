@@ -108,25 +108,6 @@ func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port in
 	var chunker *indexer.SimpleChunker
 	var providerInfo embeddings.ProviderInfo
 
-	reindexFn := func(req server.ReindexRequest) server.ReindexResponse {
-		return reindexProject(cache, chunker, providerInfo, req)
-	}
-
-	srv := server.NewServer(port, reindexFn)
-	srv.SetReady(false)
-	srv.AddCloser(cache)
-
-	serveErr := make(chan error, 1)
-	go func() {
-		serveErr <- srv.ListenAndServe()
-	}()
-
-	select {
-	case err := <-serveErr:
-		log.Fatalf("server error: %v", err)
-	case <-time.After(100 * time.Millisecond):
-	}
-
 	// Load embedding model once at startup while /health reports starting.
 	embedClient, provider, err := embeddings.ResolveEmbedder(embedConfig)
 	if err != nil {
@@ -134,12 +115,32 @@ func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port in
 	}
 	chunker = indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10}, embedClient)
 	providerInfo = provider
+
+	var activeStore *storage.SQLiteStorage
 	if scope, err := workspace.ResolveScope(projectBaseDir, ""); err == nil {
 		if store, err := cache.getOrCreate(scope.Name, false); err == nil {
+			activeStore = store
 			if _, _, _, _, err := store.LoadVectorIndex(); err != nil {
 				log.Printf("warning: vector index not available, using linear scan: %v", err)
 			}
 		}
+	}
+
+	reindexFn := func(req server.ReindexRequest) server.ReindexResponse {
+		return reindexProject(cache, chunker, providerInfo, req)
+	}
+	embedFn := func(text string) ([]float32, error) { return embedClient.GetEmbedding(text) }
+	srv := server.NewServer(port, reindexFn, embedFn, activeStore)
+	srv.SetReady(false)
+	srv.AddCloser(cache)
+
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.ListenAndServe() }()
+
+	select {
+	case err := <-serveErr:
+		log.Fatalf("server error: %v", err)
+	case <-time.After(100 * time.Millisecond):
 	}
 	srv.SetReady(true)
 	if watchEnabled {

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
+	"vectos/internal/storage"
 )
 
 // ReindexRequest is the JSON body accepted by the /reindex endpoint.
@@ -37,23 +38,32 @@ type ReindexResponse struct {
 // ReindexFunc is a function that performs a reindex operation.
 type ReindexFunc func(ReindexRequest) ReindexResponse
 
+// EmbedFunc converts text into an embedding vector.
+type EmbedFunc func(text string) ([]float32, error)
+
 // Server is an HTTP server that exposes health and reindex endpoints.
 type Server struct {
-	port      int
-	ready     atomic.Bool
-	reindexFn ReindexFunc
+	port           int
+	ready          atomic.Bool
+	reindexFn      ReindexFunc
+	embedFunc      EmbedFunc
+	store          *storage.SQLiteStorage
+	startTime      time.Time
 	reindexLimiter *rate.Limiter
-	httpSrv   *http.Server
-	closers   []io.Closer
-	closersMu sync.Mutex
-	mu        sync.Mutex // serializes /reindex requests
+	httpSrv        *http.Server
+	closers        []io.Closer
+	closersMu      sync.Mutex
+	mu             sync.Mutex // serializes /reindex requests
 }
 
 // NewServer creates a new Server that listens on the given port.
-func NewServer(port int, reindexFn ReindexFunc) *Server {
+func NewServer(port int, reindexFn ReindexFunc, embedFn EmbedFunc, store *storage.SQLiteStorage) *Server {
 	s := &Server{
 		port:           port,
-		reindexFn:       reindexFn,
+		reindexFn:      reindexFn,
+		embedFunc:      embedFn,
+		store:          store,
+		startTime:      time.Now(),
 		reindexLimiter: rate.NewLimiter(rate.Limit(1), 5),
 	}
 	s.ready.Store(true)
@@ -71,6 +81,11 @@ func (s *Server) ListenAndServe() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/reindex", s.handleReindex)
+	mux.HandleFunc("/search", s.handleSearchCode)
+	mux.HandleFunc("/search/code", s.handleSearchCode)
+	mux.HandleFunc("/search/docs", s.handleSearchDocs)
+	mux.HandleFunc("/metrics", s.handleMetrics)
+	mux.HandleFunc("/status/", s.handleStatus)
 
 	s.httpSrv = &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", s.port),
