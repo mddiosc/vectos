@@ -129,6 +129,13 @@ func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port in
 	}
 	chunker = indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10}, embedClient)
 	providerInfo = provider
+	if scope, err := workspace.ResolveScope(projectBaseDir, ""); err == nil {
+		if store, err := cache.getOrCreate(scope.Name, false); err == nil {
+			if _, _, _, _, err := store.LoadVectorIndex(); err != nil {
+				log.Printf("warning: vector index not available, using linear scan: %v", err)
+			}
+		}
+	}
 	srv.SetReady(true)
 
 	if err := <-serveErr; err != nil {
@@ -179,6 +186,7 @@ func reindexProject(cache *storeCache, chunker *indexer.SimpleChunker, providerI
 
 	// Index each path.
 	indexedFiles, count := indexPathsIntoStore(store, chunker, paths, nil)
+	buildVectorIndex(store, chunker)
 
 	// Clean up excluded directories and skipped paths.
 	cleanupExcludedAndSkipped(store, scope, skippedPaths)
@@ -205,66 +213,86 @@ func progressInterval(total int) int {
 }
 
 // indexSingleFile indexes one file and returns (indexedOK, chunksCreated).
-func indexSingleFile(store *storage.SQLiteStorage, chunker *indexer.SimpleChunker, path string) (bool, int) {
-	language, err := content.DetectLanguage(path)
-	if err != nil {
-		log.Printf("warning: skipping %s — unsupported language: %v", path, err)
-		return false, 0
-	}
-	chunks, err := chunker.ChunkFile(path, language)
-	if err != nil {
-		log.Printf("warning: failed to chunk %s: %v", path, err)
-		return false, 0
-	}
-	if err := store.DeleteChunksByPath(path); err != nil {
-		log.Printf("warning: failed to clear previous chunks for %s: %v", path, err)
-		return false, 0
-	}
-
-	created := 0
-	for _, c := range chunks {
-		if _, err := store.SaveChunk(storage.CodeChunk{
-			FilePath:  path,
-			Content:   c.Content,
-			StartLine: c.StartLine,
-			EndLine:   c.EndLine,
-			Language:  language,
-			Category:  content.ClassifyCategory(language),
-			Vector:    c.Vector,
-			Signature: c.Signature,
-			Purpose:   c.Purpose,
-		}); err != nil {
-			log.Printf("warning: failed to save chunk for %s: %v", path, err)
-			continue
-		}
-		created++
-	}
-	return true, created
+// pendingChunk holds a raw chunk together with the file metadata needed to
+// save it after batch embedding.
+type pendingChunk struct {
+	chunk    indexer.ChunkResult
+	path     string
+	language string
 }
 
 func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleChunker, paths []string, progress io.Writer) (int, int) {
 	indexedFiles := 0
-	count := 0
 	total := len(paths)
 	reportEvery := progressInterval(total)
+	var pending []pendingChunk
 
+	// Phase 1: chunk every file (no embedding) and clear old rows.
 	for _, path := range paths {
-		ok, created := indexSingleFile(store, chunker, path)
-		if !ok {
+		language, err := content.DetectLanguage(path)
+		if err != nil {
+			log.Printf("warning: skipping %s — unsupported language: %v", path, err)
 			continue
 		}
+		chunks, err := chunker.ChunkFileRaw(path, language)
+		if err != nil {
+			log.Printf("warning: failed to chunk %s: %v", path, err)
+			continue
+		}
+		if err := store.DeleteChunksByPath(path); err != nil {
+			log.Printf("warning: failed to clear previous chunks for %s: %v", path, err)
+			continue
+		}
+		for _, c := range chunks {
+			pending = append(pending, pendingChunk{chunk: c, path: path, language: language})
+		}
 		indexedFiles++
-		count += created
 
 		if progress != nil && indexedFiles%reportEvery == 0 && indexedFiles < total {
-			fmt.Fprintf(progress, "Progress: %d/%d files, %d chunks indexed\n", indexedFiles, total, count)
+			fmt.Fprintf(progress, "Progress: %d/%d files chunked\n", indexedFiles, total)
 		}
 	}
 
 	if progress != nil && indexedFiles > 0 {
-		fmt.Fprintf(progress, "Progress: %d/%d files, %d chunks indexed\n", indexedFiles, total, count)
+		fmt.Fprintf(progress, "Progress: %d/%d files chunked — generating embeddings in batches...\n", indexedFiles, total)
 	}
-	return indexedFiles, count
+
+	// Phase 2: batch-embed all pending chunks.
+	pendingChunks := make([]indexer.ChunkResult, len(pending))
+	for i, p := range pending {
+		pendingChunks[i] = p.chunk
+	}
+	if err := chunker.BatchEmbedChunks(pendingChunks, 0); err != nil {
+		log.Printf("warning: batch embedding failed: %v", err)
+	}
+
+	// Phase 3: save all chunks to the store.
+	savedChunks := 0
+	for i, p := range pending {
+		if pendingChunks[i].Vector == nil {
+			continue // skip chunks that couldn't be embedded
+		}
+		if _, err := store.SaveChunk(storage.CodeChunk{
+			FilePath:  p.path,
+			Content:   pendingChunks[i].Content,
+			StartLine: pendingChunks[i].StartLine,
+			EndLine:   pendingChunks[i].EndLine,
+			Language:  p.language,
+			Category:  content.ClassifyCategory(p.language),
+			Vector:    pendingChunks[i].Vector,
+			Signature: pendingChunks[i].Signature,
+			Purpose:   pendingChunks[i].Purpose,
+		}); err != nil {
+			log.Printf("warning: failed to save chunk for %s: %v", p.path, err)
+			continue
+		}
+		savedChunks++
+	}
+
+	if progress != nil && indexedFiles > 0 {
+		fmt.Fprintf(progress, "Progress: %d/%d files, %d chunks indexed\n", indexedFiles, total, savedChunks)
+	}
+	return indexedFiles, savedChunks
 }
 
 func cleanupExcludedAndSkipped(store *storage.SQLiteStorage, scope workspace.Scope, skippedPaths []string) {

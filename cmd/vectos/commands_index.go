@@ -10,6 +10,7 @@ import (
 	"vectos/internal/embeddings"
 	"vectos/internal/indexer"
 	"vectos/internal/storage"
+	"vectos/internal/vectorindex"
 	"vectos/internal/workspace"
 )
 
@@ -123,9 +124,64 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 	fmt.Println("Processing files...")
 
 	indexedFiles, count := indexPathsIntoStore(env.store, env.chunker, paths, os.Stdout)
+	buildVectorIndex(env.store, env.chunker)
 
 	fmt.Println("Cleaning excluded directories...")
 	cleanupExcludedAndSkipped(env.store, scope, skippedPaths)
 
 	fmt.Printf("Done: %d files, %d chunks indexed (project: %s)\n", indexedFiles, count, scope.Name)
+}
+
+func buildVectorIndex(store *storage.SQLiteStorage, chunker *indexer.SimpleChunker) {
+	if store == nil || chunker == nil {
+		return
+	}
+
+	fmt.Println("Building vector index...")
+	embeddingsByID, err := store.GetAllEmbeddings()
+	if err != nil {
+		log.Printf("warning: vector index build skipped: %v", err)
+		return
+	}
+	if len(embeddingsByID) == 0 {
+		log.Println("vector index build skipped: no embeddings found")
+		return
+	}
+
+	ids := make([]int, 0, len(embeddingsByID))
+	var dimension int
+	for id, vector := range embeddingsByID {
+		ids = append(ids, id)
+		if dimension == 0 {
+			dimension = len(vector)
+		}
+	}
+
+	if dimension == 0 {
+		log.Println("vector index build skipped: empty embeddings")
+		return
+	}
+
+	idx := vectorindex.NewHNSW(dimension, vectorindex.Config{M: 16, EfConstruction: 200, EfSearch: 100})
+	total := len(ids)
+	for i, id := range ids {
+		idx.Insert(id, embeddingsByID[id])
+		if (i+1)%100 == 0 || i+1 == total {
+			fmt.Printf("Building vector index: %d/%d vectors\n", i+1, total)
+		}
+	}
+
+	contentHash, err := store.ChunkTableContentHash()
+	if err != nil {
+		log.Printf("warning: vector index hash unavailable: %v", err)
+		return
+	}
+
+	if err := idx.Save(store.VectorIndexPath(), contentHash, "none", nil); err != nil {
+		log.Printf("warning: failed to save vector index: %v", err)
+		return
+	}
+
+	store.SetVectorIndex(idx)
+	fmt.Printf("Vector index built: %d vectors, %d layers\n", idx.Len(), idx.MaxLevel()+1)
 }

@@ -150,16 +150,68 @@ func NewEmbeddedEmbedderWithStatus(cfg config.EmbeddedProviderConfig) (*Embedded
 }
 
 func (e *EmbeddedEmbedder) GetEmbedding(text string) ([]float32, error) {
-	if !e.status.Ready {
-		return nil, fmt.Errorf("embedded model %q is not ready in %s", e.modelName, e.modelDir)
-	}
-
-	inputIDs, attentionMask, tokenTypeIDs, err := e.encodeText(text)
+	vecs, err := e.GetEmbeddings([]string{text})
 	if err != nil {
 		return nil, err
 	}
+	return vecs[0], nil
+}
 
-	outputTensor, err := e.runInference(inputIDs, attentionMask, tokenTypeIDs)
+// GetEmbeddings tokeniza todos los textos, los agrupa en un solo batch con
+// padding al máximo sequence length del batch, ejecuta una sola inferencia
+// ONNX con shape [N, max_seq_len], y extrae y normaliza cada vector de salida.
+func (e *EmbeddedEmbedder) GetEmbeddings(texts []string) ([][]float32, error) {
+	if !e.status.Ready {
+		return nil, fmt.Errorf("embedded model %q is not ready in %s", e.modelName, e.modelDir)
+	}
+	if len(texts) == 0 {
+		return nil, nil
+	}
+
+	batchSize := len(texts)
+
+	// Tokenize all texts and find the maximum sequence length in the batch.
+	type tokenized struct {
+		ids  []int64
+		mask []int64
+	}
+	tokenizedTexts := make([]tokenized, batchSize)
+	maxLen := 0
+	for i, text := range texts {
+		ids, mask, _, err := e.tokenizeRaw(text)
+		if err != nil {
+			return nil, fmt.Errorf("text %d: %w", i, err)
+		}
+		tokenizedTexts[i] = tokenized{ids: ids, mask: mask}
+		if len(ids) > maxLen {
+			maxLen = len(ids)
+		}
+	}
+
+	// Ensure at least one position.
+	if maxLen <= 0 {
+		maxLen = 1
+	}
+
+	// Pad all sequences to maxLen and flatten into single arrays.
+	flatIDs := make([]int64, batchSize*maxLen)
+	flatMask := make([]int64, batchSize*maxLen)
+	flatTokenType := make([]int64, batchSize*maxLen)
+	maskRefs := make([][]int64, batchSize)
+
+	for i, tok := range tokenizedTexts {
+		offset := i * maxLen
+		copyLen := len(tok.ids)
+		if copyLen > maxLen {
+			copyLen = maxLen
+		}
+		copy(flatIDs[offset:offset+copyLen], tok.ids[:copyLen])
+		copy(flatMask[offset:offset+copyLen], tok.mask[:copyLen])
+		// tokenTypeIDs stay zero (not used by BGE model)
+		maskRefs[i] = flatMask[offset : offset+maxLen]
+	}
+
+	outputTensor, err := e.runBatchedInference(flatIDs, flatMask, flatTokenType, batchSize, maxLen)
 	if err != nil {
 		return nil, err
 	}
@@ -171,18 +223,116 @@ func (e *EmbeddedEmbedder) GetEmbedding(text string) ([]float32, error) {
 		return nil, fmt.Errorf("unexpected embedded output rank %d", len(shape))
 	}
 
-	seqLen := int(shape[1])
+	outSeqLen := int(shape[1])
 	hiddenSize := int(shape[2])
-	if seqLen <= 0 || hiddenSize <= 0 {
+	if outSeqLen <= 0 || hiddenSize <= 0 {
 		return nil, fmt.Errorf("unexpected embedded output shape %v", shape)
 	}
 
-	embedding := meanPoolAndNormalize(data, attentionMask, seqLen, hiddenSize)
-	if len(embedding) == 0 {
-		return nil, fmt.Errorf("embedded pooling produced empty vector")
+	// Extract per-sequence embeddings.
+	results := make([][]float32, batchSize)
+	stride := outSeqLen * hiddenSize
+	for i := 0; i < batchSize; i++ {
+		seqData := data[i*stride : (i+1)*stride]
+		embedding := meanPoolAndNormalize(seqData, maskRefs[i], outSeqLen, hiddenSize)
+		if len(embedding) == 0 {
+			return nil, fmt.Errorf("embedded pooling produced empty vector for text %d", i)
+		}
+		results[i] = embedding
 	}
 
-	return embedding, nil
+	return results, nil
+}
+
+// tokenizeRaw tokenizes a single text and returns raw (unpadded) token IDs and
+// attention mask.
+func (e *EmbeddedEmbedder) tokenizeRaw(text string) ([]int64, []int64, []int64, error) {
+	encoding, err := e.tokenizer.EncodeSingle(text, true)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to tokenize text: %w", err)
+	}
+
+	ids := encoding.GetIds()
+	mask := encoding.GetAttentionMask()
+	if len(mask) == 0 {
+		mask = make([]int, len(ids))
+		for i := range mask {
+			mask[i] = 1
+		}
+	}
+
+	// Truncate to configured sequence length.
+	seqLimit := e.sequenceLen
+	if seqLimit <= 0 {
+		seqLimit = defaultSequenceLength
+	}
+	if len(ids) > seqLimit {
+		ids = ids[:seqLimit]
+		mask = mask[:seqLimit]
+	}
+
+	int64IDs := make([]int64, len(ids))
+	int64Mask := make([]int64, len(mask))
+	tokenTypeIDs := make([]int64, len(ids))
+	for i := range ids {
+		int64IDs[i] = int64(ids[i])
+		int64Mask[i] = int64(mask[i])
+	}
+	return int64IDs, int64Mask, tokenTypeIDs, nil
+}
+
+// runBatchedInference executes an ONNX inference with batched inputs of shape
+// [batchSize, seqLen].
+func (e *EmbeddedEmbedder) runBatchedInference(inputIDs, attentionMask, tokenTypeIDs []int64, batchSize, seqLen int) (*ort.Tensor[float32], error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	inputShape := ort.NewShape(int64(batchSize), int64(seqLen))
+	inputTensor, err := ort.NewTensor(inputShape, inputIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create input_ids tensor: %w", err)
+	}
+	defer inputTensor.Destroy()
+
+	maskTensor, err := ort.NewTensor(inputShape, attentionMask)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create attention_mask tensor: %w", err)
+	}
+	defer maskTensor.Destroy()
+
+	tokenTypeTensor, err := ort.NewTensor(inputShape, tokenTypeIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create token_type_ids tensor: %w", err)
+	}
+	defer tokenTypeTensor.Destroy()
+
+	inputs := []ort.Value{inputTensor, maskTensor, tokenTypeTensor}
+	outputs := make([]ort.Value, len(e.outputNames))
+	if err := e.session.Run(inputs, outputs); err != nil {
+		return nil, fmt.Errorf("failed to run embedded ONNX session: %w", err)
+	}
+
+	if len(outputs) == 0 || outputs[0] == nil {
+		return nil, fmt.Errorf("embedded ONNX session returned no outputs")
+	}
+
+	tensor, ok := outputs[0].(*ort.Tensor[float32])
+	if !ok {
+		for _, output := range outputs {
+			if output != nil {
+				_ = output.Destroy()
+			}
+		}
+		return nil, fmt.Errorf("embedded ONNX output is not a float32 tensor")
+	}
+
+	for i := 1; i < len(outputs); i++ {
+		if outputs[i] != nil {
+			_ = outputs[i].Destroy()
+		}
+	}
+
+	return tensor, nil
 }
 
 func (e *EmbeddedEmbedder) Status() ProviderStatus {
@@ -309,93 +459,6 @@ func (e *EmbeddedEmbedder) createONNXSession() error {
 	}
 	e.session = session
 	return nil
-}
-
-func (e *EmbeddedEmbedder) encodeText(text string) ([]int64, []int64, []int64, error) {
-	encoding, err := e.tokenizer.EncodeSingle(text, true)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to tokenize text: %w", err)
-	}
-
-	ids := encoding.GetIds()
-	mask := encoding.GetAttentionMask()
-	if len(mask) == 0 {
-		mask = make([]int, len(ids))
-		for i := range mask {
-			mask[i] = 1
-		}
-	}
-
-	sequenceLen := e.sequenceLen
-	if sequenceLen <= 0 {
-		sequenceLen = len(ids)
-	}
-	if sequenceLen <= 0 {
-		sequenceLen = defaultSequenceLength
-	}
-
-	inputIDs := make([]int64, sequenceLen)
-	attentionMask := make([]int64, sequenceLen)
-	tokenTypeIDs := make([]int64, sequenceLen)
-	limit := minInt(len(ids), sequenceLen)
-	for i := 0; i < limit; i++ {
-		inputIDs[i] = int64(ids[i])
-		attentionMask[i] = int64(mask[i])
-	}
-
-	return inputIDs, attentionMask, tokenTypeIDs, nil
-}
-
-func (e *EmbeddedEmbedder) runInference(inputIDs, attentionMask, tokenTypeIDs []int64) (*ort.Tensor[float32], error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	inputShape := ort.NewShape(1, int64(len(inputIDs)))
-	inputTensor, err := ort.NewTensor(inputShape, inputIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create input_ids tensor: %w", err)
-	}
-	defer inputTensor.Destroy()
-
-	maskTensor, err := ort.NewTensor(inputShape, attentionMask)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create attention_mask tensor: %w", err)
-	}
-	defer maskTensor.Destroy()
-
-	tokenTypeTensor, err := ort.NewTensor(inputShape, tokenTypeIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create token_type_ids tensor: %w", err)
-	}
-	defer tokenTypeTensor.Destroy()
-
-	inputs := []ort.Value{inputTensor, maskTensor, tokenTypeTensor}
-	outputs := make([]ort.Value, len(e.outputNames))
-	if err := e.session.Run(inputs, outputs); err != nil {
-		return nil, fmt.Errorf("failed to run embedded ONNX session: %w", err)
-	}
-
-	if len(outputs) == 0 || outputs[0] == nil {
-		return nil, fmt.Errorf("embedded ONNX session returned no outputs")
-	}
-
-	tensor, ok := outputs[0].(*ort.Tensor[float32])
-	if !ok {
-		for _, output := range outputs {
-			if output != nil {
-				_ = output.Destroy()
-			}
-		}
-		return nil, fmt.Errorf("embedded ONNX output is not a float32 tensor")
-	}
-
-	for i := 1; i < len(outputs); i++ {
-		if outputs[i] != nil {
-			_ = outputs[i].Destroy()
-		}
-	}
-
-	return tensor, nil
 }
 
 func ensureORTSession(sharedLibraryPath string) error {

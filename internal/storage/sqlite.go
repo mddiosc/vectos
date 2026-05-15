@@ -1,22 +1,33 @@
 package storage
 
 import (
+	"crypto/sha256"
 	"database/sql"
 	"encoding/binary"
 	"fmt"
+	"log"
 	"math"
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"vectos/internal/vectorindex"
 )
+
+type embeddingRow struct {
+	ID      int
+	Vector  []float32
+}
 
 // SQLiteStorage gestiona la persistencia de los trozos de código.
 type SQLiteStorage struct {
-	db     *sql.DB
-	dbPath string
+	db        *sql.DB
+	dbPath    string
+	vectIdx   *vectorindex.HNSW
+	vectIdxMu sync.RWMutex
 }
 
 // IndexStats resume el estado del índice del proyecto activo.
@@ -210,6 +221,29 @@ func (s *SQLiteStorage) SaveChunk(chunk CodeChunk) (int64, error) {
 	return res.LastInsertId()
 }
 
+// GetAllEmbeddings returns all chunk IDs with their embedding vectors.
+func (s *SQLiteStorage) GetAllEmbeddings() (map[int][]float32, error) {
+	rows, err := s.db.Query(`SELECT id, embedding FROM code_chunks WHERE embedding IS NOT NULL AND length(embedding) > 0 ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query embeddings: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[int][]float32)
+	for rows.Next() {
+		var id int
+		var blob []byte
+		if err := rows.Scan(&id, &blob); err != nil {
+			return nil, fmt.Errorf("failed to scan embedding: %w", err)
+		}
+		out[id] = decodeVector(blob)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate embeddings: %w", err)
+	}
+	return out, nil
+}
+
 // DeleteChunksByPath elimina chunks previos de un archivo para evitar duplicados en reindexados.
 func (s *SQLiteStorage) DeleteChunksByPath(filePath string) error {
 	_, err := s.db.Exec(`DELETE FROM code_chunks WHERE file_path = ?`, filePath)
@@ -368,11 +402,70 @@ func (s *SQLiteStorage) RequiresReindex(provider, model string, dimensions int) 
 }
 
 // SearchSemantic performs cosine similarity search over stored embeddings.
+// When a vector index is loaded, it uses HNSW approximate nearest neighbor
+// search. Otherwise it falls back to a full-table cosine scan with a warning.
 func (s *SQLiteStorage) SearchSemantic(queryVector []float32, limit int, includeDocs bool) ([]CodeChunk, error) {
 	if len(queryVector) == 0 {
 		return nil, nil
 	}
 
+	// Use vector index when available.
+	s.vectIdxMu.RLock()
+	idx := s.vectIdx
+	s.vectIdxMu.RUnlock()
+
+	if idx != nil {
+		return s.searchViaIndex(idx, queryVector, limit, includeDocs)
+	}
+
+	log.Println("vectorindex: no index loaded — falling back to linear scan")
+	return s.searchLinearScan(queryVector, limit, includeDocs)
+}
+
+// searchViaIndex uses the HNSW index for approximate nearest neighbor search,
+// then fetches full chunk rows from SQLite.
+func (s *SQLiteStorage) searchViaIndex(idx *vectorindex.HNSW, queryVector []float32, limit int, includeDocs bool) ([]CodeChunk, error) {
+	// HNSW SearchScored returns IDs with cosine distances.
+	scored := idx.SearchScored(queryVector, limit)
+	if len(scored) == 0 {
+		return nil, nil
+	}
+
+	// Collect IDs and precompute scores (cosine similarity = 1 - distance).
+	ids := make([]int, len(scored))
+	scoreByID := make(map[int]float64, len(scored))
+	for i, s := range scored {
+		ids[i] = s.ID
+		scoreByID[s.ID] = 1.0 - s.Distance
+	}
+
+	chunks, err := s.GetChunksByIDs(ids)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]CodeChunk, 0, len(chunks))
+	for _, c := range chunks {
+		if !includeDocs && (c.Category == "docs" || c.Category == "dependency_metadata") {
+			continue
+		}
+		c.Score = scoreByID[int(c.ID)]
+		results = append(results, c)
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
+
+	return results, nil
+}
+
+// searchLinearScan performs a full-table cosine similarity scan (legacy path).
+func (s *SQLiteStorage) searchLinearScan(queryVector []float32, limit int, includeDocs bool) ([]CodeChunk, error) {
 	sqlQuery := `SELECT id, file_path, content, start_line, end_line, language, category, created_at, embedding, signature, purpose FROM code_chunks WHERE embedding IS NOT NULL AND length(embedding) > 0`
 	if !includeDocs {
 		sqlQuery += ` AND (category IS NULL OR category NOT IN ('docs', 'dependency_metadata'))`
@@ -472,4 +565,134 @@ func cosineSimilarity(a, b []float32) float64 {
 // Close cierra la conexión a la base de datos.
 func (s *SQLiteStorage) Close() error {
 	return s.db.Close()
+}
+
+// ChunkTableContentHash returns a SHA-256 hash of the chunk table state.
+// It hashes the row count plus each chunk's ID and last update timestamp.
+// If the chunk table is empty, it returns a zero hash.
+func (s *SQLiteStorage) ChunkTableContentHash() ([sha256.Size]byte, error) {
+	h := sha256.New()
+
+	var count int64
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM code_chunks").Scan(&count); err != nil {
+		return [sha256.Size]byte{}, fmt.Errorf("chunk content hash: count: %w", err)
+	}
+	binary.Write(h, binary.LittleEndian, count)
+	if count == 0 {
+		return [sha256.Size]byte{}, nil
+	}
+
+	rows, err := s.db.Query("SELECT id, created_at FROM code_chunks ORDER BY id")
+	if err != nil {
+		return [sha256.Size]byte{}, fmt.Errorf("chunk content hash: query: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int64
+		var t time.Time
+		if err := rows.Scan(&id, &t); err != nil {
+			return [sha256.Size]byte{}, fmt.Errorf("chunk content hash: scan: %w", err)
+		}
+		binary.Write(h, binary.LittleEndian, id)
+		binary.Write(h, binary.LittleEndian, t.UnixNano())
+	}
+	if err := rows.Err(); err != nil {
+		return [sha256.Size]byte{}, fmt.Errorf("chunk content hash: rows: %w", err)
+	}
+
+	var out [sha256.Size]byte
+	h.Sum(out[:0])
+	return out, nil
+}
+
+// SetVectorIndex sets the in-memory HNSW vector index for semantic search.
+func (s *SQLiteStorage) SetVectorIndex(idx *vectorindex.HNSW) {
+	s.vectIdxMu.Lock()
+	defer s.vectIdxMu.Unlock()
+	s.vectIdx = idx
+}
+
+// HasVectorIndex reports whether a vector index is loaded.
+func (s *SQLiteStorage) HasVectorIndex() bool {
+	s.vectIdxMu.RLock()
+	defer s.vectIdxMu.RUnlock()
+	return s.vectIdx != nil
+}
+
+// VectorIndexPath returns the file path for the .vectorindex file alongside
+// the SQLite database.
+func (s *SQLiteStorage) VectorIndexPath() string {
+	return s.dbPath + ".vectorindex"
+}
+
+// LoadVectorIndex attempts to load the HNSW index from disk and sets it
+// on this storage. It returns the loaded index and content hash, or an error
+// if the file cannot be loaded.
+// Note: the caller is responsible for validating the content hash against
+// the current chunk table state.
+func (s *SQLiteStorage) LoadVectorIndex() (*vectorindex.HNSW, [sha256.Size]byte, string, *vectorindex.SQ8Params, error) {
+	idx, hash, compression, params, err := vectorindex.LoadIndex(s.VectorIndexPath())
+	if err != nil {
+		return nil, [sha256.Size]byte{}, "", nil, err
+	}
+	s.SetVectorIndex(idx)
+	return idx, hash, compression, params, nil
+}
+
+// GetChunksByIDs fetches chunks by their primary key IDs. Used to resolve
+// HNSW search results (node IDs) back to full chunk rows.
+func (s *SQLiteStorage) GetChunksByIDs(ids []int) ([]CodeChunk, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	// Build IN clause placeholders.
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(
+		`SELECT id, file_path, content, start_line, end_line, language, category, created_at, signature, purpose
+		 FROM code_chunks WHERE id IN (%s)`,
+		strings.Join(placeholders, ","),
+	)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("get chunks by ids: %w", err)
+	}
+	defer rows.Close()
+
+	var results []CodeChunk
+	for rows.Next() {
+		var c CodeChunk
+		var category sql.NullString
+		var signature sql.NullString
+		var purpose sql.NullString
+		if err := rows.Scan(&c.ID, &c.FilePath, &c.Content, &c.StartLine, &c.EndLine, &c.Language, &category, &c.CreatedAt, &signature, &purpose); err != nil {
+			return nil, err
+		}
+		c.Category = categoryOrDefault(category, c.Language)
+		c.Signature = signature.String
+		c.Purpose = purpose.String
+		results = append(results, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Sort to match input ID order (for score assignment below).
+	order := make(map[int64]int, len(ids))
+	for i, id := range ids {
+		order[int64(id)] = i
+	}
+	sort.Slice(results, func(i, j int) bool {
+		return order[results[i].ID] < order[results[j].ID]
+	})
+
+	return results, nil
 }

@@ -50,6 +50,7 @@ type EmbeddingConfig struct {
 	FallbackOrder   []string               `json:"fallback_order,omitempty"`
 	Embedded        EmbeddedProviderConfig `json:"embedded"`
 	Remote          RemoteProviderConfig   `json:"remote"`
+	VectorIndex     VectorIndexConfig      `json:"vector_index"`
 }
 
 type EmbeddedProviderConfig struct {
@@ -59,7 +60,12 @@ type EmbeddedProviderConfig struct {
 	AutoDownload bool   `json:"auto_download,omitempty"`
 	AssetBaseURL string `json:"asset_base_url,omitempty"`
 	TimeoutS     int    `json:"timeout_seconds,omitempty"`
+	BatchSize    int    `json:"batch_size,omitempty"`
 }
+
+// DefaultEmbeddedBatchSize is the number of texts to embed in a single
+// inference call when the user does not configure batch_size explicitly.
+const DefaultEmbeddedBatchSize = 32
 
 type RemoteProviderConfig struct {
 	Enabled  bool   `json:"enabled"`
@@ -68,11 +74,21 @@ type RemoteProviderConfig struct {
 	TimeoutS int    `json:"timeout_seconds"`
 }
 
+// VectorIndexConfig holds configuration for the approximate nearest neighbor index.
+type VectorIndexConfig struct {
+	IndexType           string `json:"index_type"`
+	HNSW_M              int    `json:"hnsw_m"`
+	HNSW_EfConstruction int    `json:"hnsw_ef_construction"`
+	HNSW_EfSearch       int    `json:"hnsw_ef_search"`
+	Compression         string `json:"compression,omitempty"`
+}
+
 type embeddingConfigDisk struct {
 	DefaultProvider *string                    `json:"default_provider"`
 	FallbackOrder   []string                   `json:"fallback_order,omitempty"`
 	Embedded        embeddedProviderConfigDisk `json:"embedded"`
 	Remote          remoteProviderConfigDisk   `json:"remote"`
+	VectorIndex     vectorIndexConfigDisk      `json:"vector_index"`
 }
 
 type embeddedProviderConfigDisk struct {
@@ -82,6 +98,7 @@ type embeddedProviderConfigDisk struct {
 	AutoDownload *bool   `json:"auto_download,omitempty"`
 	AssetBaseURL *string `json:"asset_base_url,omitempty"`
 	TimeoutS     *int    `json:"timeout_seconds,omitempty"`
+	BatchSize    *int    `json:"batch_size,omitempty"`
 }
 
 type remoteProviderConfigDisk struct {
@@ -89,6 +106,14 @@ type remoteProviderConfigDisk struct {
 	BaseURL  *string `json:"base_url"`
 	Model    *string `json:"model"`
 	TimeoutS *int    `json:"timeout_seconds"`
+}
+
+type vectorIndexConfigDisk struct {
+	IndexType           *string `json:"index_type"`
+	HNSW_M              *int    `json:"hnsw_m"`
+	HNSW_EfConstruction *int    `json:"hnsw_ef_construction"`
+	HNSW_EfSearch       *int    `json:"hnsw_ef_search"`
+	Compression         *string `json:"compression,omitempty"`
 }
 
 func LoadEmbeddingConfig(homeDir string) (EmbeddingConfig, error) {
@@ -128,12 +153,20 @@ func DefaultEmbeddingConfig(homeDir string) EmbeddingConfig {
 			AutoDownload: true,
 			AssetBaseURL: DefaultEmbeddedAssetBaseURL,
 			TimeoutS:     60,
+			BatchSize:    DefaultEmbeddedBatchSize,
 		},
 		Remote: RemoteProviderConfig{
 			Enabled:  false,
 			BaseURL:  "",
 			Model:    DefaultRemoteModel,
 			TimeoutS: 30,
+		},
+		VectorIndex: VectorIndexConfig{
+			IndexType:           "hnsw",
+			HNSW_M:              16,
+			HNSW_EfConstruction: 200,
+			HNSW_EfSearch:       100,
+			Compression:         "none",
 		},
 	}
 }
@@ -150,6 +183,9 @@ func mergeEmbeddingConfig(dst *EmbeddingConfig, src embeddingConfigDisk) error {
 		return err
 	}
 	mergeRemoteConfig(&dst.Remote, src.Remote)
+	if err := mergeVectorIndexConfig(&dst.VectorIndex, src.VectorIndex); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -165,6 +201,9 @@ func mergeEmbeddedConfig(dst *EmbeddedProviderConfig, src embeddedProviderConfig
 	}
 	if src.AutoDownload != nil {
 		dst.AutoDownload = *src.AutoDownload
+	}
+	if src.BatchSize != nil && *src.BatchSize > 0 {
+		dst.BatchSize = *src.BatchSize
 	}
 	if src.AssetBaseURL != nil && strings.TrimSpace(*src.AssetBaseURL) != "" {
 		trimmed := strings.TrimSpace(*src.AssetBaseURL)
@@ -192,4 +231,23 @@ func mergeRemoteConfig(dst *RemoteProviderConfig, src remoteProviderConfigDisk) 
 	if src.Enabled != nil {
 		dst.Enabled = *src.Enabled
 	}
+}
+
+func mergeVectorIndexConfig(dst *VectorIndexConfig, src vectorIndexConfigDisk) error {
+	if src.IndexType != nil && strings.TrimSpace(*src.IndexType) != "" {
+		dst.IndexType = strings.TrimSpace(*src.IndexType)
+	}
+	if src.HNSW_M != nil && *src.HNSW_M > 0 {
+		dst.HNSW_M = *src.HNSW_M
+	}
+	if src.HNSW_EfConstruction != nil && *src.HNSW_EfConstruction > 0 {
+		dst.HNSW_EfConstruction = *src.HNSW_EfConstruction
+	}
+	if src.HNSW_EfSearch != nil && *src.HNSW_EfSearch > 0 {
+		dst.HNSW_EfSearch = *src.HNSW_EfSearch
+	}
+	if src.Compression != nil && strings.TrimSpace(*src.Compression) != "" {
+		dst.Compression = strings.TrimSpace(*src.Compression)
+	}
+	return nil
 }
