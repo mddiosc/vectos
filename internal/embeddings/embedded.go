@@ -523,6 +523,11 @@ func (e *EmbeddedEmbedder) downloadRuntimeLibrary(spec runtimeArchiveSpec, local
 		return fmt.Errorf("failed to download ONNX Runtime archive: status %d", resp.StatusCode)
 	}
 
+	// Validate Content-Type to prevent downloading unexpected content.
+	if err := validateDownloadContentType(resp); err != nil {
+		return fmt.Errorf("refusing to download ONNX Runtime: %w", err)
+	}
+
 	if err := downloadArchive(resp.Body, tmpArchivePath); err != nil {
 		return err
 	}
@@ -645,6 +650,11 @@ func (e *EmbeddedEmbedder) downloadAsset(asset embeddedAssetSpec) error {
 		return fmt.Errorf("failed to download embedded asset %s: status %d", asset.LocalName, resp.StatusCode)
 	}
 
+	// Validate Content-Type to prevent downloading unexpected content.
+	if err := validateDownloadContentType(resp); err != nil {
+		return fmt.Errorf("refusing to download embedded asset %s: %w", asset.LocalName, err)
+	}
+
 	file, err := os.Create(tmpPath)
 	if err != nil {
 		return fmt.Errorf("failed to create temp asset %s: %w", asset.LocalName, err)
@@ -659,6 +669,12 @@ func (e *EmbeddedEmbedder) downloadAsset(asset embeddedAssetSpec) error {
 	if closeErr != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to finalize embedded asset %s: %w", asset.LocalName, closeErr)
+	}
+
+	// Check that we actually downloaded content.
+	if info, statErr := os.Stat(tmpPath); statErr == nil && info.Size() == 0 {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("refusing to use empty download for embedded asset %s", asset.LocalName)
 	}
 
 	if err := os.Rename(tmpPath, finalPath); err != nil {
@@ -703,4 +719,28 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// validateDownloadContentType checks that the HTTP response Content-Type is an
+// expected binary type. Empty Content-Type is accepted (some CDNs omit it).
+var allowedDownloadContentTypes = map[string]bool{
+	"application/octet-stream": true,
+	"application/gzip":         true,
+	"application/x-gzip":       true,
+	"application/x-tar":        true,
+}
+
+func validateDownloadContentType(resp *http.Response) error {
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		return nil
+	}
+	// Strip parameters (e.g., "application/octet-stream; charset=binary")
+	if i := strings.IndexByte(contentType, ';'); i != -1 {
+		contentType = strings.TrimSpace(contentType[:i])
+	}
+	if !allowedDownloadContentTypes[contentType] {
+		return fmt.Errorf("unexpected Content-Type: %q", resp.Header.Get("Content-Type"))
+	}
+	return nil
 }

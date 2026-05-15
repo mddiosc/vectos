@@ -237,13 +237,34 @@ func (s *SQLiteStorage) DeleteAllChunks() error {
 	return nil
 }
 
+// escapeLikeTerm escapes SQL LIKE wildcard characters (% and _) and the
+// default escape character (\) in user-provided search terms to prevent
+// wildcard injection attacks.
+func escapeLikeTerm(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '%':
+			b.WriteString(`\%`)
+		case '_':
+			b.WriteString(`\_`)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // SearchText performs a simple text search (fallback/keyword search).
 func (s *SQLiteStorage) SearchText(query string) ([]CodeChunk, error) {
 	sqlQuery := `SELECT id, file_path, content, start_line, end_line, language, category, created_at, signature, purpose
 	             FROM code_chunks
 	             WHERE content LIKE ?`
 
-	rows, err := s.db.Query(sqlQuery, "%"+query+"%")
+	rows, err := s.db.Query(sqlQuery, "%"+escapeLikeTerm(query)+"%")
 	if err != nil {
 		return nil, fmt.Errorf("search query failed: %w", err)
 	}

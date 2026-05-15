@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 // ReindexRequest is the JSON body accepted by the /reindex endpoint.
@@ -40,6 +42,7 @@ type Server struct {
 	port      int
 	ready     atomic.Bool
 	reindexFn ReindexFunc
+	reindexLimiter *rate.Limiter
 	httpSrv   *http.Server
 	closers   []io.Closer
 	closersMu sync.Mutex
@@ -49,8 +52,9 @@ type Server struct {
 // NewServer creates a new Server that listens on the given port.
 func NewServer(port int, reindexFn ReindexFunc) *Server {
 	s := &Server{
-		port:      port,
-		reindexFn: reindexFn,
+		port:           port,
+		reindexFn:       reindexFn,
+		reindexLimiter: rate.NewLimiter(rate.Limit(1), 5),
 	}
 	s.ready.Store(true)
 	return s
@@ -137,6 +141,14 @@ func (s *Server) handleReindex(w http.ResponseWriter, r *http.Request) {
 
 	if !s.ready.Load() {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "starting"})
+		return
+	}
+
+	if !s.reindexLimiter.Allow() {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{
+			"status":  "error",
+			"message": "rate limit exceeded",
+		})
 		return
 	}
 
