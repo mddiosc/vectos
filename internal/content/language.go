@@ -19,6 +19,48 @@ func ShouldSkipDir(name string) bool {
 	return skip
 }
 
+// sensitiveFilenames is the set of exact filenames that should never be indexed.
+var sensitiveFilenames = map[string]bool{
+	".env":               true,
+	".env.local":         true,
+	".env.production":    true,
+	".env.development":   true,
+	"id_rsa":             true,
+	"id_ecdsa":           true,
+	"id_ed25519":         true,
+	"credentials.json":   true,
+	"service-account.json": true,
+}
+
+// sensitiveExtensions is the set of file extensions that indicate sensitive content.
+var sensitiveExtensions = map[string]bool{
+	".pem": true,
+	".key": true,
+	".pfx": true,
+	".p12": true,
+}
+
+// sensitiveSuffixes lists filename suffixes that indicate SSH private keys.
+var sensitiveSuffixes = []string{"_rsa", "_ecdsa", "_ed25519"}
+
+// ShouldSkipFile reports whether a file should be skipped during indexing
+// because it contains or likely contains sensitive information.
+func ShouldSkipFile(name string) bool {
+	if sensitiveFilenames[name] {
+		return true
+	}
+	ext := filepath.Ext(name)
+	if sensitiveExtensions[ext] {
+		return true
+	}
+	for _, suffix := range sensitiveSuffixes {
+		if len(name) > len(suffix) && name[len(name)-len(suffix):] == suffix {
+			return true
+		}
+	}
+	return false
+}
+
 // fileNameMatchers maps special filenames (or filename patterns) to a language.
 type fileNameMatcher struct {
 	match func(baseName, lowerBase string) bool

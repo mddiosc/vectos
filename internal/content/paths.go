@@ -77,6 +77,10 @@ func (a *pathAccumulator) walkDir(absPath string, docsOnly bool) error {
 			}
 			return nil
 		}
+		if ShouldSkipFile(info.Name()) {
+			a.addSkipped(current)
+			return nil
+		}
 		if language, err := DetectLanguage(current); err == nil {
 			if !ShouldIndexLanguage(language, docsOnly) {
 				a.addSkipped(current)

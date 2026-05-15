@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,33 @@ const (
 	DefaultEmbeddedAssetBaseURL = "https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main"
 	DefaultRemoteModel   = "text-embedding-nomic-embed-text-v1.5"
 )
+
+// ValidateAssetBaseURL validates the embedded provider's asset_base_url.
+// Returns nil if the URL is empty; otherwise checks scheme (HTTPS only),
+// path traversal (no ".."), non-empty host, and max length (2048 chars).
+func ValidateAssetBaseURL(raw string) error {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	if len(trimmed) > 2048 {
+		return fmt.Errorf("asset_base_url exceeds maximum length of 2048 characters")
+	}
+	if strings.Contains(trimmed, "..") {
+		return fmt.Errorf("asset_base_url must not contain path traversal segments")
+	}
+	u, err := url.Parse(trimmed)
+	if err != nil {
+		return fmt.Errorf("asset_base_url is not a valid URL: %w", err)
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("asset_base_url must use HTTPS scheme, got %q", u.Scheme)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("asset_base_url must have a non-empty host")
+	}
+	return nil
+}
 
 type EmbeddingConfig struct {
 	DefaultProvider string                 `json:"default_provider"`
@@ -82,7 +110,9 @@ func LoadEmbeddingConfig(homeDir string) (EmbeddingConfig, error) {
 		return EmbeddingConfig{}, fmt.Errorf("failed to parse vectos config: %w", err)
 	}
 
-	mergeEmbeddingConfig(&config, disk.Embeddings)
+	if err := mergeEmbeddingConfig(&config, disk.Embeddings); err != nil {
+		return EmbeddingConfig{}, err
+	}
 	return config, nil
 }
 
@@ -108,7 +138,7 @@ func DefaultEmbeddingConfig(homeDir string) EmbeddingConfig {
 	}
 }
 
-func mergeEmbeddingConfig(dst *EmbeddingConfig, src embeddingConfigDisk) {
+func mergeEmbeddingConfig(dst *EmbeddingConfig, src embeddingConfigDisk) error {
 	if src.DefaultProvider != nil && strings.TrimSpace(*src.DefaultProvider) != "" {
 		dst.DefaultProvider = strings.TrimSpace(*src.DefaultProvider)
 	}
@@ -116,11 +146,14 @@ func mergeEmbeddingConfig(dst *EmbeddingConfig, src embeddingConfigDisk) {
 		dst.FallbackOrder = src.FallbackOrder
 	}
 
-	mergeEmbeddedConfig(&dst.Embedded, src.Embedded)
+	if err := mergeEmbeddedConfig(&dst.Embedded, src.Embedded); err != nil {
+		return err
+	}
 	mergeRemoteConfig(&dst.Remote, src.Remote)
+	return nil
 }
 
-func mergeEmbeddedConfig(dst *EmbeddedProviderConfig, src embeddedProviderConfigDisk) {
+func mergeEmbeddedConfig(dst *EmbeddedProviderConfig, src embeddedProviderConfigDisk) error {
 	if src.ModelName != nil && strings.TrimSpace(*src.ModelName) != "" {
 		dst.ModelName = strings.TrimSpace(*src.ModelName)
 	}
@@ -134,11 +167,16 @@ func mergeEmbeddedConfig(dst *EmbeddedProviderConfig, src embeddedProviderConfig
 		dst.AutoDownload = *src.AutoDownload
 	}
 	if src.AssetBaseURL != nil && strings.TrimSpace(*src.AssetBaseURL) != "" {
-		dst.AssetBaseURL = strings.TrimSpace(*src.AssetBaseURL)
+		trimmed := strings.TrimSpace(*src.AssetBaseURL)
+		if err := ValidateAssetBaseURL(trimmed); err != nil {
+			return fmt.Errorf("invalid asset_base_url: %w", err)
+		}
+		dst.AssetBaseURL = trimmed
 	}
 	if src.TimeoutS != nil && *src.TimeoutS > 0 {
 		dst.TimeoutS = *src.TimeoutS
 	}
+	return nil
 }
 
 func mergeRemoteConfig(dst *RemoteProviderConfig, src remoteProviderConfigDisk) {
