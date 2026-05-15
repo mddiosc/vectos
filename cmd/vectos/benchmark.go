@@ -288,9 +288,7 @@ func benchmarkName(fixture retrievalBenchmarkFile, absFixturePath string) string
 
 func formatExpectedTargets(query retrievalBenchmarkQuery) string {
 	targets := make([]string, 0, len(query.ExpectedFiles)+len(query.ExpectedChunks))
-	for _, file := range query.ExpectedFiles {
-		targets = append(targets, file)
-	}
+	targets = append(targets, query.ExpectedFiles...)
 	for _, chunk := range query.ExpectedChunks {
 		targets = append(targets, fmt.Sprintf("%s:%d-%d", chunk.File, chunk.StartLine, chunk.EndLine))
 	}

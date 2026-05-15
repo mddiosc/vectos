@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"vectos/internal/config"
+	"vectos/internal/content"
 	"vectos/internal/embeddings"
 	"vectos/internal/indexer"
 	"vectos/internal/storage"
@@ -101,7 +102,24 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 	env := setupIndexing(projectBaseDir, scope, embedConfig, docsOnly)
 	defer env.store.Close()
 
-	paths, skippedPaths, err := collectIndexablePaths(scope.Roots, docsOnly)
+	// Merge exclusion patterns: global config + project config + gitignore.
+	// When the user's home directory cannot be determined, fail open by
+	// passing an empty path so LoadIndexConfig skips the global layer
+	// cleanly — falling back to a project-local path would silently
+	// re-introduce the bug where the "global" config lives inside the
+	// project, which is not the documented behaviour.
+	globalCfgPath, err := config.GlobalConfigPath()
+	if err != nil {
+		log.Printf("warning: skipping global config layer: %v", err)
+		globalCfgPath = ""
+	}
+	indexCfg := config.LoadIndexConfig(globalCfgPath, absolutePath)
+	excludePatterns := config.MergeExclusionPatterns(
+		indexCfg.ExclusionPatterns(docsOnly),
+		config.ReadGitignorePatterns(absolutePath),
+	)
+
+	paths, skippedPaths, err := content.CollectIndexablePathsWithExclusions(scope.Roots, docsOnly, excludePatterns)
 	if err != nil {
 		log.Fatalf("error collecting indexable paths: %v", err)
 	}

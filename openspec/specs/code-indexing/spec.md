@@ -123,6 +123,28 @@ The system SHALL accept a file path or project directory and index supported sou
 - **WHEN** a project was previously indexed with one embedding model (e.g., bge-small) and the current configuration uses a different model (e.g., jina-embeddings-v3) or different dimensions
 - **THEN** the system SHALL detect the provider/model/dimension mismatch and flag the index as requiring reindex for accurate results
 
+### Requirement: Indexing SHALL support user-configurable exclusion patterns
+The system SHALL read exclusion patterns from `vectos.config.json` (project root) and the `index` section of `~/.vectos/config.json` (global). Patterns SHALL be applied in addition to hardcoded exclusions. Patterns from project config SHALL be appended to global config patterns.
+
+#### Scenario: Project config excludes blog directory from docs indexing
+- **WHEN** `vectos.config.json` specifies `index.docs.exclude: ["src/content/blog/**"]`
+- **THEN** the documentation indexer SHALL skip files matching that pattern
+
+#### Scenario: Global config provides organization-wide defaults
+- **WHEN** `~/.vectos/config.json` specifies `index.code.exclude: ["**/generated/**"]`
+- **THEN** all projects on that machine SHALL skip `generated/` directories during code indexing
+
+#### Scenario: Both configs are applied cumulatively
+- **WHEN** global config excludes `[".github/**"]` and project config excludes `["src/content/**"]`
+- **THEN** files matching either pattern SHALL be skipped
+
+### Requirement: Indexing SHALL automatically respect .gitignore
+The system SHALL read `.gitignore` from the project root at indexing time and automatically skip files matching its patterns.
+
+#### Scenario: Gitignored build output is excluded
+- **WHEN** `.gitignore` contains `dist/` and the indexer walks the project
+- **THEN** files under `dist/` SHALL be skipped
+
 ## ADDED Requirements
 
 ### Requirement: File hash storage tracks indexed file content

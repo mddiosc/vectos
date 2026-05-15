@@ -10,6 +10,13 @@ Vectos is designed to be useful as a standalone product. It can also work alongs
 
 Vectos is still under active development. Supported file types, setup flows, indexing behavior, and CLI/MCP details may change as the project matures.
 
+## Key Features
+
+- **Hybrid search (RRF fusion)** — combines vector similarity with keyword matching via Reciprocal Rank Fusion for higher precision
+- **Code-aware embeddings** — defaults to `jina-embeddings-v3` (1024-dim, code+text+multilingual)
+- **TypeScript structural tagging** — detects interfaces, type aliases, enums, hooks, and async functions for richer search
+- **Configurable exclusions** — `vectos.config.json` per project, `~/.vectos/config.json` global, plus automatic `.gitignore` respect
+
 ## Quick Start
 
 Install the latest release:
@@ -67,6 +74,21 @@ vectos setup codex
 **Limitations:**
 - Requires local filesystem (not supported on network mounts)
 - Hidden files and directories matched by ignore patterns are excluded
+
+### Index Exclusions
+
+Control what gets indexed via `vectos.config.json` in your project root:
+
+```json
+{
+  "index": {
+    "docs": { "exclude": ["src/content/blog/**"] },
+    "code": { "exclude": ["**/__mocks__/**", "**/*.generated.*"] }
+  }
+}
+```
+
+Global defaults can be set in `~/.vectos/config.json` under the `index` key. Patterns from both files are merged. `.gitignore` is respected automatically.
 
 ## Documentation
 

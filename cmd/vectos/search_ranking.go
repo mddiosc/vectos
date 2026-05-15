@@ -9,7 +9,6 @@ import (
 )
 
 var tokenPattern = regexp.MustCompile(`[a-z0-9]+`)
-var camelBoundaryPattern = regexp.MustCompile(`([a-z0-9])([A-Z])`)
 
 // --- Structural penalty helpers (used by search_fusion.go) ---
 
@@ -58,12 +57,6 @@ func tokenizeForRanking(input string) []string {
 		tokens = append(tokens, part)
 	}
 	return tokens
-}
-
-func tokenizePathForRanking(input string) []string {
-	normalized := camelBoundaryPattern.ReplaceAllString(input, `$1 $2`)
-	normalized = strings.NewReplacer("_", " ", "-", " ").Replace(normalized)
-	return tokenizeForRanking(normalized)
 }
 
 func isStopToken(token string) bool {

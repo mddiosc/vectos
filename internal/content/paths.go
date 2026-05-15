@@ -6,13 +6,27 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"vectos/internal/workspace"
 )
 
 // CollectIndexablePaths walks all given input paths and returns the list of
 // indexable files and the list of skipped (non-indexable) files.
 func CollectIndexablePaths(inputPaths []string, docsOnly bool) ([]string, []string, error) {
+	return CollectIndexablePathsWithExclusions(inputPaths, docsOnly, nil)
+}
+
+// CollectIndexablePathsWithExclusions walks all given input paths, applying
+// additional glob exclusion patterns on top of hardcoded sensitive-file checks.
+// Patterns use gitignore-style syntax (e.g., "src/content/**", "*.log").
+func CollectIndexablePathsWithExclusions(inputPaths []string, docsOnly bool, excludePatterns []string) ([]string, []string, error) {
 	acc := newPathAccumulator()
+	acc.excludePatterns = compileExcludePatterns(excludePatterns)
+	if len(inputPaths) > 0 {
+		if absRoot, err := filepath.Abs(inputPaths[0]); err == nil {
+			acc.projectRoot = absRoot
+		}
+	}
 	for _, path := range inputPaths {
 		absPath, err := filepath.Abs(path)
 		if err != nil {
@@ -38,12 +52,49 @@ func CollectIndexablePaths(inputPaths []string, docsOnly bool) ([]string, []stri
 	return acc.paths, acc.skipped, nil
 }
 
+// compiledPattern is a precompiled exclusion pattern. The raw pattern is
+// normalized once (trim spaces, expand trailing "/" to "/**") so the hot path
+// in shouldExclude only calls doublestar.Match on a known-good string.
+type compiledPattern struct {
+	pattern string
+}
+
+// compileExcludePatterns normalizes and deduplicates raw exclusion patterns,
+// dropping empties. Doing this once up front (instead of on every file)
+// turns shouldExclude from O(N×M) with per-match string ops into a tight
+// O(N×M) match-only loop, and also dedupes patterns coming from multiple
+// sources (project config + global config + .gitignore).
+func compileExcludePatterns(raw []string) []compiledPattern {
+	if len(raw) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(raw))
+	out := make([]compiledPattern, 0, len(raw))
+	for _, p := range raw {
+		cleaned := strings.TrimSpace(p)
+		if cleaned == "" {
+			continue
+		}
+		if strings.HasSuffix(cleaned, "/") {
+			cleaned = cleaned[:len(cleaned)-1] + "/**"
+		}
+		if _, dup := seen[cleaned]; dup {
+			continue
+		}
+		seen[cleaned] = struct{}{}
+		out = append(out, compiledPattern{pattern: cleaned})
+	}
+	return out
+}
+
 // pathAccumulator collects indexable and skipped paths, deduplicating both.
 type pathAccumulator struct {
-	paths     []string
-	skipped   []string
-	seenPaths map[string]struct{}
-	seenSkip  map[string]struct{}
+	paths           []string
+	skipped         []string
+	seenPaths       map[string]struct{}
+	seenSkip        map[string]struct{}
+	excludePatterns []compiledPattern
+	projectRoot     string
 }
 
 func newPathAccumulator() *pathAccumulator {
@@ -56,6 +107,10 @@ func newPathAccumulator() *pathAccumulator {
 func (a *pathAccumulator) addFile(absPath string, docsOnly bool) error {
 	fileName := filepath.Base(absPath)
 	if ShouldSkipFile(fileName) {
+		a.addSkipped(absPath)
+		return nil
+	}
+	if a.shouldExclude(absPath) {
 		a.addSkipped(absPath)
 		return nil
 	}
@@ -80,9 +135,20 @@ func (a *pathAccumulator) walkDir(absPath string, docsOnly bool) error {
 			if ShouldSkipDir(info.Name()) {
 				return filepath.SkipDir
 			}
+			// Honor user-configured exclusions for directories too: if a
+			// directory matches an exclusion pattern (e.g. "node_modules/",
+			// "dist/**"), skip the whole subtree instead of descending into
+			// it and re-matching every child file.
+			if a.shouldExcludeDir(current) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if ShouldSkipFile(info.Name()) {
+			a.addSkipped(current)
+			return nil
+		}
+		if a.shouldExclude(current) {
 			a.addSkipped(current)
 			return nil
 		}
@@ -109,6 +175,67 @@ func (a *pathAccumulator) addSkipped(path string) {
 		a.skipped = append(a.skipped, path)
 		a.seenSkip[path] = struct{}{}
 	}
+}
+
+// relPath returns the project-relative slashed form of absPath, or absPath
+// itself when no project root is configured or the relative computation fails.
+func (a *pathAccumulator) relPath(absPath string) string {
+	if a.projectRoot == "" {
+		return absPath
+	}
+	r, err := filepath.Rel(a.projectRoot, absPath)
+	if err != nil {
+		return absPath
+	}
+	return filepath.ToSlash(r)
+}
+
+// shouldExclude returns true if the absolute path matches any of the configured
+// exclusion patterns. Patterns are precompiled (see compileExcludePatterns).
+func (a *pathAccumulator) shouldExclude(absPath string) bool {
+	if len(a.excludePatterns) == 0 {
+		return false
+	}
+	rel := a.relPath(absPath)
+	base := filepath.Base(absPath)
+	for _, cp := range a.excludePatterns {
+		if matched, _ := doublestar.Match(cp.pattern, base); matched {
+			return true
+		}
+		if matched, _ := doublestar.Match(cp.pattern, rel); matched {
+			return true
+		}
+	}
+	return false
+}
+
+// shouldExcludeDir returns true when the directory itself (and therefore its
+// whole subtree) should be skipped during traversal. It matches against the
+// directory's base name and project-relative path, plus a trailing "/" variant
+// so that patterns like "dist" or "dist/**" both work as expected.
+func (a *pathAccumulator) shouldExcludeDir(absPath string) bool {
+	if len(a.excludePatterns) == 0 {
+		return false
+	}
+	rel := a.relPath(absPath)
+	base := filepath.Base(absPath)
+	relWithSlash := rel + "/"
+	baseWithSlash := base + "/"
+	for _, cp := range a.excludePatterns {
+		if matched, _ := doublestar.Match(cp.pattern, base); matched {
+			return true
+		}
+		if matched, _ := doublestar.Match(cp.pattern, rel); matched {
+			return true
+		}
+		if matched, _ := doublestar.Match(cp.pattern, baseWithSlash); matched {
+			return true
+		}
+		if matched, _ := doublestar.Match(cp.pattern, relWithSlash); matched {
+			return true
+		}
+	}
+	return false
 }
 
 // ParseChangedPaths splits a comma-separated string of changed file paths.

@@ -128,11 +128,59 @@ Vectos stores:
 
 When a search query arrives:
 
-1. Vectos tries to embed the query
-2. It ranks indexed chunks using cosine similarity
-3. If semantic retrieval fails or returns nothing useful, it falls back to text search
+1. Vectos embeds the query using the active provider
+2. It searches the HNSW vector index for approximate nearest neighbors (O(log n) lookup)
+3. If the vector index is missing or stale, it falls back to linear scan over stored embeddings
+4. Results are fused using Reciprocal Rank Fusion (RRF), combining semantic similarity with BM25 text matching
+5. If semantic retrieval fails entirely, it falls back to pure text search
 
 Semantic retrieval is only used when the current provider metadata matches the metadata stored with the index. If the active provider, model, or vector dimensions changed, Vectos treats the index as incompatible and avoids mixing embeddings from different providers.
+
+## Vector Index Configuration
+
+Vectos uses an HNSW (Hierarchical Navigable Small World) vector index for fast approximate nearest neighbor search. The index is persisted as a binary `.vectorindex` file alongside the SQLite database, with content-hash staleness detection and automatic rebuild on `vectos index`.
+
+Configuration is set in `~/.vectos/config.json` under `vector_index`:
+
+```json
+{
+  "vector_index": {
+    "index_type": "hnsw",
+    "hnsw_m": 16,
+    "hnsw_ef_construction": 200,
+    "hnsw_ef_search": 200,
+    "compression": "none"
+  }
+}
+```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `index_type` | `"hnsw"` | Vector index type (currently only `hnsw`) |
+| `hnsw_m` | `16` | Max connections per node in the HNSW graph |
+| `hnsw_ef_construction` | `200` | Search depth during index construction (higher = better quality, slower build) |
+| `hnsw_ef_search` | `200` | Search depth during query (higher = better recall, slower query) |
+| `compression` | `"none"` | Set to `"sq8"` for 8-bit scalar quantization (4x storage reduction, lossy) |
+
+### SQ8 Scalar Quantization
+
+Setting `compression: "sq8"` compresses each embedding dimension from 32-bit float to 8-bit integer, reducing storage by ~4x. This is lossy — recall may degrade slightly for some queries but typically remains above 80%.
+
+### Embedding Batch Size
+
+The embedding batch size controls how many chunks are embedded in a single ONNX inference batch. Configuration is in `~/.vectos/config.json`:
+
+```json
+{
+  "embeddings": {
+    "embedded": {
+      "batch_size": 32
+    }
+  }
+}
+```
+
+Default: `32`. Larger values may improve indexing throughput at the cost of higher memory usage.
 
 Search results preserve both logical project scope and file classification metadata.
 
@@ -245,3 +293,62 @@ See also: [Development](development.md)
 If results look stale or low quality, also see [Troubleshooting](troubleshooting.md).
 
 For measured retrieval output and a `Vectos vs rg` comparison, see [Retrieval Benchmark](benchmarking.md).
+
+## Index Exclusions
+
+Vectos excludes sensitive files (`.env`, private keys, certificates) from all indexes. You can add additional exclusions via configuration.
+
+### Hardcoded Exclusions (always applied)
+
+| Category | Patterns |
+|----------|----------|
+| Sensitive files | `.env`, `id_rsa`, `credentials.json`, `*.pem`, `*.key` |
+| Directories | `.git`, `node_modules`, `dist`, `build`, `coverage`, `.next` |
+| Lockfiles | `pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`, `go.sum` |
+| Config files | `eslint.config.*`, `tailwind.config.*`, `tsconfig.json` |
+
+### Project Config (`vectos.config.json`)
+
+Place this file in your project root to add exclusion patterns:
+
+```json
+{
+  "index": {
+    "docs": {
+      "exclude": ["src/content/blog/**", ".github/prompts/**"]
+    },
+    "code": {
+      "exclude": ["**/__mocks__/**", "**/*.generated.*"]
+    }
+  }
+}
+```
+
+Patterns use gitignore/glob syntax (`**` for recursive, `*` for single-level).
+
+### Global Config (`~/.vectos/config.json`)
+
+Add an `index` section to set defaults for all projects:
+
+```json
+{
+  "embeddings": { ... },
+  "index": {
+    "docs": { "exclude": [".agents/**"] },
+    "code": { "exclude": [] }
+  }
+}
+```
+
+### .gitignore
+
+Vectos automatically respects your project's `.gitignore`. Files ignored by git are excluded from indexing. No configuration needed.
+
+Limitations:
+
+- Negation patterns (`!important.log`) are not supported — they are skipped during parsing
+- Only the root `.gitignore` is read; nested `.gitignore` files in subdirectories are not processed
+
+### Exclusions are cumulative
+
+Hardcoded exclusions always apply. Global config adds more. Project config adds even more. Patterns from all three layers are active simultaneously — removing a global exclusion requires editing the global config.
