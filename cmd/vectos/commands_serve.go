@@ -128,7 +128,7 @@ func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port in
 	}
 
 	reindexFn := func(req server.ReindexRequest) server.ReindexResponse {
-		return reindexProject(cache, chunker, providerInfo, req, embedConfig.VectorIndex)
+		return reindexProject(cache, chunker, providerInfo, req, embedConfig.VectorIndex, projectBaseDir)
 	}
 	embedFn := func(text string) ([]float32, error) { return embedClient.GetEmbedding(text) }
 	srv := server.NewServer(port, reindexFn, embedFn, activeStore)
@@ -207,7 +207,7 @@ func makeReindexCallback(store *storage.SQLiteStorage, embedClient embeddings.Em
 	}
 }
 
-func reindexProject(cache *storeCache, chunker *indexer.SimpleChunker, providerInfo embeddings.ProviderInfo, req server.ReindexRequest, viCfg config.VectorIndexConfig) server.ReindexResponse {
+func reindexProject(cache *storeCache, chunker *indexer.SimpleChunker, providerInfo embeddings.ProviderInfo, req server.ReindexRequest, viCfg config.VectorIndexConfig, projectBaseDir string) server.ReindexResponse {
 	scope, err := workspace.ResolveScope(req.Path, req.Project)
 	if err != nil {
 		return server.ReindexResponse{Status: "error", Message: err.Error()}
@@ -226,8 +226,18 @@ func reindexProject(cache *storeCache, chunker *indexer.SimpleChunker, providerI
 		return server.ReindexResponse{Status: "error", Message: err.Error()}
 	}
 
-	// Collect all indexable paths from scope roots.
-	paths, skippedPaths, err := content.CollectIndexablePaths(scope.Roots, req.Docs)
+	// Collect all indexable paths from scope roots with exclusion patterns.
+	globalCfgPath := filepath.Join(projectBaseDir, ".vectos", "config.json")
+	projectDir := scope.PrimaryRoot
+	if projectDir == "" && len(scope.Roots) > 0 {
+		projectDir = scope.Roots[0]
+	}
+	indexCfg := config.LoadIndexConfig(globalCfgPath, projectDir)
+	excludePatterns := indexCfg.ExclusionPatterns(req.Docs)
+	gitignorePatterns := config.ReadGitignorePatterns(projectDir)
+	excludePatterns = append(excludePatterns, gitignorePatterns...)
+
+	paths, skippedPaths, err := content.CollectIndexablePathsWithExclusions(scope.Roots, req.Docs, excludePatterns)
 	if err != nil {
 		return server.ReindexResponse{Status: "error", Message: err.Error()}
 	}

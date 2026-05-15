@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"vectos/internal/config"
+	"vectos/internal/content"
 	"vectos/internal/embeddings"
 	"vectos/internal/indexer"
 	"vectos/internal/storage"
@@ -101,7 +102,14 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 	env := setupIndexing(projectBaseDir, scope, embedConfig, docsOnly)
 	defer env.store.Close()
 
-	paths, skippedPaths, err := collectIndexablePaths(scope.Roots, docsOnly)
+	// Merge exclusion patterns: global config + project config + gitignore.
+	globalCfgPath := filepath.Join(projectBaseDir, ".vectos", "config.json")
+	indexCfg := config.LoadIndexConfig(globalCfgPath, absolutePath)
+	excludePatterns := indexCfg.ExclusionPatterns(docsOnly)
+	gitignorePatterns := config.ReadGitignorePatterns(absolutePath)
+	excludePatterns = append(excludePatterns, gitignorePatterns...)
+
+	paths, skippedPaths, err := content.CollectIndexablePathsWithExclusions(scope.Roots, docsOnly, excludePatterns)
 	if err != nil {
 		log.Fatalf("error collecting indexable paths: %v", err)
 	}

@@ -12,7 +12,15 @@ import (
 // CollectIndexablePaths walks all given input paths and returns the list of
 // indexable files and the list of skipped (non-indexable) files.
 func CollectIndexablePaths(inputPaths []string, docsOnly bool) ([]string, []string, error) {
+	return CollectIndexablePathsWithExclusions(inputPaths, docsOnly, nil)
+}
+
+// CollectIndexablePathsWithExclusions walks all given input paths, applying
+// additional glob exclusion patterns on top of hardcoded sensitive-file checks.
+// Patterns use gitignore-style syntax (e.g., "src/content/**", "*.log").
+func CollectIndexablePathsWithExclusions(inputPaths []string, docsOnly bool, excludePatterns []string) ([]string, []string, error) {
 	acc := newPathAccumulator()
+	acc.excludePatterns = excludePatterns
 	for _, path := range inputPaths {
 		absPath, err := filepath.Abs(path)
 		if err != nil {
@@ -40,10 +48,12 @@ func CollectIndexablePaths(inputPaths []string, docsOnly bool) ([]string, []stri
 
 // pathAccumulator collects indexable and skipped paths, deduplicating both.
 type pathAccumulator struct {
-	paths     []string
-	skipped   []string
-	seenPaths map[string]struct{}
-	seenSkip  map[string]struct{}
+	paths           []string
+	skipped         []string
+	seenPaths       map[string]struct{}
+	seenSkip        map[string]struct{}
+	excludePatterns []string
+	projectRoot     string
 }
 
 func newPathAccumulator() *pathAccumulator {
@@ -56,6 +66,10 @@ func newPathAccumulator() *pathAccumulator {
 func (a *pathAccumulator) addFile(absPath string, docsOnly bool) error {
 	fileName := filepath.Base(absPath)
 	if ShouldSkipFile(fileName) {
+		a.addSkipped(absPath)
+		return nil
+	}
+	if a.shouldExclude(absPath) {
 		a.addSkipped(absPath)
 		return nil
 	}
@@ -86,6 +100,10 @@ func (a *pathAccumulator) walkDir(absPath string, docsOnly bool) error {
 			a.addSkipped(current)
 			return nil
 		}
+		if a.shouldExclude(current) {
+			a.addSkipped(current)
+			return nil
+		}
 		if language, err := DetectLanguage(current); err == nil {
 			if !ShouldIndexLanguage(language, docsOnly) {
 				a.addSkipped(current)
@@ -109,6 +127,26 @@ func (a *pathAccumulator) addSkipped(path string) {
 		a.skipped = append(a.skipped, path)
 		a.seenSkip[path] = struct{}{}
 	}
+}
+
+// shouldExclude returns true if the absolute path matches any of the configured
+// exclusion patterns. Patterns use gitignore/filepath.Match syntax.
+func (a *pathAccumulator) shouldExclude(absPath string) bool {
+	if len(a.excludePatterns) == 0 {
+		return false
+	}
+	base := filepath.Base(absPath)
+	for _, pattern := range a.excludePatterns {
+		// Try matching against just the filename first (simple patterns like "*.log")
+		if matched, _ := filepath.Match(pattern, base); matched {
+			return true
+		}
+		// Try matching against the full path (directory patterns like "src/content/**")
+		if matched, _ := filepath.Match(pattern, absPath); matched {
+			return true
+		}
+	}
+	return false
 }
 
 // ParseChangedPaths splits a comma-separated string of changed file paths.

@@ -508,6 +508,12 @@ func computeKeywordScore(content, filePath, query string) float64 {
 		score *= 0.3
 	}
 
+	// Documentation files get a relevance boost — actual project docs
+	// should rank above blog posts and other non-documentation content.
+	if isDocFilePath(filePath) {
+		score *= 1.5
+	}
+
 	return score
 }
 
@@ -521,6 +527,22 @@ func isKeywordNoiseFile(filename string) bool {
 		}
 	}
 	return false
+}
+
+// isDocFilePath returns true for documentation files that should get
+// relevance boosts: files under docs/ and README.md files.
+func isDocFilePath(filePath string) bool {
+	p := filePath
+	// Normalize to forward slashes for consistent matching
+	p = strings.ReplaceAll(p, "\\", "/")
+	if strings.HasPrefix(p, "docs/") || strings.Contains(p, "/docs/") {
+		return true
+	}
+	base := p
+	if idx := strings.LastIndex(p, "/"); idx >= 0 {
+		base = p[idx+1:]
+	}
+	return strings.EqualFold(base, "readme.md")
 }
 
 var keywordNoisePatterns = []string{

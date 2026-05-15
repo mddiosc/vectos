@@ -245,3 +245,57 @@ See also: [Development](development.md)
 If results look stale or low quality, also see [Troubleshooting](troubleshooting.md).
 
 For measured retrieval output and a `Vectos vs rg` comparison, see [Retrieval Benchmark](benchmarking.md).
+
+## Index Exclusions
+
+Vectos excludes sensitive files (`.env`, private keys, certificates) from all indexes. You can add additional exclusions via configuration.
+
+### Hardcoded Exclusions (always applied)
+
+| Category | Patterns |
+|----------|----------|
+| Sensitive files | `.env`, `id_rsa`, `credentials.json`, `*.pem`, `*.key` |
+| Directories | `.git`, `node_modules`, `dist`, `build`, `coverage`, `.next` |
+| Lockfiles | `pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`, `go.sum` |
+| Config files | `eslint.config.*`, `tailwind.config.*`, `tsconfig.json` |
+
+### Project Config (`vectos.config.json`)
+
+Place this file in your project root to add exclusion patterns:
+
+```json
+{
+  "index": {
+    "docs": {
+      "exclude": ["src/content/blog/**", ".github/prompts/**"]
+    },
+    "code": {
+      "exclude": ["**/__mocks__/**", "**/*.generated.*"]
+    }
+  }
+}
+```
+
+Patterns use gitignore/glob syntax (`**` for recursive, `*` for single-level).
+
+### Global Config (`~/.vectos/config.json`)
+
+Add an `index` section to set defaults for all projects:
+
+```json
+{
+  "embeddings": { ... },
+  "index": {
+    "docs": { "exclude": [".agents/**"] },
+    "code": { "exclude": [] }
+  }
+}
+```
+
+### .gitignore
+
+Vectos automatically respects your project's `.gitignore`. Files ignored by git are excluded from indexing. No configuration needed.
+
+### Exclusions are cumulative
+
+Hardcoded exclusions always apply. Global config adds more. Project config adds even more. Patterns from all three layers are active simultaneously — removing a global exclusion requires editing the global config.
