@@ -67,6 +67,8 @@ Feature release focused on search performance, security hardening, automated ind
 - SQ8 compression is lossy — recall may degrade for some queries (typically remains above 80%).
 - Existing indexes require reindex (`vectos index`) to build the vector index and populate file hashes for watch mode.
 
+## v0.5.1 — 2026-05-13
+
 Patch release focused on diagnostic tooling and incremental indexing quality improvements.
 
 ### Added

@@ -2,6 +2,8 @@
 
 This report compares Vectos against a simple `rg`-based baseline for the same intent-driven queries.
 
+**Current retrieval stack**: jina-embeddings-v3 (1024-dim, code+text+multilingual) + HNSW vector index + BM25 text search fused via Reciprocal Rank Fusion (RRF).
+
 Method:
 
 - Reindex the current repository first.
@@ -21,11 +23,19 @@ Method:
 
 ## Readout
 
-- Vectos now hits the right result within the top 3 for all 5 benchmark queries.
-- Vectos now wins on raw token output in 4 of 5 queries.
+- Vectos hits the right result within the top 3 for all 5 benchmark queries.
+- Vectos wins on raw token output in 4 of 5 queries.
 - The biggest win comes from compact search output plus an adaptive preview, not from changing the underlying retrieval model.
 - The strongest result is Nx scope resolution, where Vectos returns the right area with far fewer tokens than `rg`.
 - The remaining weak spot is the hybrid-ranking query, where `rg` is still shorter.
+
+## Retrieval Stack Evolution
+
+| Version | Embedding Model | Search Method | Key Improvement |
+|---------|----------------|---------------|-----------------|
+| v0.1.x | bge-small-en-v1.5 (384-dim) | Linear scan cosine | Baseline retrieval |
+| v0.1.7–0.1.9 | bge-small-en-v1.5 | Hybrid semantic + text reranking | Better ranking heuristics |
+| v0.6.0 | jina-embeddings-v3 (1024-dim) | HNSW + BM25 + RRF | Faster search, better code-aware embeddings |
 
 ## Benchmark Fixture
 

@@ -9,6 +9,7 @@ Use this directory as the main documentation entrypoint for Vectos.
 - [CLI Usage](cli.md)
 - [Indexing And Retrieval](indexing.md)
 - [Development](development.md)
+- [Benchmarking](benchmarking.md)
 - [Optional Engram Synergy](engram-synergy.md)
 - [Troubleshooting](troubleshooting.md)
 
@@ -19,5 +20,6 @@ Use this directory as the main documentation entrypoint for Vectos.
 3. [CLI Usage](cli.md)
 4. [Indexing And Retrieval](indexing.md)
 5. [Development](development.md)
-6. [Optional Engram Synergy](engram-synergy.md)
-7. [Troubleshooting](troubleshooting.md)
+6. [Benchmarking](benchmarking.md)
+7. [Optional Engram Synergy](engram-synergy.md)
+8. [Troubleshooting](troubleshooting.md)

@@ -110,6 +110,87 @@ pass/warn/fail marker and an actionable hint if something is wrong.
 `doctor` is read-only and safe to run at any time. It exits with code 0 when
 all critical checks pass.
 
+### Start the HTTP server with watch mode
+
+```bash
+vectos serve
+```
+
+Starts an HTTP server on `127.0.0.1:7438` (port configurable via `--port` or `VECTOS_PORT` env). Watch mode is enabled by default — Vectos watches the project directory for file changes and triggers incremental reindexing automatically.
+
+Watch mode flags:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--watch` | `true` | Enable filesystem watching |
+| `--watch-debounce` | `500ms` | Debounce interval for batching rapid changes |
+| `--watch-ignore` | `.git,node_modules,*.lock` | Comma-separated glob patterns to ignore |
+
+Limitations:
+
+- Requires local filesystem (not supported on network mounts)
+- Hidden files and directories matched by ignore patterns are excluded
+
+### HTTP API Endpoints
+
+When `vectos serve` is running, the following endpoints are available:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Health check |
+| `POST` | `/search` | Search source code (same as `/search/code`) |
+| `POST` | `/search/code` | Search source code index |
+| `POST` | `/search/docs` | Search documentation index |
+| `POST` | `/reindex` | Trigger project reindex (rate-limited: 1 req/s, burst 5) |
+| `GET` | `/metrics` | Index stats, provider info, uptime, watcher status |
+| `GET` | `/status/:project` | Per-project index status |
+
+#### Search Request
+
+```json
+{
+  "query": "checkout payment",
+  "project": "my-project",
+  "limit": 10
+}
+```
+
+- `query` (required) — search query string
+- `project` (optional) — Nx project name to scope the search
+- `limit` (optional, 1–100, default 10) — max results to return
+
+#### Search Response
+
+```json
+{
+  "results": [
+    {
+      "file_path": "src/checkout.go",
+      "file_name": "checkout.go",
+      "language": "go",
+      "relevance": 0.87,
+      "line_ranges": [[12, 45]],
+      "signatures": ["func processPayment(ctx context.Context, order *Order) error"]
+    }
+  ],
+  "mode": "semantic_hybrid",
+  "total": 3
+}
+```
+
+- `mode` is `"semantic_hybrid"` when vector search is used, `"text"` when falling back to text search
+
+#### Error Response
+
+```json
+{
+  "error": "query is required",
+  "code": "INVALID_QUERY"
+}
+```
+
+Error codes: `INVALID_QUERY`, `INVALID_PROJECT`, `INVALID_LIMIT`, `PROJECT_NOT_FOUND`, `INTERNAL_ERROR`, `METHOD_NOT_ALLOWED`
+
 ### Start the MCP server manually
 
 ```bash

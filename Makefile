@@ -1,4 +1,4 @@
-.PHONY: build build-dev clean release-dry-run
+.PHONY: build build-dev clean release-dry-run test lint check
 
 # Development build (no version injection).
 build:
@@ -17,6 +17,15 @@ build-dev:
 # Requires goreleaser to be installed: https://goreleaser.com/install/
 release-dry-run:
 	goreleaser release --snapshot --clean
+
+test:
+	go test ./... -count=1
+
+lint:
+	go vet ./...
+	@which staticcheck > /dev/null 2>&1 && staticcheck ./... || echo "staticcheck not installed; skipping"
+
+check: lint test
 
 clean:
 	rm -f vectos
