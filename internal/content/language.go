@@ -40,6 +40,17 @@ var sensitiveFilenames = map[string]bool{
 	"composer.lock":    true,
 	"poetry.lock":      true,
 	"Pipfile.lock":     true,
+	// Config files — contain code-related words as config values, not implementations
+	"eslint.config.js":  true,
+	"eslint.config.mjs": true,
+	"eslint.config.cjs": true,
+	".eslintrc.js":      true,
+	".eslintrc.cjs":     true,
+	".eslintrc.json":    true,
+	".eslintrc.yaml":    true,
+	".eslintrc.yml":     true,
+	"tailwind.config.js": true,
+	"tailwind.config.ts": true,
 }
 
 // sensitiveExtensions is the set of file extensions that indicate sensitive content.

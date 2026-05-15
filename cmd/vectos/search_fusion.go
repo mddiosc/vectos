@@ -9,8 +9,8 @@ import (
 
 const (
 	rrfConstant           = 60.0
-	rrfVectorLimit        = 25
-	rrfKeywordLimit       = 25
+	rrfVectorLimit        = 35
+	rrfKeywordLimit       = 15
 	rrfFinalLimit         = 10
 	rrfResultLimitPerFile = 2
 )

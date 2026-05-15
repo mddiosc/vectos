@@ -461,7 +461,37 @@ func computeKeywordScore(content, filePath, query string) float64 {
 		}
 	}
 
+	// Config/lock files get reduced keyword weight — they contain
+	// code-related words as configuration values, not as implementations.
+	if isKeywordNoiseFile(base) {
+		score *= 0.3
+	}
+
 	return score
+}
+
+// isKeywordNoiseFile returns true for config files, lockfiles, and other
+// files whose keyword matches are usually misleading noise.
+func isKeywordNoiseFile(filename string) bool {
+	lower := strings.ToLower(filename)
+	for _, pattern := range keywordNoisePatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+var keywordNoisePatterns = []string{
+	"eslint.config",
+	"tailwind.config",
+	"vite.config",
+	"vitest.config",
+	"playwright.config",
+	"tsconfig",
+	"postcss.config",
+	".lock",
+	"package.json",
 }
 
 // Stats devuelve un resumen del índice del proyecto activo.
