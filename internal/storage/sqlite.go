@@ -551,17 +551,27 @@ func (s *SQLiteStorage) SearchSemantic(queryVector []float32, limit int, include
 		return nil, nil
 	}
 
-	// Use vector index when available.
+	// Use vector index when available and chunk count is sufficient.
 	s.vectIdxMu.RLock()
 	idx := s.vectIdx
 	s.vectIdxMu.RUnlock()
 
-	if idx != nil {
+	// For small indexes (< 1000 chunks), linear scan is faster and more accurate
+	// than HNSW approximate search.
+	if idx != nil && s.chunkCount() >= 1000 {
 		return s.searchViaIndex(idx, queryVector, limit, includeDocs)
 	}
 
-	log.Println("vectorindex: no index loaded — falling back to linear scan")
+	if idx == nil {
+		log.Println("vectorindex: no index loaded — falling back to linear scan")
+	}
 	return s.searchLinearScan(queryVector, limit, includeDocs)
+}
+
+func (s *SQLiteStorage) chunkCount() int {
+	var count int
+	s.db.QueryRow("SELECT COUNT(*) FROM code_chunks WHERE embedding IS NOT NULL AND length(embedding) > 0").Scan(&count)
+	return count
 }
 
 // searchViaIndex uses the HNSW index for approximate nearest neighbor search,

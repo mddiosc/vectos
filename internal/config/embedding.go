@@ -169,7 +169,7 @@ func DefaultEmbeddingConfig(homeDir string) EmbeddingConfig {
 			IndexType:           "hnsw",
 			HNSW_M:              16,
 			HNSW_EfConstruction: 200,
-			HNSW_EfSearch:       100,
+			HNSW_EfSearch:       200,
 			Compression:         "none",
 		},
 	}

@@ -45,6 +45,10 @@ func runSearch(projectBaseDir string, embedConfig config.EmbeddingConfig, query 
 	}
 	defer store.Close()
 
+	if _, _, _, _, err := store.LoadVectorIndex(); err != nil {
+		log.Printf("warning: vector index not available, using linear scan: %v", err)
+	}
+
 	searchRun, err := executeSearchForCLI(store, embedConfig, query, docsOnly)
 	if err != nil {
 		log.Fatalf("error running search: %v", err)

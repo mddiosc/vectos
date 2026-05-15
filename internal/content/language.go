@@ -21,15 +21,25 @@ func ShouldSkipDir(name string) bool {
 
 // sensitiveFilenames is the set of exact filenames that should never be indexed.
 var sensitiveFilenames = map[string]bool{
-	".env":               true,
-	".env.local":         true,
-	".env.production":    true,
-	".env.development":   true,
-	"id_rsa":             true,
-	"id_ecdsa":           true,
-	"id_ed25519":         true,
-	"credentials.json":   true,
-	"service-account.json": true,
+	".env":                  true,
+	".env.local":            true,
+	".env.production":       true,
+	".env.development":      true,
+	"id_rsa":                true,
+	"id_ecdsa":              true,
+	"id_ed25519":            true,
+	"credentials.json":      true,
+	"service-account.json":  true,
+	// Lockfiles — never useful for code search
+	"pnpm-lock.yaml":  true,
+	"package-lock.json": true,
+	"yarn.lock":        true,
+	"Cargo.lock":       true,
+	"Gemfile.lock":     true,
+	"go.sum":           true,
+	"composer.lock":    true,
+	"poetry.lock":      true,
+	"Pipfile.lock":     true,
 }
 
 // sensitiveExtensions is the set of file extensions that indicate sensitive content.
