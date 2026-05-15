@@ -270,8 +270,13 @@ func indexPaths(store *storage.SQLiteStorage, embedClient embeddings.Embedder, p
 		chunk   indexer.ChunkResult
 		path    string
 		lang    string
+		hash    string
 	}
 	for _, path := range paths {
+		hash, err := computeFileHash(path)
+		if err != nil {
+			return 0, 0, err
+		}
 		language, err := detectLanguage(path)
 		if err != nil {
 			return 0, 0, err
@@ -280,7 +285,7 @@ func indexPaths(store *storage.SQLiteStorage, embedClient embeddings.Embedder, p
 		if err != nil {
 			return 0, 0, err
 		}
-		if err := store.DeleteChunksByPath(path); err != nil {
+		if err := store.RemoveDeletedFile(path); err != nil {
 			return 0, 0, err
 		}
 		for _, c := range chunks {
@@ -288,7 +293,8 @@ func indexPaths(store *storage.SQLiteStorage, embedClient embeddings.Embedder, p
 				chunk   indexer.ChunkResult
 				path    string
 				lang    string
-			}{chunk: c, path: path, lang: language})
+				hash    string
+			}{chunk: c, path: path, lang: language, hash: hash})
 		}
 		indexedFiles++
 	}
@@ -318,6 +324,9 @@ func indexPaths(store *storage.SQLiteStorage, embedClient embeddings.Embedder, p
 			Signature: allChunks[i].Signature,
 			Purpose:   allChunks[i].Purpose,
 		}); err != nil {
+			return 0, 0, err
+		}
+		if err := store.UpsertIndexedFile(p.path, p.hash); err != nil {
 			return 0, 0, err
 		}
 		count++

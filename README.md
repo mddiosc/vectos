@@ -56,6 +56,18 @@ vectos setup claude
 vectos setup codex
 ```
 
+### Watch Mode
+
+`vectos serve` automatically watches the project directory for file changes and triggers incremental reindexing.
+
+- **Enabled by default** — use `--watch=false` to disable
+- **Debounce** — multiple rapid changes are batched (default 500ms)
+- **Ignore patterns** — comma-separated glob patterns (default: `.git,node_modules,*.lock`)
+
+**Limitations:**
+- Requires local filesystem (not supported on network mounts)
+- Hidden files and directories matched by ignore patterns are excluded
+
 ## Documentation
 
 - [Documentation Index](docs/README.md)

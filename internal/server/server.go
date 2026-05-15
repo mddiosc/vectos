@@ -112,7 +112,8 @@ func (s *Server) shutdown() {
 	// Close all registered closers (e.g. cached SQLite connections).
 	s.closersMu.Lock()
 	defer s.closersMu.Unlock()
-	for _, c := range s.closers {
+	for i := len(s.closers) - 1; i >= 0; i-- {
+		c := s.closers[i]
 		if err := c.Close(); err != nil {
 			log.Printf("error closing resource: %v", err)
 		}

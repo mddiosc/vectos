@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +19,7 @@ import (
 	"vectos/internal/indexer"
 	"vectos/internal/server"
 	"vectos/internal/storage"
+	"vectos/internal/watcher"
 	"vectos/internal/workspace"
 )
 
@@ -91,7 +96,7 @@ func configureServeLogging() {
 	log.SetOutput(os.Stderr)
 }
 
-func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port int) {
+func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port int, watchEnabled bool, watchDebounce time.Duration, watchIgnore string) {
 	configureServeLogging()
 
 	pm, err := storage.NewProjectManager(projectBaseDir)
@@ -137,9 +142,66 @@ func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port in
 		}
 	}
 	srv.SetReady(true)
+	if watchEnabled {
+		ignorePatterns := strings.Split(watchIgnore, ",")
+		for i := range ignorePatterns {
+			ignorePatterns[i] = strings.TrimSpace(ignorePatterns[i])
+		}
+
+		if scope, err := workspace.ResolveScope(projectBaseDir, ""); err == nil {
+			if store, err := cache.getOrCreate(scope.Name, false); err == nil {
+				onChange := makeReindexCallback(store, embedClient)
+				onDelete := makeDeleteHandler(store)
+				if w, err := watcher.NewWatcher(projectBaseDir, ignorePatterns, watchDebounce, onChange, onDelete); err == nil {
+					if err := w.Start(context.Background()); err == nil {
+						srv.AddCloser(watcherCloser{w: w})
+					} else {
+						log.Printf("warning: failed to start watcher: %v", err)
+					}
+				} else {
+					log.Printf("warning: failed to create watcher: %v", err)
+				}
+			}
+		} else {
+			log.Printf("warning: failed to resolve watcher scope: %v", err)
+		}
+	}
 
 	if err := <-serveErr; err != nil {
 		log.Fatalf("server error: %v", err)
+	}
+}
+
+type watcherCloser struct{ w *watcher.Watcher }
+
+func (wc watcherCloser) Close() error { wc.w.Stop(); return nil }
+
+func makeDeleteHandler(store *storage.SQLiteStorage) func(string) {
+	return func(path string) {
+		if err := store.RemoveDeletedFile(path); err != nil {
+			log.Printf("watcher: failed to remove deleted file %s: %v", path, err)
+			return
+		}
+		log.Printf("watcher: removed deleted file from index: %s", path)
+	}
+}
+
+func makeReindexCallback(store *storage.SQLiteStorage, embedClient embeddings.Embedder) func([]string) {
+	return func(changedPaths []string) {
+		log.Printf("watcher: detected %d changed files, triggering reindex", len(changedPaths))
+		var actuallyChanged []string
+		for _, path := range changedPaths {
+			hash, err := computeFileHash(path)
+			if err != nil { log.Printf("watcher: failed to hash %s: %v", path, err); continue }
+			changed, err := store.HasFileChanged(path, hash)
+			if err != nil { log.Printf("watcher: failed to check hash for %s: %v", path, err); continue }
+			if changed { actuallyChanged = append(actuallyChanged, path) }
+		}
+		if len(actuallyChanged) == 0 { return }
+		log.Printf("watcher: %d files actually changed, reindexing", len(actuallyChanged))
+		if _, _, err := indexPaths(store, embedClient, actuallyChanged); err != nil {
+			log.Printf("watcher: reindex failed: %v", err)
+		}
 	}
 }
 
@@ -219,6 +281,7 @@ type pendingChunk struct {
 	chunk    indexer.ChunkResult
 	path     string
 	language string
+	hash     string
 }
 
 func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleChunker, paths []string, progress io.Writer) (int, int) {
@@ -229,6 +292,11 @@ func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleCh
 
 	// Phase 1: chunk every file (no embedding) and clear old rows.
 	for _, path := range paths {
+		fileHash, err := computeFileHash(path)
+		if err != nil {
+			log.Printf("warning: failed to hash %s: %v", path, err)
+			continue
+		}
 		language, err := content.DetectLanguage(path)
 		if err != nil {
 			log.Printf("warning: skipping %s — unsupported language: %v", path, err)
@@ -239,12 +307,12 @@ func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleCh
 			log.Printf("warning: failed to chunk %s: %v", path, err)
 			continue
 		}
-		if err := store.DeleteChunksByPath(path); err != nil {
+		if err := store.RemoveDeletedFile(path); err != nil {
 			log.Printf("warning: failed to clear previous chunks for %s: %v", path, err)
 			continue
 		}
 		for _, c := range chunks {
-			pending = append(pending, pendingChunk{chunk: c, path: path, language: language})
+			pending = append(pending, pendingChunk{chunk: c, path: path, language: language, hash: fileHash})
 		}
 		indexedFiles++
 
@@ -286,6 +354,10 @@ func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleCh
 			log.Printf("warning: failed to save chunk for %s: %v", p.path, err)
 			continue
 		}
+		if err := store.UpsertIndexedFile(p.path, p.hash); err != nil {
+			log.Printf("warning: failed to store hash for %s: %v", p.path, err)
+			continue
+		}
 		savedChunks++
 	}
 
@@ -293,6 +365,15 @@ func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleCh
 		fmt.Fprintf(progress, "Progress: %d/%d files, %d chunks indexed\n", indexedFiles, total, savedChunks)
 	}
 	return indexedFiles, savedChunks
+}
+
+func computeFileHash(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:]), nil
 }
 
 func cleanupExcludedAndSkipped(store *storage.SQLiteStorage, scope workspace.Scope, skippedPaths []string) {
@@ -328,5 +409,5 @@ func runServeCommand(app appContext, args []string) {
 		projectBaseDir = *app.flags.serveProjectBaseDir
 	}
 
-	runServe(projectBaseDir, app.embedConfig, port)
+	runServe(projectBaseDir, app.embedConfig, port, *app.flags.watchEnabled, *app.flags.watchDebounce, *app.flags.watchIgnore)
 }

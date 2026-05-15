@@ -159,6 +159,11 @@ func (s *SQLiteStorage) migrate() error {
 		dimensions INTEGER NOT NULL,
 		updated_at DATETIME NOT NULL
 	);
+	CREATE TABLE IF NOT EXISTS indexed_files (
+		path TEXT PRIMARY KEY,
+		hash TEXT NOT NULL,
+		indexed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
 	CREATE INDEX IF NOT EXISTS idx_file_path ON code_chunks(file_path);
 	`
 	_, err := s.db.Exec(query)
@@ -179,6 +184,60 @@ func (s *SQLiteStorage) migrate() error {
 	}
 
 	return nil
+}
+
+// UpsertIndexedFile inserts or updates the hash for a file path.
+func (s *SQLiteStorage) UpsertIndexedFile(path, hash string) error {
+	_, err := s.db.Exec(`
+		INSERT OR REPLACE INTO indexed_files (path, hash, indexed_at)
+		VALUES (?, ?, CURRENT_TIMESTAMP)
+	`, path, hash)
+	if err != nil {
+		return fmt.Errorf("failed to upsert indexed file: %w", err)
+	}
+	return nil
+}
+
+// GetIndexedFileHash returns the stored hash for a file, or empty string if not found.
+func (s *SQLiteStorage) GetIndexedFileHash(path string) (string, error) {
+	row := s.db.QueryRow(`SELECT hash FROM indexed_files WHERE path = ?`, path)
+	var hash string
+	if err := row.Scan(&hash); err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to get indexed file hash: %w", err)
+	}
+	return hash, nil
+}
+
+// DeleteIndexedFile removes the hash record for a file path.
+func (s *SQLiteStorage) DeleteIndexedFile(path string) error {
+	_, err := s.db.Exec(`DELETE FROM indexed_files WHERE path = ?`, path)
+	if err != nil {
+		return fmt.Errorf("failed to delete indexed file: %w", err)
+	}
+	return nil
+}
+
+// HasFileChanged compares the current file hash against the stored hash.
+func (s *SQLiteStorage) HasFileChanged(path string, currentHash string) (bool, error) {
+	storedHash, err := s.GetIndexedFileHash(path)
+	if err != nil {
+		return false, err
+	}
+	if storedHash == "" {
+		return true, nil
+	}
+	return storedHash != currentHash, nil
+}
+
+// RemoveDeletedFile cleans up all chunks and the hash record for a deleted file.
+func (s *SQLiteStorage) RemoveDeletedFile(path string) error {
+	if err := s.DeleteChunksByPath(path); err != nil {
+		return err
+	}
+	return s.DeleteIndexedFile(path)
 }
 
 // SaveChunk guarda un trozo de código y su vector en la base de datos.
