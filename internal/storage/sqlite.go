@@ -272,7 +272,11 @@ func (s *SQLiteStorage) SaveChunk(chunk CodeChunk) (int64, error) {
 		return 0, fmt.Errorf("failed to save chunk: %w", err)
 	}
 
-	return res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
 }
 
 // GetAllEmbeddings returns all chunk IDs with their embedding vectors.
@@ -302,7 +306,7 @@ func (s *SQLiteStorage) GetAllEmbeddings() (map[int][]float32, error) {
 func (s *SQLiteStorage) DeleteChunksByPath(filePath string) error {
 	_, err := s.db.Exec(`DELETE FROM code_chunks WHERE file_path = ?`, filePath)
 	if err != nil {
-		return fmt.Errorf("failed to delete chunks by path: %w", err)
+		return err
 	}
 	return nil
 }
@@ -310,10 +314,7 @@ func (s *SQLiteStorage) DeleteChunksByPath(filePath string) error {
 // DeleteChunksByPathPrefix elimina chunks de todos los archivos bajo un prefijo de ruta.
 func (s *SQLiteStorage) DeleteChunksByPathPrefix(pathPrefix string) error {
 	_, err := s.db.Exec(`DELETE FROM code_chunks WHERE file_path = ? OR file_path LIKE ?`, pathPrefix, pathPrefix+"/%")
-	if err != nil {
-		return fmt.Errorf("failed to delete chunks by path prefix: %w", err)
-	}
-	return nil
+	return err
 }
 
 // DeleteAllChunks elimina todos los chunks del índice activo, preservando el metadata del índice.
@@ -374,6 +375,93 @@ func (s *SQLiteStorage) SearchText(query string) ([]CodeChunk, error) {
 		results = append(results, c)
 	}
 	return results, nil
+}
+
+// SearchTextRanked performs a ranked keyword search returning results with scores.
+// Uses term-frequency scoring in Go (no FTS5 dependency). Results are ordered by score descending.
+func (s *SQLiteStorage) SearchTextRanked(query string, limit int) ([]CodeChunk, error) {
+	if limit <= 0 {
+		limit = 25
+	}
+
+	// First retrieve candidates via LIKE (same as SearchText but with limit)
+	sqlQuery := `SELECT id, file_path, content, start_line, end_line, language, category, created_at, signature, purpose
+	             FROM code_chunks
+	             WHERE content LIKE ?
+	             LIMIT ?`
+
+	rows, err := s.db.Query(sqlQuery, "%"+escapeLikeTerm(query)+"%", limit*5) // oversample for scoring
+	if err != nil {
+		return nil, fmt.Errorf("keyword search failed: %w", err)
+	}
+	defer rows.Close()
+
+	var candidates []CodeChunk
+	for rows.Next() {
+		var c CodeChunk
+		var category sql.NullString
+		var signature sql.NullString
+		var purpose sql.NullString
+		err := rows.Scan(&c.ID, &c.FilePath, &c.Content, &c.StartLine, &c.EndLine, &c.Language, &category, &c.CreatedAt, &signature, &purpose)
+		if err != nil {
+			return nil, err
+		}
+		c.Category = categoryOrDefault(category, c.Language)
+		c.Signature = signature.String
+		c.Purpose = purpose.String
+		c.Score = computeKeywordScore(c.Content, c.FilePath, query)
+		candidates = append(candidates, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Sort by score descending
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return candidates[i].Score > candidates[j].Score
+	})
+
+	// Limit to top results
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+	return candidates, nil
+}
+
+// computeKeywordScore calculates a relevance score for a chunk given a query.
+// Uses term frequency in content + filename match bonus.
+func computeKeywordScore(content, filePath, query string) float64 {
+	contentLower := strings.ToLower(content)
+	// Extract base filename without importing path/filepath
+	base := filePath
+	if idx := strings.LastIndex(filePath, "/"); idx >= 0 {
+		base = filePath[idx+1:]
+	}
+	pathLower := strings.ToLower(base)
+	queryLower := strings.ToLower(query)
+
+	score := 0.0
+
+	// Exact phrase match gets highest bonus
+	if count := strings.Count(contentLower, queryLower); count > 0 {
+		score += float64(count) * 3.0
+	}
+
+	// Per-term matches
+	for _, term := range strings.Fields(queryLower) {
+		if len(term) < 2 {
+			continue
+		}
+		if count := strings.Count(contentLower, term); count > 0 {
+			score += float64(count) * 1.0
+		}
+		// Filename match bonus
+		if strings.Contains(pathLower, term) {
+			score += 0.5
+		}
+	}
+
+	return score
 }
 
 // Stats devuelve un resumen del índice del proyecto activo.
