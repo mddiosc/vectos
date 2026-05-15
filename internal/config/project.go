@@ -30,18 +30,6 @@ type projectConfigDisk struct {
 	} `json:"index"`
 }
 
-// embeddingConfigIndexDisk is the on-disk format for the index section in ~/.vectos/config.json.
-type embeddingConfigIndexDisk struct {
-	Index struct {
-		Docs struct {
-			Exclude []string `json:"exclude,omitempty"`
-		} `json:"docs"`
-		Code struct {
-			Exclude []string `json:"exclude,omitempty"`
-		} `json:"code"`
-	} `json:"index"`
-}
-
 // LoadIndexConfig merges global defaults with project-level exclusion patterns.
 // Global patterns come from ~/.vectos/config.json (index section).
 // Project patterns come from vectos.config.json in the project root.
@@ -110,9 +98,11 @@ func ReadGitignorePatterns(projectDir string) []string {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		// Skip negation patterns in initial implementation
 		if strings.HasPrefix(line, "!") {
 			continue
+		}
+		if strings.HasPrefix(line, "/") {
+			line = line[1:]
 		}
 		patterns = append(patterns, line)
 	}

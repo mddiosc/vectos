@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"vectos/internal/workspace"
 )
 
@@ -21,6 +22,11 @@ func CollectIndexablePaths(inputPaths []string, docsOnly bool) ([]string, []stri
 func CollectIndexablePathsWithExclusions(inputPaths []string, docsOnly bool, excludePatterns []string) ([]string, []string, error) {
 	acc := newPathAccumulator()
 	acc.excludePatterns = excludePatterns
+	if len(inputPaths) > 0 {
+		if absRoot, err := filepath.Abs(inputPaths[0]); err == nil {
+			acc.projectRoot = absRoot
+		}
+	}
 	for _, path := range inputPaths {
 		absPath, err := filepath.Abs(path)
 		if err != nil {
@@ -135,14 +141,26 @@ func (a *pathAccumulator) shouldExclude(absPath string) bool {
 	if len(a.excludePatterns) == 0 {
 		return false
 	}
+	rel := absPath
+	if a.projectRoot != "" {
+		if r, err := filepath.Rel(a.projectRoot, absPath); err == nil {
+			rel = filepath.ToSlash(r)
+		}
+	}
 	base := filepath.Base(absPath)
 	for _, pattern := range a.excludePatterns {
-		// Try matching against just the filename first (simple patterns like "*.log")
-		if matched, _ := filepath.Match(pattern, base); matched {
+		cleaned := strings.TrimSpace(pattern)
+		if cleaned == "" {
+			continue
+		}
+		p := cleaned
+		if strings.HasSuffix(p, "/") {
+			p = p[:len(p)-1] + "/**"
+		}
+		if matched, _ := doublestar.Match(p, base); matched {
 			return true
 		}
-		// Try matching against the full path (directory patterns like "src/content/**")
-		if matched, _ := filepath.Match(pattern, absPath); matched {
+		if matched, _ := doublestar.Match(p, rel); matched {
 			return true
 		}
 	}
