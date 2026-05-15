@@ -22,8 +22,9 @@ func prepareStoreForIndexing(store *storage.SQLiteStorage, changedPaths []string
 }
 
 type indexEnv struct {
-	store   *storage.SQLiteStorage
-	chunker *indexer.SimpleChunker
+	store       *storage.SQLiteStorage
+	chunker     *indexer.SimpleChunker
+	embedConfig config.EmbeddingConfig
 }
 
 func resolveAndPrintScope(absolutePath, projectName string) workspace.Scope {
@@ -81,7 +82,7 @@ func setupIndexing(projectBaseDir string, scope workspace.Scope, embedConfig con
 	}
 
 	chunker := indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10}, embedClient)
-	return &indexEnv{store: store, chunker: chunker}
+	return &indexEnv{store: store, chunker: chunker, embedConfig: embedConfig}
 }
 
 func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePath string, projectName string, changedPaths []string, docsOnly bool) {
@@ -124,7 +125,7 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 	fmt.Println("Processing files...")
 
 	indexedFiles, count := indexPathsIntoStore(env.store, env.chunker, paths, os.Stdout)
-	buildVectorIndex(env.store, env.chunker)
+	buildVectorIndex(env.store, env.chunker, env.embedConfig.VectorIndex)
 
 	fmt.Println("Cleaning excluded directories...")
 	cleanupExcludedAndSkipped(env.store, scope, skippedPaths)
@@ -132,7 +133,7 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 	fmt.Printf("Done: %d files, %d chunks indexed (project: %s)\n", indexedFiles, count, scope.Name)
 }
 
-func buildVectorIndex(store *storage.SQLiteStorage, chunker *indexer.SimpleChunker) {
+func buildVectorIndex(store *storage.SQLiteStorage, chunker *indexer.SimpleChunker, viCfg config.VectorIndexConfig) {
 	if store == nil || chunker == nil {
 		return
 	}
@@ -162,7 +163,19 @@ func buildVectorIndex(store *storage.SQLiteStorage, chunker *indexer.SimpleChunk
 		return
 	}
 
-	idx := vectorindex.NewHNSW(dimension, vectorindex.Config{M: 16, EfConstruction: 200, EfSearch: 200})
+	m := viCfg.HNSW_M
+	if m <= 0 {
+		m = 16
+	}
+	efCons := viCfg.HNSW_EfConstruction
+	if efCons <= 0 {
+		efCons = 200
+	}
+	efSearch := viCfg.HNSW_EfSearch
+	if efSearch <= 0 {
+		efSearch = 200
+	}
+	idx := vectorindex.NewHNSW(dimension, vectorindex.Config{M: m, EfConstruction: efCons, EfSearch: efSearch})
 	total := len(ids)
 	for i, id := range ids {
 		idx.Insert(id, embeddingsByID[id])

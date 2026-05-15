@@ -865,7 +865,13 @@ func (s *SQLiteStorage) LoadVectorIndex() (*vectorindex.HNSW, [sha256.Size]byte,
 
 	// Validate the loaded index matches current chunk content.
 	currentHash, hashErr := s.ChunkTableContentHash()
-	if hashErr == nil && currentHash != hash {
+	if hashErr != nil {
+		return nil, hash, compression, params, fmt.Errorf("vectorindex: failed to validate content hash: %w", hashErr)
+	}
+	if currentHash != hash {
+		s.vectIdxMu.Lock()
+		s.vectIdx = nil
+		s.vectIdxMu.Unlock()
 		return nil, hash, compression, params, fmt.Errorf("vectorindex: content hash mismatch (chunks changed since index was built)")
 	}
 

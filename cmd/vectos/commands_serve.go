@@ -250,7 +250,7 @@ func reindexProject(cache *storeCache, chunker *indexer.SimpleChunker, providerI
 
 	// Index each path.
 	indexedFiles, count := indexPathsIntoStore(store, chunker, paths, nil)
-	buildVectorIndex(store, chunker)
+	buildVectorIndex(store, chunker, config.VectorIndexConfig{})
 
 	// Clean up excluded directories and skipped paths.
 	cleanupExcludedAndSkipped(store, scope, skippedPaths)
