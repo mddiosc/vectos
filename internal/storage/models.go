@@ -11,7 +11,7 @@ type CodeChunk struct {
 	Language  string    `json:"language"`
 	Category  string    `json:"category,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
-	Score     float64   `json:"score,omitempty"`
+	Score     float64   `json:"score,omitempty"` // Cosine similarity (vector search) or BM25 score (keyword search), depending on source
 	Signature string    `json:"signature,omitempty"`
 	Purpose   string    `json:"purpose,omitempty"`
 

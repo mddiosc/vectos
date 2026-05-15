@@ -6,86 +6,150 @@ import (
 	"vectos/internal/storage"
 )
 
-func TestRerankHybridResultsBoostsRelevantLocalSource(t *testing.T) {
-	results := rerankHybridResults("filter changed file paths during indexing", []storage.CodeChunk{
-		{
-			FilePath: "/tmp/project/example-site/dist/assets/post.js",
-			Content:  "changed file paths during indexing explained in generated blog output",
-			Category: "source",
-			Score:    0.61,
-		},
-		{
-			FilePath:  "/tmp/project/vectos/cmd/vectos/main.go",
-			Content:   "func filterChangedPaths(scope workspace.Scope, paths, skippedPaths, changedPaths []string) ([]string, []string, error) {",
-			Category:  "source",
-			StartLine: 903,
-			EndLine:   951,
-			Score:     0.58,
-		},
-	}, 5)
+// Test for RRF fusion of vector + keyword results (tasks 2.5-2.7)
 
-	if len(results) == 0 {
-		t.Fatal("expected reranked results")
+func TestFuseResults_BasicFusion(t *testing.T) {
+	vectorResults := []storage.CodeChunk{
+		{ID: 1, FilePath: "/tmp/project/src/main.go", Content: "func main()", Score: 0.9},
+		{ID: 2, FilePath: "/tmp/project/src/util.go", Content: "func helper()", Score: 0.7},
 	}
-	if results[0].FilePath != "/tmp/project/vectos/cmd/vectos/main.go" {
-		t.Fatalf("expected local source result first, got %s", results[0].FilePath)
+	keywordResults := []storage.CodeChunk{
+		{ID: 3, FilePath: "/tmp/project/src/auth.go", Content: "func login()", Score: 5.0},
+		{ID: 1, FilePath: "/tmp/project/src/main.go", Content: "func main()", Score: 3.0},
 	}
-}
 
-func TestRerankHybridResultsDeduplicatesOverlappingChunks(t *testing.T) {
-	results := rerankHybridResults("project path resolution", []storage.CodeChunk{
-		{FilePath: "/tmp/project/internal/storage/project_manager.go", StartLine: 1, EndLine: 43, Category: "source", Content: "package storage", Score: 0.60},
-		{FilePath: "/tmp/project/internal/storage/project_manager.go", StartLine: 25, EndLine: 41, Category: "source", Content: "func (pm *ProjectManager) BaseDir() string {", Score: 0.59},
-		{FilePath: "/tmp/project/internal/storage/sqlite.go", StartLine: 21, EndLine: 59, Category: "source", Content: "type IndexStats struct {", Score: 0.58},
-	}, 5)
-
-	if len(results) != 2 {
-		t.Fatalf("expected 2 deduplicated results, got %d", len(results))
+	fused := fuseResults(vectorResults, keywordResults, 60.0, 10)
+	if len(fused) == 0 {
+		t.Fatal("expected fused results")
 	}
-	if results[0].FilePath != "/tmp/project/internal/storage/project_manager.go" {
-		t.Fatalf("expected project_manager result first, got %s", results[0].FilePath)
+	// Chunk 1 appears in both lists → should get highest RRF score
+	if fused[0].ID != 1 {
+		t.Fatalf("expected chunk 1 (in both lists) first, got ID %d", fused[0].ID)
+	}
+	if len(fused) != 3 {
+		t.Fatalf("expected 3 unique fused results, got %d", len(fused))
 	}
 }
 
-func TestRerankHybridResultsPenalizesTestFiles(t *testing.T) {
-	results := rerankHybridResults("structural chunking for TypeScript and React", []storage.CodeChunk{
-		{FilePath: "/tmp/project/internal/indexer/chunker_test.go", Content: "TestChunkStructuredTSXSeparatesPreludeAndBlocks", Category: "source", Score: 0.78},
-		{FilePath: "/tmp/project/internal/indexer/chunker.go", Content: "func (s *SimpleChunker) chunkStructuredFileImpl(filePath, language string, lines []string, embed bool) []ChunkResult {", Category: "source", Score: 0.77},
-	}, 5)
-
-	if len(results) == 0 {
-		t.Fatal("expected reranked results")
+func TestFuseResults_ChunkInBothLists(t *testing.T) {
+	vectorResults := []storage.CodeChunk{
+		{ID: 10, FilePath: "/tmp/a.go", Content: "x", Score: 0.8},
 	}
-	if results[0].FilePath != "/tmp/project/internal/indexer/chunker.go" {
-		t.Fatalf("expected implementation file first, got %s", results[0].FilePath)
+	keywordResults := []storage.CodeChunk{
+		{ID: 10, FilePath: "/tmp/a.go", Content: "x", Score: 4.0},
 	}
-}
 
-func TestRerankHybridResultsPenalizesHelpText(t *testing.T) {
-	results := rerankHybridResults("how does Vectos fall back to text search when embeddings fail", []storage.CodeChunk{
-		{FilePath: "/tmp/project/cmd/vectos/cli_help.go", Content: "fmt.Println(\"Search the index using semantic similarity. Falls back to keyword search when semantic search is unavailable or returns no results.\")", Category: "source", Score: 0.81},
-		{FilePath: "/tmp/project/cmd/vectos/benchmark.go", Content: "func executeSearch(store *storage.SQLiteStorage, embedConfig config.EmbeddingConfig, query string, limit int) (searchRun, error) {", Category: "source", Score: 0.79},
-	}, 5)
-
-	if len(results) == 0 {
-		t.Fatal("expected reranked results")
+	fused := fuseResults(vectorResults, keywordResults, 60.0, 10)
+	if len(fused) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(fused))
 	}
-	if results[0].FilePath != "/tmp/project/cmd/vectos/benchmark.go" {
-		t.Fatalf("expected implementation file first, got %s", results[0].FilePath)
+	if fused[0].ID != 10 {
+		t.Fatalf("expected chunk 10, got %d", fused[0].ID)
+	}
+	// RRF score should be 1/(60+1) + 1/(60+1) ≈ 0.0328
+	expectedRRF := 1.0/61.0 + 1.0/61.0
+	if fused[0].Score < expectedRRF-0.001 || fused[0].Score > expectedRRF+0.001 {
+		t.Fatalf("expected RRF score ~%.4f, got %.4f", expectedRRF, fused[0].Score)
 	}
 }
 
-func TestRerankHybridResultsPenalizesNonSourceFilesForBroadQueries(t *testing.T) {
-	results := rerankHybridResults("where is routing defined", []storage.CodeChunk{
-		{FilePath: "/tmp/project/openspec/config.yaml", Content: "routing definition for docs and config", Category: "infra_config", Score: 0.77},
-		{FilePath: "/tmp/project/src/router/routes.tsx", Content: "export const router = createBrowserRouter([...])", Category: "source", Score: 0.75},
-	}, 5)
-
-	if len(results) == 0 {
-		t.Fatal("expected reranked results")
+func TestFuseResults_EmptyKeywordList(t *testing.T) {
+	vectorResults := []storage.CodeChunk{
+		{ID: 1, FilePath: "/tmp/a.go", Content: "x", Score: 0.8},
 	}
-	if results[0].FilePath != "/tmp/project/src/router/routes.tsx" {
-		t.Fatalf("expected source routing file first, got %s", results[0].FilePath)
+
+	fused := fuseResults(vectorResults, nil, 60.0, 10)
+	if len(fused) != 1 {
+		t.Fatalf("expected 1 result for vector-only, got %d", len(fused))
+	}
+	if fused[0].ID != 1 {
+		t.Fatalf("expected chunk 1, got %d", fused[0].ID)
 	}
 }
 
+func TestFuseResults_BothEmpty(t *testing.T) {
+	fused := fuseResults(nil, nil, 60.0, 10)
+	if len(fused) != 0 {
+		t.Fatalf("expected 0 results for both empty, got %d", len(fused))
+	}
+}
+
+// Test for fusion penalties (tasks 3.6-3.7)
+
+func TestApplyFusionPenalties_TestFile(t *testing.T) {
+	results := []storage.CodeChunk{
+		{ID: 1, FilePath: "/tmp/project/internal/indexer/chunker_test.go", Content: "func TestX()", Score: 0.0328},
+		{ID: 2, FilePath: "/tmp/project/internal/indexer/chunker.go", Content: "func chunk()", Score: 0.0320},
+	}
+
+	penalized := applyFusionPenalties(results)
+	// Test file should be penalized (-0.08)
+	if penalized[0].Score >= 0.0328-0.07 {
+		t.Fatalf("expected test file score penalized, got %.4f", penalized[0].Score)
+	}
+	// Source file should NOT be penalized
+	if penalized[1].Score != 0.0320 {
+		t.Fatalf("expected source file score unchanged (0.0320), got %.4f", penalized[1].Score)
+	}
+}
+
+func TestApplyFusionPenalties_SourceFileNoPenalty(t *testing.T) {
+	results := []storage.CodeChunk{
+		{ID: 1, FilePath: "/tmp/project/src/main.go", Content: "func main()", Score: 0.05},
+	}
+
+	penalized := applyFusionPenalties(results)
+	if penalized[0].Score != 0.05 {
+		t.Fatalf("expected source file score unchanged (0.05), got %.4f", penalized[0].Score)
+	}
+}
+
+func TestApplyFusionPenalties_HelpText(t *testing.T) {
+	results := []storage.CodeChunk{
+		{ID: 1, FilePath: "/tmp/project/cmd/vectos/cli_help.go", Content: "fmt.Println(\"usage: vectos [command] [flags]\n\\nexamples:\\n  vectos search\")", Score: 0.05},
+		{ID: 2, FilePath: "/tmp/project/cmd/vectos/search.go", Content: "func executeSearch()", Score: 0.04},
+	}
+
+	penalized := applyFusionPenalties(results)
+	// Help text file should be penalized (score reduced by 0.10)
+	if penalized[0].Score >= 0.0 {
+		t.Fatalf("expected help text score to be penalized below 0, got %.4f", penalized[0].Score)
+	}
+	// Source file should NOT be penalized
+	if penalized[1].Score != 0.04 {
+		t.Fatalf("expected source file score unchanged (0.04), got %.4f", penalized[1].Score)
+	}
+}
+
+// Test for dedupeByFile (task 4.4 verification)
+
+func TestDedupeByFile_OverlappingChunks(t *testing.T) {
+	results := []storage.CodeChunk{
+		{ID: 1, FilePath: "/tmp/project/internal/storage/project_manager.go", StartLine: 1, EndLine: 43, Score: 0.05},
+		{ID: 2, FilePath: "/tmp/project/internal/storage/project_manager.go", StartLine: 25, EndLine: 41, Score: 0.04},
+		{ID: 3, FilePath: "/tmp/project/internal/storage/sqlite.go", StartLine: 21, EndLine: 59, Score: 0.03},
+	}
+
+	deduped := dedupeByFile(results, 10, 2)
+	if len(deduped) != 2 {
+		t.Fatalf("expected 2 deduplicated results (overlapping from same file removed), got %d", len(deduped))
+	}
+	if deduped[0].ID != 1 || deduped[1].ID != 3 {
+		t.Fatalf("expected IDs 1 and 3, got %d and %d", deduped[0].ID, deduped[1].ID)
+	}
+}
+
+func TestDedupeByFile_MaxPerFile(t *testing.T) {
+	results := []storage.CodeChunk{
+		{ID: 1, FilePath: "/tmp/a.go", StartLine: 1, EndLine: 10, Score: 0.05},
+		{ID: 2, FilePath: "/tmp/a.go", StartLine: 20, EndLine: 30, Score: 0.04},
+		{ID: 3, FilePath: "/tmp/a.go", StartLine: 40, EndLine: 50, Score: 0.03},
+		{ID: 4, FilePath: "/tmp/b.go", StartLine: 1, EndLine: 10, Score: 0.02},
+	}
+
+	deduped := dedupeByFile(results, 10, 2)
+	// Only 2 from a.go + 1 from b.go = 3
+	if len(deduped) != 3 {
+		t.Fatalf("expected 3 results (max 2 per file), got %d", len(deduped))
+	}
+}

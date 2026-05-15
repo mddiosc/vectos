@@ -2,30 +2,34 @@
 Define semantic retrieval, text-search fallback, and ranking behavior for code search.
 ## Requirements
 ### Requirement: Code search SHALL support semantic retrieval
-The system SHALL support semantic code retrieval by generating an embedding for the query and ranking indexed chunks by vector similarity, optionally strengthened by additional hybrid ranking signals that improve top-result quality.
+The system SHALL support semantic code retrieval by executing both a vector similarity search and a term-frequency keyword search independently, then fusing the two result sets using Reciprocal Rank Fusion (RRF) to produce a unified ranking. The unified ranking SHALL leverage both semantic meaning and syntactic keyword matching.
 
 #### Scenario: Semantic query matches indexed code
 - **WHEN** a query describes code behavior without using the exact symbol name
-- **THEN** the system SHALL return chunks ranked by semantic similarity to the query
+- **THEN** the system SHALL return chunks ranked by fused RRF scores that incorporate both semantic similarity and keyword relevance
 
 #### Scenario: Hybrid signals improve ranked results
-- **WHEN** text overlap, symbol relevance, or file-level signals provide useful extra evidence for a query
-- **THEN** the system SHALL be able to use those signals to improve the ranking order of the semantic candidate set
+- **WHEN** text overlap or keyword matches provide useful extra evidence for a query beyond semantic similarity
+- **THEN** the system SHALL use those signals via the keyword search contribution to RRF, rather than via post-retrieval boosting heuristics
 
 #### Scenario: Semantic search returns top ranked results
 - **WHEN** multiple indexed chunks are semantically related to the query
-- **THEN** the system SHALL sort results by overall ranking quality in descending order using semantic similarity as the base signal
+- **THEN** the system SHALL sort results by RRF fusion score in descending order, combining vector rank and keyword rank contributions
 
 ### Requirement: Semantic search SHALL fall back to text search
-The system SHALL fall back to text-based search when semantic search cannot be executed or produces no useful results.
+The system SHALL fall back to text-based search when semantic search cannot be executed or produces no useful results. When the keyword search component also returns no results, the system SHALL return results from whichever search component produced results (vector-only or keyword-only).
 
 #### Scenario: Embedding provider unavailable
 - **WHEN** the system cannot generate an embedding for the query
-- **THEN** it SHALL run a text search over indexed chunks instead of failing the request
+- **THEN** it SHALL run a keyword text search over indexed chunks instead of failing the request
 
-#### Scenario: Semantic search returns no matches
-- **WHEN** semantic retrieval yields no results
-- **THEN** the system SHALL run a text search using the original query
+#### Scenario: Semantic search returns no matches but keyword search succeeds
+- **WHEN** semantic retrieval yields no results but the keyword search finds matches
+- **THEN** the system SHALL return the keyword search results as the final output
+
+#### Scenario: Both searches return no matches
+- **WHEN** neither semantic retrieval nor keyword search yields any results
+- **THEN** the system SHALL return an empty result set without error
 
 ### Requirement: Embedding input SHALL be semantically enriched
 The system SHALL generate embeddings from enriched chunk content that includes structural metadata in addition to raw code. The enrichment SHALL include TypeScript-specific structural tags (type definition, enumeration, async function) when the chunk content contains those constructs.
@@ -69,18 +73,22 @@ The system SHALL prefer more actionable code entry points when ranking otherwise
 - **THEN** the system SHALL treat this as stronger actionability evidence compared to a candidate with equivalent semantic score but no signature
 
 ### Requirement: Semantic search candidate pool SHALL be limited to high-confidence results
-The system SHALL reduce the maximum number of hybrid candidates processed from 25 to 10, prioritizing a smaller set of higher-confidence results.
+The system SHALL retrieve up to 25 candidates from each search component (vector and keyword) before fusion, producing a fused ranking of at most 10 final results.
 
-#### Scenario: Query produces many candidates
-- **WHEN** a semantic search yields a large number of candidate chunks
-- **THEN** the system SHALL process at most 10 candidates through hybrid ranking, and the final output SHALL reflect the top ranked results from this reduced pool
+#### Scenario: Query produces many candidates from both sources
+- **WHEN** both vector and keyword searches yield a large number of candidates
+- **THEN** the system SHALL retrieve up to 25 from each source, fuse them via RRF, and return at most 10 top-ranked results
 
 ### Requirement: Hybrid ranking surface SHALL be simplified
-The system SHALL remove heuristic boosts and penalties that adjust ranking by less than 0.06 and rarely affect the final top-5 ordering.
+The system SHALL remove heuristic boosts and penalties that adjust ranking by less than 0.06 and rarely affect the final top-5 ordering. The RRF fusion mechanism SHALL replace content-matching boosts (exact phrase, token overlap, file name). Only structural penalties (test file, build artifact, help text) SHALL remain as post-fusion adjustments.
 
-#### Scenario: Ranking runs with simplified heuristics
-- **WHEN** the system computes hybrid scores
-- **THEN** it SHALL use only high-impact signals (exact phrase match, token overlap ratio, file name overlap, actionable code detection, source category preference, and build artifact/test penalties), and SHALL not apply fine-grained per-intent boosts
+#### Scenario: Ranking uses RRF fusion instead of heuristic boosts
+- **WHEN** the system computes a unified ranking
+- **THEN** it SHALL use Reciprocal Rank Fusion with k=60 to combine vector and keyword rankings, and SHALL not apply per-intent content-matching boosts
+
+#### Scenario: Structural penalties are preserved
+- **WHEN** the system applies post-fusion adjustments
+- **THEN** it SHALL apply test file, build artifact, and help text penalties to the fused ranking
 
 ### Requirement: Text search SHALL escape LIKE wildcards in user input
 When performing a text-based fallback search using SQL LIKE, the system SHALL escape SQL LIKE wildcard metacharacters (`%` and `_`) in user-provided search terms to prevent unintended wildcard injection and resource-exhaustion attacks.

@@ -36,8 +36,9 @@ func executeSearch(store *storage.SQLiteStorage, embedConfig config.EmbeddingCon
 	return textSearchFallback(store, query, limit, "text", "")
 }
 
-// trySemanticSearch attempts a semantic/embedding-based search. Returns
-// (result, true) on success, or (empty, false) with no error when a
+// trySemanticSearch attempts a semantic/embedding-based search with RRF fusion.
+// Runs both vector and keyword searches independently, then fuses with RRF.
+// Returns (result, true) on success, or (empty, false) with no error when a
 // text-only fallback should be used.
 func trySemanticSearch(embedClient embeddings.Embedder, store *storage.SQLiteStorage, query string, limit int) (searchRun, bool, error) {
 	queryVector, err := embedClient.GetEmbedding(query)
@@ -45,33 +46,55 @@ func trySemanticSearch(embedClient embeddings.Embedder, store *storage.SQLiteSto
 		return searchRun{}, false, nil
 	}
 
-	results, err := store.SearchSemantic(queryVector, hybridCandidateLimit, false)
+	// Run vector and keyword searches independently
+	vectorResults, err := store.SearchSemantic(queryVector, rrfVectorLimit, false)
 	if err != nil {
 		return searchRun{}, false, err
 	}
-	if len(results) == 0 {
+
+	keywordResults, err := store.SearchTextRanked(query, rrfKeywordLimit)
+	if err != nil {
+		// Keyword search failed; proceed with vector-only
+		keywordResults = nil
+	}
+
+	if len(vectorResults) == 0 && len(keywordResults) == 0 {
 		return searchRun{}, false, nil
 	}
 
-	reranked := rerankHybridResults(query, results, limit)
+	// Fuse with RRF and apply structural penalties
+	fused := fuseResults(vectorResults, keywordResults, rrfConstant, 0)
+	fused = applyFusionPenalties(fused)
+
+	// Dedup by file (max 2 per file), return top results
+	deduped := dedupeByFile(fused, limit, rrfResultLimitPerFile)
 	return searchRun{
 		Mode:        "semantic_hybrid",
-		Results:     reranked,
-		FileResults: storage.CollapseFileResults(reranked, 5),
+		Results:     deduped,
+		FileResults: storage.CollapseFileResults(deduped, 5),
 	}, true, nil
 }
 
-// textSearchFallback performs a plain text search and wraps the result
+// textSearchFallback performs a keyword text search and wraps the result
 // in a searchRun with the given mode and optional warning message.
 func textSearchFallback(store *storage.SQLiteStorage, query string, limit int, mode, warning string) (searchRun, error) {
-	results, err := store.SearchText(query)
+	results, err := store.SearchTextRanked(query, limit)
 	if err != nil {
-		return searchRun{}, err
+		// Fall back to plain LIKE search if FTS5 fails
+		results, err = store.SearchText(query)
+		if err != nil {
+			return searchRun{}, err
+		}
+		return searchRun{
+			Mode:    mode,
+			Warning: warning,
+			Results: limitResults(results, limit),
+		}, nil
 	}
 	return searchRun{
 		Mode:    mode,
 		Warning: warning,
-		Results: limitResults(results, limit),
+		Results: results,
 	}, nil
 }
 
@@ -80,9 +103,12 @@ func executeSearchDocs(store *storage.SQLiteStorage, embedConfig config.Embeddin
 
 	embedClient, _, err := embeddings.ResolveEmbedder(embedConfig)
 	if err != nil {
-		results, textErr := store.SearchText(query)
+		results, textErr := store.SearchTextRanked(query, limit)
 		if textErr != nil {
-			return searchRun{}, textErr
+			results, textErr = store.SearchText(query)
+			if textErr != nil {
+				return searchRun{}, textErr
+			}
 		}
 		run.Results = limitResults(results, limit)
 		run.FileResults = storage.CollapseFileResults(run.Results, 5)
@@ -91,21 +117,25 @@ func executeSearchDocs(store *storage.SQLiteStorage, embedConfig config.Embeddin
 
 	queryVector, err := embedClient.GetEmbedding(query)
 	if err == nil {
-		results, semanticErr := store.SearchSemantic(queryVector, limit, true)
-		if semanticErr != nil {
-			return searchRun{}, semanticErr
-		}
-		if len(results) > 0 {
+		vectorResults, _ := store.SearchSemantic(queryVector, rrfVectorLimit, true)
+		keywordResults, _ := store.SearchTextRanked(query, rrfKeywordLimit)
+		if len(vectorResults) > 0 || len(keywordResults) > 0 {
+			fused := fuseResults(vectorResults, keywordResults, rrfConstant, 0)
+			fused = applyFusionPenalties(fused)
+			deduped := dedupeByFile(fused, limit, rrfResultLimitPerFile)
 			run.Mode = "semantic_hybrid"
-			run.Results = results
-			run.FileResults = storage.CollapseFileResults(results, 5)
+			run.Results = deduped
+			run.FileResults = storage.CollapseFileResults(deduped, 5)
 			return run, nil
 		}
 	}
 
-	results, textErr := store.SearchText(query)
+	results, textErr := store.SearchTextRanked(query, limit)
 	if textErr != nil {
-		return searchRun{}, textErr
+		results, textErr = store.SearchText(query)
+		if textErr != nil {
+			return searchRun{}, textErr
+		}
 	}
 	run.Results = limitResults(results, limit)
 	run.FileResults = storage.CollapseFileResults(run.Results, 5)
