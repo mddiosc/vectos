@@ -108,8 +108,22 @@ func (r *RemoteEmbedder) detectDimensions() (int, error) {
 
 // GetEmbedding implementa la interfaz Embedder llamando al servidor remoto.
 func (r *RemoteEmbedder) GetEmbedding(text string) ([]float32, error) {
+	vecs, err := r.embed([]string{text})
+	if err != nil {
+		return nil, err
+	}
+	return vecs[0], nil
+}
+
+// GetEmbeddings implementa la interfaz Embedder enviando todos los textos en
+// una sola petición POST con todos los "input" entries.
+func (r *RemoteEmbedder) GetEmbeddings(texts []string) ([][]float32, error) {
+	return r.embed(texts)
+}
+
+func (r *RemoteEmbedder) embed(texts []string) ([][]float32, error) {
 	reqBody := EmbeddingRequest{
-		Input: []string{text},
+		Input: texts,
 		Model: r.model,
 	}
 
@@ -146,9 +160,17 @@ func (r *RemoteEmbedder) GetEmbedding(text string) ([]float32, error) {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	if len(embResp.Data) == 0 || len(embResp.Data[0].Embedding) == 0 {
+	if len(embResp.Data) == 0 {
 		return nil, fmt.Errorf("received empty embedding response")
 	}
 
-	return embResp.Data[0].Embedding, nil
+	results := make([][]float32, len(embResp.Data))
+	for i, d := range embResp.Data {
+		if len(d.Embedding) == 0 {
+			return nil, fmt.Errorf("received empty embedding at index %d", i)
+		}
+		results[i] = d.Embedding
+	}
+
+	return results, nil
 }

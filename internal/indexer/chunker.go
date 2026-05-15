@@ -30,12 +30,13 @@ type ChunkConfig struct {
 
 // ChunkResult contains the content of a chunk and its position.
 type ChunkResult struct {
-	Content   string
-	StartLine int
-	EndLine   int
-	Vector    []float32
-	Signature string
-	Purpose   string
+	Content      string
+	StartLine    int
+	EndLine      int
+	Vector       []float32
+	Signature    string
+	Purpose      string
+	SemanticText string // the text sent to the embedder; set by buildChunkImpl
 }
 
 // SimpleChunker es una implementación básica de segmentación de archivos.
@@ -54,6 +55,17 @@ func NewSimpleChunker(config ChunkConfig, embedClient embeddings.Embedder) *Simp
 
 // ChunkFile lee un archivo y lo divide en trozos, generando sus embeddings.
 func (s *SimpleChunker) ChunkFile(filePath string, language string) ([]ChunkResult, error) {
+	return s.chunkFileImpl(filePath, language, true)
+}
+
+// ChunkFileRaw lee un archivo y lo divide en trozos sin generar embeddings.
+// Los vectores quedan nil y deben ser rellenados posteriormente con
+// BatchEmbedChunks.
+func (s *SimpleChunker) ChunkFileRaw(filePath string, language string) ([]ChunkResult, error) {
+	return s.chunkFileImpl(filePath, language, false)
+}
+
+func (s *SimpleChunker) chunkFileImpl(filePath string, language string, embed bool) ([]ChunkResult, error) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
@@ -67,18 +79,18 @@ func (s *SimpleChunker) ChunkFile(filePath string, language string) ([]ChunkResu
 	}
 
 	if language == "go" {
-		return s.chunkGoFile(filePath, language, lines)
+		return s.chunkGoFileImpl(filePath, language, lines, embed)
 	}
 
 	if language == "dockerfile" || strings.HasPrefix(language, "yaml") || strings.HasPrefix(language, "bazel") || isLineChunkedLanguage(language) {
-		return s.chunkByLines(filePath, language, lines), nil
+		return s.chunkByLinesImpl(filePath, language, lines, embed), nil
 	}
 
 	if supportsStructuredChunking(language) {
-		return s.chunkStructuredFile(filePath, language, lines), nil
+		return s.chunkStructuredFileImpl(filePath, language, lines, embed), nil
 	}
 
-	return s.chunkByLines(filePath, language, lines), nil
+	return s.chunkByLinesImpl(filePath, language, lines, embed), nil
 }
 
 func supportsStructuredChunking(language string) bool {
@@ -100,6 +112,10 @@ func isLineChunkedLanguage(language string) bool {
 }
 
 func (s *SimpleChunker) chunkByLines(filePath, language string, lines []string) []ChunkResult {
+	return s.chunkByLinesImpl(filePath, language, lines, true)
+}
+
+func (s *SimpleChunker) chunkByLinesImpl(filePath, language string, lines []string, embed bool) []ChunkResult {
 	var chunks []ChunkResult
 	var currentLines []string
 	startLine := 1
@@ -110,19 +126,23 @@ func (s *SimpleChunker) chunkByLines(filePath, language string, lines []string) 
 			continue
 		}
 
-		chunks = append(chunks, s.buildChunk(filePath, language, currentLines, startLine, i+1))
+		chunks = append(chunks, s.buildChunkImpl(filePath, language, currentLines, startLine, i+1, embed))
 		currentLines = nil
 		startLine = i + 2
 	}
 
 	if len(currentLines) > 0 {
-		chunks = append(chunks, s.buildChunk(filePath, language, currentLines, startLine, len(lines)))
+		chunks = append(chunks, s.buildChunkImpl(filePath, language, currentLines, startLine, len(lines), embed))
 	}
 
 	return chunks
 }
 
 func (s *SimpleChunker) chunkGoFile(filePath, language string, lines []string) ([]ChunkResult, error) {
+	return s.chunkGoFileImpl(filePath, language, lines, true)
+}
+
+func (s *SimpleChunker) chunkGoFileImpl(filePath, language string, lines []string, embed bool) ([]ChunkResult, error) {
 	var chunks []ChunkResult
 	var prelude []string
 	preludeEnd := 0
@@ -139,16 +159,16 @@ func (s *SimpleChunker) chunkGoFile(filePath, language string, lines []string) (
 		start := i + 1
 		endIndex := findGoBlockEnd(lines, i)
 
-		chunks = append(chunks, s.buildChunk(filePath, language, lines[i:endIndex+1], start, endIndex+1))
+		chunks = append(chunks, s.buildChunkImpl(filePath, language, lines[i:endIndex+1], start, endIndex+1, embed))
 		i = endIndex + 1
 	}
 
 	if len(chunks) == 0 {
-		return s.chunkByLines(filePath, language, lines), nil
+		return s.chunkByLinesImpl(filePath, language, lines, embed), nil
 	}
 
 	if len(prelude) > 0 {
-		chunks = append([]ChunkResult{s.buildChunk(filePath, language, prelude, 1, preludeEnd)}, chunks...)
+		chunks = append([]ChunkResult{s.buildChunkImpl(filePath, language, prelude, 1, preludeEnd, embed)}, chunks...)
 	}
 
 	return chunks, nil
@@ -172,12 +192,16 @@ func findGoBlockEnd(lines []string, startIdx int) int {
 }
 
 func (s *SimpleChunker) chunkStructuredFile(filePath, language string, lines []string) []ChunkResult {
+	return s.chunkStructuredFileImpl(filePath, language, lines, true)
+}
+
+func (s *SimpleChunker) chunkStructuredFileImpl(filePath, language string, lines []string, embed bool) []ChunkResult {
 	var chunks []ChunkResult
 	var prelude []string
 	preludeEnd := 0
 
 	if isBraceStructuredLanguage(language) {
-		return s.chunkBraceStructuredFile(filePath, language, lines)
+		return s.chunkBraceStructuredFileImpl(filePath, language, lines, embed)
 	}
 
 	for i := 0; i < len(lines); {
@@ -198,22 +222,26 @@ func (s *SimpleChunker) chunkStructuredFile(filePath, language string, lines []s
 			}
 		}
 
-		chunks = append(chunks, s.buildChunk(filePath, language, lines[i:end+1], start, end+1))
+		chunks = append(chunks, s.buildChunkImpl(filePath, language, lines[i:end+1], start, end+1, embed))
 		i = end + 1
 	}
 
 	if len(chunks) == 0 {
-		return s.chunkByLines(filePath, language, lines)
+		return s.chunkByLinesImpl(filePath, language, lines, embed)
 	}
 
 	if len(prelude) > 0 {
-		chunks = append([]ChunkResult{s.buildChunk(filePath, language, prelude, 1, preludeEnd)}, chunks...)
+		chunks = append([]ChunkResult{s.buildChunkImpl(filePath, language, prelude, 1, preludeEnd, embed)}, chunks...)
 	}
 
 	return chunks
 }
 
 func (s *SimpleChunker) chunkBraceStructuredFile(filePath, language string, lines []string) []ChunkResult {
+	return s.chunkBraceStructuredFileImpl(filePath, language, lines, true)
+}
+
+func (s *SimpleChunker) chunkBraceStructuredFileImpl(filePath, language string, lines []string, embed bool) []ChunkResult {
 	var chunks []ChunkResult
 	var prelude []string
 	preludeEnd := 0
@@ -233,16 +261,16 @@ func (s *SimpleChunker) chunkBraceStructuredFile(filePath, language string, line
 			end = i
 		}
 
-		chunks = append(chunks, s.buildChunk(filePath, language, lines[i:end+1], start, end+1))
+		chunks = append(chunks, s.buildChunkImpl(filePath, language, lines[i:end+1], start, end+1, embed))
 		i = end + 1
 	}
 
 	if len(chunks) == 0 {
-		return s.chunkByLines(filePath, language, lines)
+		return s.chunkByLinesImpl(filePath, language, lines, embed)
 	}
 
 	if len(prelude) > 0 {
-		chunks = append([]ChunkResult{s.buildChunk(filePath, language, prelude, 1, preludeEnd)}, chunks...)
+		chunks = append([]ChunkResult{s.buildChunkImpl(filePath, language, prelude, 1, preludeEnd, embed)}, chunks...)
 	}
 
 	return chunks
@@ -324,13 +352,17 @@ func isStructuredBoundary(language, trimmedLine string) bool {
 }
 
 func (s *SimpleChunker) buildChunk(filePath, language string, chunkLines []string, startLine, endLine int) ChunkResult {
+	return s.buildChunkImpl(filePath, language, chunkLines, startLine, endLine, true)
+}
+
+func (s *SimpleChunker) buildChunkImpl(filePath, language string, chunkLines []string, startLine, endLine int, embed bool) ChunkResult {
 	chunkContent := strings.Join(chunkLines, "\n")
 	signature := extractSignature(language, chunkContent)
 	purpose := inferPurpose(language, chunkContent)
 	semanticContent := buildSemanticContent(filePath, language, chunkContent)
 
 	var vector []float32
-	if s.embedClient != nil {
+	if embed && s.embedClient != nil {
 		var err error
 		vector, err = s.embedClient.GetEmbedding(semanticContent)
 		if err != nil {
@@ -339,13 +371,54 @@ func (s *SimpleChunker) buildChunk(filePath, language string, chunkLines []strin
 	}
 
 	return ChunkResult{
-		Content:   chunkContent,
-		StartLine: startLine,
-		EndLine:   endLine,
-		Vector:    vector,
-		Signature: signature,
-		Purpose:   purpose,
+		Content:       chunkContent,
+		StartLine:     startLine,
+		EndLine:       endLine,
+		Vector:        vector,
+		Signature:     signature,
+		Purpose:       purpose,
+		SemanticText:  semanticContent,
 	}
+}
+
+// BatchEmbedChunks fills in the Vector field of every chunk in the slice by
+// calling the embedder's GetEmbeddings in batches of at most batchSize.
+// Chunks that already have a non-nil Vector are skipped.
+func (s *SimpleChunker) BatchEmbedChunks(chunks []ChunkResult, batchSize int) error {
+	if s.embedClient == nil {
+		return nil
+	}
+	if batchSize <= 0 {
+		batchSize = 32
+	}
+
+	// Collect indices of chunks that still need embeddings.
+	var pending []int
+	var semanticTexts []string
+	for i := range chunks {
+		if chunks[i].Vector == nil && chunks[i].SemanticText != "" {
+			pending = append(pending, i)
+			semanticTexts = append(semanticTexts, chunks[i].SemanticText)
+		}
+	}
+
+	for start := 0; start < len(semanticTexts); start += batchSize {
+		end := start + batchSize
+		if end > len(semanticTexts) {
+			end = len(semanticTexts)
+		}
+		batch := semanticTexts[start:end]
+		vecs, err := s.embedClient.GetEmbeddings(batch)
+		if err != nil {
+			return fmt.Errorf("batch embedding failed at offset %d: %w", start, err)
+		}
+		for j, vec := range vecs {
+			idx := pending[start+j]
+			chunks[idx].Vector = vec
+		}
+	}
+
+	return nil
 }
 
 func buildSemanticContent(filePath, language, chunkContent string) string {

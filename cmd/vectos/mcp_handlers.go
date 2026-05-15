@@ -264,12 +264,19 @@ func resolveIndexPaths(scope workspace.Scope, input indexProjectInput) (paths, s
 
 func indexPaths(store *storage.SQLiteStorage, embedClient embeddings.Embedder, paths []string) (indexedFiles, count int, err error) {
 	chunker := indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10}, embedClient)
+
+	// Phase 1: chunk every file raw.
+	var pending []struct {
+		chunk   indexer.ChunkResult
+		path    string
+		lang    string
+	}
 	for _, path := range paths {
 		language, err := detectLanguage(path)
 		if err != nil {
 			return 0, 0, err
 		}
-		chunks, err := chunker.ChunkFile(path, language)
+		chunks, err := chunker.ChunkFileRaw(path, language)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -277,22 +284,43 @@ func indexPaths(store *storage.SQLiteStorage, embedClient embeddings.Embedder, p
 			return 0, 0, err
 		}
 		for _, c := range chunks {
-			if _, err := store.SaveChunk(storage.CodeChunk{
-				FilePath:  path,
-				Content:   c.Content,
-				StartLine: c.StartLine,
-				EndLine:   c.EndLine,
-				Language:  language,
-				Category:  classifyCategory(language),
-				Vector:    c.Vector,
-				Signature: c.Signature,
-				Purpose:   c.Purpose,
-			}); err != nil {
-				return 0, 0, err
-			}
-			count++
+			pending = append(pending, struct {
+				chunk   indexer.ChunkResult
+				path    string
+				lang    string
+			}{chunk: c, path: path, lang: language})
 		}
 		indexedFiles++
+	}
+
+	// Phase 2: batch-embed.
+	allChunks := make([]indexer.ChunkResult, len(pending))
+	for i, p := range pending {
+		allChunks[i] = p.chunk
+	}
+	if err := chunker.BatchEmbedChunks(allChunks, 0); err != nil {
+		return 0, 0, err
+	}
+
+	// Phase 3: save.
+	for i, p := range pending {
+		if allChunks[i].Vector == nil {
+			continue
+		}
+		if _, err := store.SaveChunk(storage.CodeChunk{
+			FilePath:  p.path,
+			Content:   allChunks[i].Content,
+			StartLine: allChunks[i].StartLine,
+			EndLine:   allChunks[i].EndLine,
+			Language:  p.lang,
+			Category:  classifyCategory(p.lang),
+			Vector:    allChunks[i].Vector,
+			Signature: allChunks[i].Signature,
+			Purpose:   allChunks[i].Purpose,
+		}); err != nil {
+			return 0, 0, err
+		}
+		count++
 	}
 	return indexedFiles, count, nil
 }
