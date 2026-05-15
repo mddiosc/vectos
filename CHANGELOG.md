@@ -18,7 +18,54 @@ Format per release:
 
 ---
 
-## v0.5.1 — 2026-05-11
+## v0.6.0 — 2026-05-15
+
+Feature release focused on search performance, security hardening, automated index freshness, HTTP API completion, and codebase quality.
+
+### Added
+
+- **HNSW vector index** (`internal/vectorindex/`) — pure-Go approximate nearest neighbor search with cosine distance, replacing O(n) linear scan with O(log n) lookup for semantic queries
+- **Batch embedding** — `Embedder.GetEmbeddings([]string)` interface extension with ONNX batched inference (`[N, max_seq_len]`), reducing per-chunk overhead ~32x during indexing
+- **SQ8 scalar quantization** — opt-in 8-bit embedding compression (4x storage reduction: 1536→384 bytes/vector) via `compression: sq8` config key
+- **Binary index persistence** — `.vectorindex` file alongside SQLite with versioned binary format, content-hash staleness detection, and automatic rebuild on `vectos index`
+- **Vector index configuration** — `hnsw_m` (default 16), `hnsw_ef_construction` (200), `hnsw_ef_search` (100), `index_type`, and `compression` config keys in `[vector_index]`
+- **Native filesystem watcher** (`internal/watcher/`) — fsnotify-based recursive directory watching with debounce batching (500ms), glob ignore patterns, and automatic incremental reindex on file changes
+- **File hash tracking** — `indexed_files` table in SQLite with SHA256 content hashing; only reindexes files whose content actually changed
+- **Immediate deletion cleanup** — watcher removes chunks from index instantly on file delete/rename events
+- **HTTP search endpoints** — `POST /search`, `POST /search/code`, `POST /search/docs` with JSON request/response, request validation, and hybrid semantic+text fallback
+- **HTTP observability endpoints** — `GET /metrics` (index stats, provider info, uptime, watcher status) and `GET /status/:project` (per-project index status)
+- **API error format** — `{"error": "message", "code": "ERROR_CODE"}` with 6 error codes for new endpoints (`INVALID_QUERY`, `INVALID_PROJECT`, `INVALID_LIMIT`, `PROJECT_NOT_FOUND`, `INTERNAL_ERROR`, `METHOD_NOT_ALLOWED`)
+- **Watch mode CLI flags** — `--watch` (default true), `--watch-debounce` (500ms), `--watch-ignore` (`.git,node_modules,*.lock`)
+- **`batch_size` configuration** — configurable embedding batch size (default 32) in embedding config
+- **Search benchmarks** — HNSW vs linear scan benchmarks at 1K and 10K vector scales in `internal/vectorindex/bench_test.go`
+- **Comprehensive test coverage** — 163 tests across 12 packages, including integration tests for vector search end-to-end, SQ8 round-trip, watcher ignore patterns, debounce behavior, and API endpoint validation
+
+### Changed
+
+- **Search routing** — `SearchSemantic` now routes through the vector index when available, with automatic fallback to linear scan (stale/missing index) and text search (embedding failure)
+- **Indexing pipeline** — two-phase design: chunk all files first, then batch-embed in groups of `batch_size`; chunk creation and embedding are now decoupled
+- **Embedder interface** — extended with `GetEmbeddings([]string) ([][]float32, error)` batch method; `GetEmbeddingsDefault()` helper provides loop-based fallback for backward compatibility
+- **Server initialization** — `NewServer` now accepts `EmbedFunc` and `*SQLiteStorage` for decoupled embedding and storage access in HTTP handlers
+- **CLI help text** — updated with `--watch`, `--watch-debounce`, `--watch-ignore` flags documentation
+- **README** — added Watch Mode documentation section
+
+### Fixed
+
+- **Security: SQL LIKE wildcard injection** — `%` and `_` characters in search queries are now escaped before constructing LIKE patterns, preventing denial-of-service via combinatorial wildcard expansion
+- **Security: asset URL validation** — `asset_base_url` is validated at configuration time: HTTPS-only, no path traversal (`..`), non-empty host, max 2048 chars; invalid URLs reject config loading
+- **Security: Content-Type verification** — downloaded model assets now require allowlisted Content-Types (`application/octet-stream`, `application/gzip`, `application/x-gzip`, `application/x-tar`); unexpected types abort download
+- **Security: sensitive file exclusion** — `.env` variants, SSH private keys (`id_rsa`, `id_ecdsa`, `id_ed25519`), certificate files (`.pem`, `.key`, `.pfx`, `.p12`), and credential files (`credentials.json`, `service-account.json`) are now skipped during indexing
+- **Security: reindex rate limiting** — `/reindex` endpoint enforces token-bucket rate limit (1 req/s, burst 5); excessive requests return HTTP 429
+- **Code quality** — removed 514 lines of dead code: legacy `internal/mcp/` protocol (394 lines), `inferGoPurpose` stub, 4 orphaned wrapper methods, 7 unused types/functions, root-level `sample_code.go`; staticcheck U1000 reports zero findings
+
+### Known Limitations
+
+- This remains an experimental/internal release. Stability and compatibility are not guaranteed.
+- Supported download platforms remain `darwin/arm64` and `linux/amd64` only.
+- The HNSW vector index is rebuilt on every `vectos index`; incremental index updates for single-file changes are deferred to a future release.
+- Watch mode requires local filesystem; network-mounted directories will not receive filesystem events reliably.
+- SQ8 compression is lossy — recall may degrade for some queries (typically remains above 80%).
+- Existing indexes require reindex (`vectos index`) to build the vector index and populate file hashes for watch mode.
 
 Patch release focused on diagnostic tooling and incremental indexing quality improvements.
 
