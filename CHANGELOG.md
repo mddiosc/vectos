@@ -18,24 +18,50 @@ Format per release:
 
 ---
 
-## Unreleased
+---
+
+## v0.7.0 — 2026-05-15
+
+Major release focused on search quality, embedding model upgrade, configurable index exclusions, and documentation.
+
+### BREAKING
+
+- **Default embedding model changed** from `bge-small-en-v1.5` (384-dim) to `jina-embeddings-v3` (1024-dim, code+text+multilingual, 8192-token context). Existing indexes become stale and require reindex. Set `model_name: "bge-small-en-v1.5"` in config to keep the old model.
+
+### Added
+
+- **Reciprocal Rank Fusion (RRF) keyword-vector search** — keyword search runs independently alongside vector search, fused via RRF (k=60) for higher precision. Replaces the old post-retrieval boosting heuristics.
+- **TypeScript structural tagging** — chunker detects interfaces, type aliases, enums, and async functions, tagging them as "type definition", "enumeration", and "async function" for richer embeddings.
+- **Configurable index exclusions** — `vectos.config.json` in project root and `index` section in `~/.vectos/config.json` for glob-based docs and code exclusion patterns.
+- **Automatic .gitignore respect** — files matching `.gitignore` patterns are excluded from indexing by default.
+- **Path-based keyword scoring boosts** — documentation files under `docs/` and `README.md` get 1.5× keyword relevance scores.
+- **HNSW vector index for docs search** — documentation search now loads the HNSW index, reducing latency from ~1.85s to ~0.25s.
+- **Linear scan threshold for small indexes** — indexes under 1000 chunks use linear scan instead of HNSW for maximum accuracy.
+- **Model name validation** — unsupported model names in config are rejected with a clear error message.
+- **serve logging to stderr** — `vectos serve` now writes logs to both `~/.vectos/vectos-serve.log` and stderr for visibility.
+- **Documentation** — README and docs/indexing.md updated with all recent features and config reference.
 
 ### Changed
 
-- Documentation updated to reflect jina-embeddings-v3 as default model (docs/development.md)
-- Added HTTP API, HNSW, SQ8, watch mode, and vector index configuration documentation
-- Added CI workflow, make test/lint, and CONTRIBUTING.md
+- **Vector candidate pool rebalanced** — vector search retrieves 35 candidates, keyword 15 (was 25 each) for better vector-dominant fusion.
+- **ef_search default increased** — HNSW ef_search raised from 100 to 200 for better approximate search accuracy.
+- **Stale-index warnings improved** — now shows both stored and current model/dimensions.
 
 ### Fixed
 
-- Global index exclusion config now correctly reads from `~/.vectos/config.json` instead of the project directory
-- Invalid JSON in config files now logs a warning instead of being silently ignored
-- Gitignore patterns read from a consistent path across serve and index commands
-- Resolved staticcheck findings (S1011, U1000, S1017)
+- **HNSW ID mismatch bug** — `SearchScored` was returning internal array indices instead of external chunk IDs, causing wrong results on loaded indexes. Fixed to return external IDs.
+- **HNSW dimension validation** — loaded index dimensions are now validated against query vector dimensions before use.
+- **HNSW content hash validation** — `LoadVectorIndex` now validates the content hash and returns an error on mismatch, preventing stale index usage.
+- **Config model dir/URL sync** — switching `model_name` now correctly updates `ModelDir` and `AssetBaseURL` to match the selected model.
+- **Single-file indexing exclusion** — `addFile` now calls `ShouldSkipFile`, preventing direct indexing of lockfiles and config files.
+- **VectorIndexConfig propagation** — `buildVectorIndex` now uses config values for M, efConstruction, and efSearch instead of hardcoded defaults.
+- **Keyword search multi-word queries** — split into OR-connected LIKE clauses so queries like "how to set up development environment" find results.
 
----
+### Excluded from indexing
 
-## v0.6.0 — 2026-05-15
+- Lockfiles: `pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`, `Cargo.lock`, `Gemfile.lock`, `go.sum`, `composer.lock`, `poetry.lock`, `Pipfile.lock`
+- Config files: `eslint.config.*`, `tailwind.config.*`, `.eslintrc.*`
+- Agent/dev dirs: `.agents/`, `.claude/`, `.codex/`
 
 Feature release focused on search performance, security hardening, automated index freshness, HTTP API completion, and codebase quality.
 
