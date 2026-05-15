@@ -530,19 +530,54 @@ func isKeywordNoiseFile(filename string) bool {
 }
 
 // isDocFilePath returns true for documentation files that should get
-// relevance boosts: files under docs/ and README.md files.
+// relevance boosts: files under a project docs/ directory (not arbitrary
+// substrings like "vendor/somelib/docs-helper/") and README.md files.
+//
+// The match is intentionally strict:
+//   - "docs/" must appear as a path segment, not as a substring;
+//   - the file must be a documentation-shaped extension (.md, .mdx, .rst,
+//     .txt) so we don't boost arbitrary files that happen to live under a
+//     docs/ folder (images, scripts, etc.);
+//   - README.md (any case) at any depth is always considered a doc.
 func isDocFilePath(filePath string) bool {
-	p := filePath
-	// Normalize to forward slashes for consistent matching
-	p = strings.ReplaceAll(p, "\\", "/")
-	if strings.HasPrefix(p, "docs/") || strings.Contains(p, "/docs/") {
-		return true
-	}
+	// Normalize to forward slashes for consistent matching across OSes.
+	p := strings.ReplaceAll(filePath, "\\", "/")
+
 	base := p
 	if idx := strings.LastIndex(p, "/"); idx >= 0 {
 		base = p[idx+1:]
 	}
-	return strings.EqualFold(base, "readme.md")
+
+	// README.md at any depth is always a doc.
+	if strings.EqualFold(base, "readme.md") {
+		return true
+	}
+
+	if !isDocExtension(base) {
+		return false
+	}
+
+	// Require "docs" to appear as a real path segment.
+	for _, segment := range strings.Split(p, "/") {
+		if segment == "docs" {
+			return true
+		}
+	}
+	return false
+}
+
+// isDocExtension reports whether the file's extension is one we treat as
+// documentation content.
+func isDocExtension(base string) bool {
+	lower := strings.ToLower(base)
+	switch {
+	case strings.HasSuffix(lower, ".md"),
+		strings.HasSuffix(lower, ".mdx"),
+		strings.HasSuffix(lower, ".rst"),
+		strings.HasSuffix(lower, ".txt"):
+		return true
+	}
+	return false
 }
 
 var keywordNoisePatterns = []string{

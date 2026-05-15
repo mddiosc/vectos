@@ -227,14 +227,27 @@ func reindexProject(cache *storeCache, chunker *indexer.SimpleChunker, providerI
 	}
 
 	// Collect all indexable paths from scope roots with exclusion patterns.
-	globalCfgPath, _ := config.GlobalConfigPath()
-	if globalCfgPath == "" {
-		globalCfgPath = filepath.Join(projectBaseDir, ".vectos", "config.json")
+	// Use scope.PrimaryRoot (the resolved project root for this reindex
+	// request) for project-level config and .gitignore lookups so that, in
+	// Nx-style workspaces, per-sub-project config and .gitignore files are
+	// honored instead of always reading from projectBaseDir.
+	// Fail open when GlobalConfigPath() errors: skip the global layer
+	// rather than falling back to a project-local path (which would
+	// silently re-introduce the original bug).
+	globalCfgPath, err := config.GlobalConfigPath()
+	if err != nil {
+		log.Printf("warning: skipping global config layer: %v", err)
+		globalCfgPath = ""
 	}
-	indexCfg := config.LoadIndexConfig(globalCfgPath, projectBaseDir)
-	excludePatterns := indexCfg.ExclusionPatterns(req.Docs)
-	gitignorePatterns := config.ReadGitignorePatterns(projectBaseDir)
-	excludePatterns = append(excludePatterns, gitignorePatterns...)
+	configRoot := scope.PrimaryRoot
+	if configRoot == "" {
+		configRoot = projectBaseDir
+	}
+	indexCfg := config.LoadIndexConfig(globalCfgPath, configRoot)
+	excludePatterns := config.MergeExclusionPatterns(
+		indexCfg.ExclusionPatterns(req.Docs),
+		config.ReadGitignorePatterns(configRoot),
+	)
 
 	paths, skippedPaths, err := content.CollectIndexablePathsWithExclusions(scope.Roots, req.Docs, excludePatterns)
 	if err != nil {

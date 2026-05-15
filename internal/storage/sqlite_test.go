@@ -11,11 +11,19 @@ func TestIsDocFilePath(t *testing.T) {
 		{"docs prefix unix", "docs/en/DEVELOPMENT.md", true},
 		{"docs subdir unix", "project/docs/api.md", true},
 		{"docs prefix windows", `project\docs\guide.md`, true},
+		{"docs mdx", "docs/guide.mdx", true},
+		{"docs rst", "docs/api.rst", true},
 		{"readme.md root", "README.md", true},
 		{"readme.md case insensitive", "Readme.Md", true},
 		{"readme.md nested", "packages/lib/README.md", true},
 		{"blog post", "src/content/blog/en/post.md", false},
 		{"regular source", "src/auth/middleware.ts", false},
+		// Strictness regressions guarded by the new segment check.
+		{"docs as substring not a segment", "vendor/docs-helper/index.ts", false},
+		{"docs-like prefix not a segment", "src/docsearch/index.ts", false},
+		// Non-doc extensions under docs/ should not be boosted.
+		{"image under docs", "docs/assets/logo.png", false},
+		{"script under docs", "docs/build.ts", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
