@@ -21,6 +21,10 @@ var pyBlockPattern = regexp.MustCompile(`^(def|class)\s+`)
 var javaBlockPattern = regexp.MustCompile(`^(public|protected|private|static|final|abstract|class|interface|enum|record)\s+`)
 var shellBlockPattern = regexp.MustCompile(`^(function\s+\w+|\w+\s*\(\)\s*\{|if\s|for\s|while\s|case\s)`)
 var markdownBlockPattern = regexp.MustCompile(`^(#{1,4}\s|[-*]\s|\d+\.\s|~~~)`)
+var tsInterfacePattern = regexp.MustCompile(`^(export\s+)?interface\s+[A-Z][\w$]*`)
+var tsTypeAliasPattern = regexp.MustCompile(`^(export\s+)?type\s+[A-Z][\w$]*(<[^>]+>)?\s*=`)
+var tsEnumPattern = regexp.MustCompile(`^(export\s+)?(const\s+)?enum\s+[A-Z][\w$]*`)
+var tsAsyncPattern = regexp.MustCompile(`(async\s+function\s+[A-Za-z_$]|async\s*\([^)]*\)\s*=>|=\s*async\s*\()`)
 
 // ChunkConfig define los parámetros para la segmentación del código.
 type ChunkConfig struct {
@@ -321,7 +325,7 @@ func isLikelyExpressionTerminator(language, trimmedLine string) bool {
 func isStructuredBoundary(language, trimmedLine string) bool {
 	switch language {
 	case "javascript", "typescript", "tsx", "jsx":
-		return jsFuncPattern.MatchString(trimmedLine) || jsNamedArrowPattern.MatchString(trimmedLine) || jsComponentPattern.MatchString(trimmedLine) || jsHookPattern.MatchString(trimmedLine) || jsClassPattern.MatchString(trimmedLine) || jsTestPattern.MatchString(trimmedLine)
+		return jsFuncPattern.MatchString(trimmedLine) || jsNamedArrowPattern.MatchString(trimmedLine) || jsComponentPattern.MatchString(trimmedLine) || jsHookPattern.MatchString(trimmedLine) || jsClassPattern.MatchString(trimmedLine) || jsTestPattern.MatchString(trimmedLine) || tsInterfacePattern.MatchString(trimmedLine) || tsEnumPattern.MatchString(trimmedLine)
 	case "python":
 		return pyBlockPattern.MatchString(trimmedLine)
 	case "java":
@@ -457,6 +461,15 @@ func inferNonGoPurpose(language, chunkContent string) string {
 	}
 	if isExportedChunk(language, chunkContent) {
 		tags = append(tags, "exported api")
+	}
+	if isInterfaceChunk(language, chunkContent) || isTypeAliasChunk(language, chunkContent) {
+		tags = append(tags, "type definition")
+	}
+	if isEnumChunk(language, chunkContent) {
+		tags = append(tags, "enumeration")
+	}
+	if isAsyncChunk(language, chunkContent) {
+		tags = append(tags, "async function")
 	}
 
 	category := content.ClassifyCategory(language)
@@ -596,6 +609,54 @@ func isExportedChunk(language, chunkContent string) bool {
 	}
 	for _, line := range strings.Split(chunkContent, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "export ") {
+			return true
+		}
+	}
+	return false
+}
+
+func isInterfaceChunk(language, chunkContent string) bool {
+	if language != "javascript" && language != "typescript" && language != "tsx" && language != "jsx" {
+		return false
+	}
+	for _, line := range strings.Split(chunkContent, "\n") {
+		if tsInterfacePattern.MatchString(strings.TrimSpace(line)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isTypeAliasChunk(language, chunkContent string) bool {
+	if language != "javascript" && language != "typescript" && language != "tsx" && language != "jsx" {
+		return false
+	}
+	for _, line := range strings.Split(chunkContent, "\n") {
+		if tsTypeAliasPattern.MatchString(strings.TrimSpace(line)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isEnumChunk(language, chunkContent string) bool {
+	if language != "javascript" && language != "typescript" && language != "tsx" && language != "jsx" {
+		return false
+	}
+	for _, line := range strings.Split(chunkContent, "\n") {
+		if tsEnumPattern.MatchString(strings.TrimSpace(line)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isAsyncChunk(language, chunkContent string) bool {
+	if language != "javascript" && language != "typescript" && language != "tsx" && language != "jsx" {
+		return false
+	}
+	for _, line := range strings.Split(chunkContent, "\n") {
+		if tsAsyncPattern.MatchString(strings.TrimSpace(line)) {
 			return true
 		}
 	}
