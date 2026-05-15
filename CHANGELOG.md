@@ -20,6 +20,19 @@ Format per release:
 
 ---
 
+## v0.7.1 — 2026-05-15
+
+### Fixed
+
+- **Embedded model download failures** — HuggingFace CDN returns `text/plain` and `application/json` Content-Types for model assets. Updated download validation to accept these types so jina-embeddings-v3 model downloads succeed.
+- **Missing `model.onnx_data` asset** — jina-embeddings-v3 uses ONNX external data format and requires `model.onnx_data` alongside `model.onnx`. Added to asset manifest.
+- **Scalar `task_id` input** — jina-embeddings-v3 expects `task_id` as a scalar, not a `[batch, seq_len]` tensor. Refactored inference to build inputs dynamically by model input name, fixing ONNX reshape errors.
+- **Misleading provider error** — `ResolveEmbedder` now collects and reports all provider failures (`embedded: <reason>; remote: <reason>`) instead of only the last error.
+- **Root directory excluded by `.gitignore`** — patterns matching the project root directory name no longer cause `filepath.SkipDir` on the entire tree (fixes `vectos index .` returning "no supported files found" in the vectos project itself).
+- **Safe batch size** — reduced `DefaultEmbeddedBatchSize` from 32 to 8 to work reliably with jina-embeddings-v3 without memory pressure.
+
+---
+
 ## v0.7.0 — 2026-05-15
 
 Major release focused on search quality, embedding model upgrade, configurable index exclusions, and documentation.

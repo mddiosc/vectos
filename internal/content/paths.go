@@ -135,11 +135,9 @@ func (a *pathAccumulator) walkDir(absPath string, docsOnly bool) error {
 			if ShouldSkipDir(info.Name()) {
 				return filepath.SkipDir
 			}
-			// Honor user-configured exclusions for directories too: if a
-			// directory matches an exclusion pattern (e.g. "node_modules/",
-			// "dist/**"), skip the whole subtree instead of descending into
-			// it and re-matching every child file.
-			if a.shouldExcludeDir(current) {
+			// Never exclude the root directory itself — exclusion patterns
+			// (e.g. from .gitignore) are meant for contents, not the root.
+			if current != absPath && a.shouldExcludeDir(current) {
 				return filepath.SkipDir
 			}
 			return nil

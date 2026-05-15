@@ -69,7 +69,7 @@ type EmbeddedProviderConfig struct {
 
 // DefaultEmbeddedBatchSize is the number of texts to embed in a single
 // inference call when the user does not configure batch_size explicitly.
-const DefaultEmbeddedBatchSize = 32
+const DefaultEmbeddedBatchSize = 8
 
 type RemoteProviderConfig struct {
 	Enabled  bool   `json:"enabled"`

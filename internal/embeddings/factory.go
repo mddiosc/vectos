@@ -16,7 +16,7 @@ type ProviderInfo struct {
 
 func ResolveEmbedder(cfg config.EmbeddingConfig) (Embedder, ProviderInfo, error) {
 	providerOrder := buildProviderOrder(cfg)
-	var lastErr error
+	var errs []string
 
 	for _, provider := range providerOrder {
 		switch provider {
@@ -25,21 +25,21 @@ func ResolveEmbedder(cfg config.EmbeddingConfig) (Embedder, ProviderInfo, error)
 			if err == nil {
 				return embedder, info, nil
 			}
-			lastErr = err
+			errs = append(errs, fmt.Sprintf("embedded: %v", err))
 		case config.ProviderRemote:
 			embedder, info, err := NewRemoteEmbedderFromConfig(cfg.Remote)
 			if err == nil {
 				return embedder, info, nil
 			}
-			lastErr = err
+			errs = append(errs, fmt.Sprintf("remote: %v", err))
 		}
 	}
 
-	if lastErr == nil {
-		lastErr = fmt.Errorf("no embedding providers available")
+	if len(errs) == 0 {
+		errs = append(errs, "no embedding providers available")
 	}
 
-	return nil, ProviderInfo{}, lastErr
+	return nil, ProviderInfo{}, fmt.Errorf("%s", strings.Join(errs, "; "))
 }
 
 func InspectProviders(cfg config.EmbeddingConfig) []ProviderInfo {

@@ -373,7 +373,7 @@ func (s *SimpleChunker) BatchEmbedChunks(chunks []ChunkResult, batchSize int) er
 		return nil
 	}
 	if batchSize <= 0 {
-		batchSize = 32
+		batchSize = 8
 	}
 
 	// Collect indices of chunks that still need embeddings.

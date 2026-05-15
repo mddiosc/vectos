@@ -18,8 +18,9 @@ func TestValidateDownloadContentType(t *testing.T) {
 		{"x-tar allowed", "application/x-tar", false},
 		{"octet-stream with charset", "application/octet-stream; charset=binary", false},
 		{"empty header", "", false},
+		{"text/plain allowed", "text/plain", false},
+		{"application/json allowed", "application/json", false},
 		{"text/html rejected", "text/html", true},
-		{"application/json rejected", "application/json", true},
 		{"image/png rejected", "image/png", true},
 	}
 	for _, tt := range tests {
@@ -44,9 +45,9 @@ func TestEmbeddedModelAssets_JinaV3Entry(t *testing.T) {
 		t.Fatal("jina-embeddings-v3 not found in embeddedModelAssets")
 	}
 
-	// Should have exactly 3 assets: config.json, tokenizer.json, model.onnx
-	if len(assets) != 3 {
-		t.Fatalf("expected 3 assets, got %d", len(assets))
+	// Should have exactly 4 assets: config.json, tokenizer.json, model.onnx, model.onnx_data
+	if len(assets) != 4 {
+		t.Fatalf("expected 4 assets, got %d", len(assets))
 	}
 
 	assetNames := make(map[string]string)
@@ -56,6 +57,9 @@ func TestEmbeddedModelAssets_JinaV3Entry(t *testing.T) {
 
 	if assetNames["model.onnx"] != "onnx/model.onnx" {
 		t.Errorf("model.onnx RemotePath = %q, want onnx/model.onnx", assetNames["model.onnx"])
+	}
+	if assetNames["model.onnx_data"] != "onnx/model.onnx_data" {
+		t.Errorf("model.onnx_data RemotePath = %q, want onnx/model.onnx_data", assetNames["model.onnx_data"])
 	}
 	if assetNames["tokenizer.json"] != "tokenizer.json" {
 		t.Errorf("tokenizer.json RemotePath = %q, want tokenizer.json", assetNames["tokenizer.json"])
@@ -103,12 +107,20 @@ func TestRequiredEmbeddedAssets(t *testing.T) {
 }
 
 func TestMissingEmbeddedAssets_AllMissing(t *testing.T) {
-	missing := missingEmbeddedAssets("")
-	// All 3 should be missing in empty dir
+	missing := missingEmbeddedAssets("", "")
+	// All 3 required assets should be missing in empty dir (no model-specific extras for empty model)
 	if len(missing) != 3 {
 		t.Fatalf("expected 3 missing assets for empty dir, got %d: %v", len(missing), missing)
 	}
 	if !sort.StringsAreSorted(missing) {
 		t.Error("missingEmbeddedAssets should return sorted names")
+	}
+}
+
+func TestMissingEmbeddedAssets_JinaV3(t *testing.T) {
+	missing := missingEmbeddedAssets("jina-embeddings-v3", "")
+	// jina-embeddings-v3 has 4 assets (includes model.onnx_data)
+	if len(missing) != 4 {
+		t.Fatalf("expected 4 missing assets for jina-embeddings-v3 in empty dir, got %d: %v", len(missing), missing)
 	}
 }

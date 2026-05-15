@@ -53,6 +53,7 @@ var embeddedModelAssets = map[string][]embeddedAssetSpec{
 		{LocalName: "config.json", RemotePath: "config.json"},
 		{LocalName: "tokenizer.json", RemotePath: "tokenizer.json"},
 		{LocalName: "model.onnx", RemotePath: "onnx/model.onnx"},
+		{LocalName: "model.onnx_data", RemotePath: "onnx/model.onnx_data"},
 	},
 }
 
@@ -201,7 +202,6 @@ func (e *EmbeddedEmbedder) GetEmbeddings(texts []string) ([][]float32, error) {
 	// Pad all sequences to maxLen and flatten into single arrays.
 	flatIDs := make([]int64, batchSize*maxLen)
 	flatMask := make([]int64, batchSize*maxLen)
-	flatTokenType := make([]int64, batchSize*maxLen)
 	maskRefs := make([][]int64, batchSize)
 
 	for i, tok := range tokenizedTexts {
@@ -212,11 +212,10 @@ func (e *EmbeddedEmbedder) GetEmbeddings(texts []string) ([][]float32, error) {
 		}
 		copy(flatIDs[offset:offset+copyLen], tok.ids[:copyLen])
 		copy(flatMask[offset:offset+copyLen], tok.mask[:copyLen])
-		// tokenTypeIDs stay zero (not used by BGE model)
 		maskRefs[i] = flatMask[offset : offset+maxLen]
 	}
 
-	outputTensor, err := e.runBatchedInference(flatIDs, flatMask, flatTokenType, batchSize, maxLen)
+	outputTensor, err := e.runBatchedInference(flatIDs, flatMask, batchSize, maxLen)
 	if err != nil {
 		return nil, err
 	}
@@ -287,33 +286,56 @@ func (e *EmbeddedEmbedder) tokenizeRaw(text string) ([]int64, []int64, []int64, 
 }
 
 // runBatchedInference executes an ONNX inference with batched inputs of shape
-// [batchSize, seqLen].
-func (e *EmbeddedEmbedder) runBatchedInference(inputIDs, attentionMask, tokenTypeIDs []int64, batchSize, seqLen int) (*ort.Tensor[float32], error) {
+// [batchSize, seqLen]. It builds input tensors dynamically based on the model's
+// actual input names, supporting both legacy token_type_ids and scalar task_id.
+func (e *EmbeddedEmbedder) runBatchedInference(inputIDs, attentionMask []int64, batchSize, seqLen int) (*ort.Tensor[float32], error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	inputShape := ort.NewShape(int64(batchSize), int64(seqLen))
-	inputTensor, err := ort.NewTensor(inputShape, inputIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create input_ids tensor: %w", err)
-	}
-	defer inputTensor.Destroy()
+	inputValues := make([]ort.Value, len(e.inputNames))
 
-	maskTensor, err := ort.NewTensor(inputShape, attentionMask)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create attention_mask tensor: %w", err)
+	for i, name := range e.inputNames {
+		switch name {
+		case "input_ids":
+			tensor, err := ort.NewTensor(inputShape, inputIDs)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create %s tensor: %w", name, err)
+			}
+			inputValues[i] = tensor
+			defer tensor.Destroy()
+		case "attention_mask":
+			tensor, err := ort.NewTensor(inputShape, attentionMask)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create %s tensor: %w", name, err)
+			}
+			inputValues[i] = tensor
+			defer tensor.Destroy()
+		case "token_type_ids":
+			tokenTypeIDs := make([]int64, batchSize*seqLen)
+			tensor, err := ort.NewTensor(inputShape, tokenTypeIDs)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create %s tensor: %w", name, err)
+			}
+			inputValues[i] = tensor
+			defer tensor.Destroy()
+		case "task_id":
+			// Jina-embeddings-v3 style scalar task_id.
+			// 1 = retrieval passage (used for indexing content).
+			taskID := []int64{1}
+			tensor, err := ort.NewTensor(ort.NewShape(1), taskID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create %s tensor: %w", name, err)
+			}
+			inputValues[i] = tensor
+			defer tensor.Destroy()
+		default:
+			return nil, fmt.Errorf("unsupported model input %q", name)
+		}
 	}
-	defer maskTensor.Destroy()
 
-	tokenTypeTensor, err := ort.NewTensor(inputShape, tokenTypeIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create token_type_ids tensor: %w", err)
-	}
-	defer tokenTypeTensor.Destroy()
-
-	inputs := []ort.Value{inputTensor, maskTensor, tokenTypeTensor}
 	outputs := make([]ort.Value, len(e.outputNames))
-	if err := e.session.Run(inputs, outputs); err != nil {
+	if err := e.session.Run(inputValues, outputs); err != nil {
 		return nil, fmt.Errorf("failed to run embedded ONNX session: %w", err)
 	}
 
@@ -328,9 +350,10 @@ func (e *EmbeddedEmbedder) runBatchedInference(inputIDs, attentionMask, tokenTyp
 				_ = output.Destroy()
 			}
 		}
-		return nil, fmt.Errorf("embedded ONNX output is not a float32 tensor")
+		return nil, fmt.Errorf("unexpected output type at index 0")
 	}
 
+	// Destroy any extra output tensors (e.g., jina-embeddings-v3 has two outputs).
 	for i := 1; i < len(outputs); i++ {
 		if outputs[i] != nil {
 			_ = outputs[i].Destroy()
@@ -387,15 +410,15 @@ func (e *EmbeddedEmbedder) downloadAndValidateAssets() error {
 		return err
 	}
 
-	missing := missingEmbeddedAssets(e.modelDir)
+	missing := missingEmbeddedAssets(e.modelName, e.modelDir)
 	if len(missing) > 0 && e.autoDownload {
 		if err := e.downloadMissingAssets(missing); err != nil {
-			missing = missingEmbeddedAssets(e.modelDir)
+			missing = missingEmbeddedAssets(e.modelName, e.modelDir)
 			e.status.Missing = missing
 			e.status.Message = err.Error()
 			return err
 		}
-		missing = missingEmbeddedAssets(e.modelDir)
+		missing = missingEmbeddedAssets(e.modelName, e.modelDir)
 	}
 
 	if len(missing) > 0 {
@@ -770,9 +793,20 @@ func (e *EmbeddedEmbedder) assetSpecsByLocalName() map[string]embeddedAssetSpec 
 	return byName
 }
 
-func missingEmbeddedAssets(modelDir string) []string {
-	missing := make([]string, 0, len(requiredEmbeddedAssets))
+func missingEmbeddedAssets(modelName, modelDir string) []string {
+	// Build the complete list of required files for this model.
+	required := make(map[string]bool)
 	for _, asset := range requiredEmbeddedAssets {
+		required[asset] = true
+	}
+	if specs, ok := embeddedModelAssets[modelName]; ok {
+		for _, spec := range specs {
+			required[spec.LocalName] = true
+		}
+	}
+
+	missing := make([]string, 0, len(required))
+	for asset := range required {
 		path := filepath.Join(modelDir, asset)
 		if info, err := os.Stat(path); err != nil || info.IsDir() {
 			missing = append(missing, asset)
@@ -789,6 +823,8 @@ var allowedDownloadContentTypes = map[string]bool{
 	"application/gzip":         true,
 	"application/x-gzip":       true,
 	"application/x-tar":        true,
+	"text/plain":               true,
+	"application/json":         true,
 }
 
 func validateDownloadContentType(resp *http.Response) error {
