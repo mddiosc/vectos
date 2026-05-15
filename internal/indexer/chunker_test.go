@@ -36,7 +36,7 @@ test("works", () => {
 	expect(true).toBe(true)
 })`, "\n")
 
-	chunks := chunker.chunkStructuredFile("Hero.tsx", "tsx", lines)
+	chunks := chunker.chunkStructuredFileImpl("Hero.tsx", "tsx", lines, true)
 	if len(chunks) < 4 {
 		t.Fatalf("expected at least 4 chunks, got %d", len(chunks))
 	}

@@ -111,10 +111,6 @@ func isLineChunkedLanguage(language string) bool {
 	}
 }
 
-func (s *SimpleChunker) chunkByLines(filePath, language string, lines []string) []ChunkResult {
-	return s.chunkByLinesImpl(filePath, language, lines, true)
-}
-
 func (s *SimpleChunker) chunkByLinesImpl(filePath, language string, lines []string, embed bool) []ChunkResult {
 	var chunks []ChunkResult
 	var currentLines []string
@@ -136,10 +132,6 @@ func (s *SimpleChunker) chunkByLinesImpl(filePath, language string, lines []stri
 	}
 
 	return chunks
-}
-
-func (s *SimpleChunker) chunkGoFile(filePath, language string, lines []string) ([]ChunkResult, error) {
-	return s.chunkGoFileImpl(filePath, language, lines, true)
 }
 
 func (s *SimpleChunker) chunkGoFileImpl(filePath, language string, lines []string, embed bool) ([]ChunkResult, error) {
@@ -191,10 +183,6 @@ func findGoBlockEnd(lines []string, startIdx int) int {
 	return len(lines) - 1
 }
 
-func (s *SimpleChunker) chunkStructuredFile(filePath, language string, lines []string) []ChunkResult {
-	return s.chunkStructuredFileImpl(filePath, language, lines, true)
-}
-
 func (s *SimpleChunker) chunkStructuredFileImpl(filePath, language string, lines []string, embed bool) []ChunkResult {
 	var chunks []ChunkResult
 	var prelude []string
@@ -235,10 +223,6 @@ func (s *SimpleChunker) chunkStructuredFileImpl(filePath, language string, lines
 	}
 
 	return chunks
-}
-
-func (s *SimpleChunker) chunkBraceStructuredFile(filePath, language string, lines []string) []ChunkResult {
-	return s.chunkBraceStructuredFileImpl(filePath, language, lines, true)
 }
 
 func (s *SimpleChunker) chunkBraceStructuredFileImpl(filePath, language string, lines []string, embed bool) []ChunkResult {
@@ -351,10 +335,6 @@ func isStructuredBoundary(language, trimmedLine string) bool {
 	}
 }
 
-func (s *SimpleChunker) buildChunk(filePath, language string, chunkLines []string, startLine, endLine int) ChunkResult {
-	return s.buildChunkImpl(filePath, language, chunkLines, startLine, endLine, true)
-}
-
 func (s *SimpleChunker) buildChunkImpl(filePath, language string, chunkLines []string, startLine, endLine int, embed bool) ChunkResult {
 	chunkContent := strings.Join(chunkLines, "\n")
 	signature := extractSignature(language, chunkContent)
@@ -459,10 +439,7 @@ func extractSignature(language, chunkContent string) string {
 }
 
 func inferPurpose(language, chunkContent string) string {
-	if language != "go" {
-		return inferNonGoPurpose(language, chunkContent)
-	}
-	return inferGoPurpose(chunkContent)
+	return inferNonGoPurpose(language, chunkContent)
 }
 
 func inferNonGoPurpose(language, chunkContent string) string {
@@ -510,32 +487,6 @@ func inferNonGoPurpose(language, chunkContent string) string {
 	if strings.Contains(lower, "return") {
 		tags = append(tags, "returns computed values")
 	}
-	if len(tags) == 0 {
-		return "code block"
-	}
-	return strings.Join(tags, "; ")
-}
-
-func inferGoPurpose(chunkContent string) string {
-	lower := strings.ToLower(chunkContent)
-	var tags []string
-
-	if strings.Contains(lower, "return a + b") || strings.Contains(lower, "suma") {
-		tags = append(tags, "adds or combines two integers", "suma dos numeros enteros")
-	}
-	if strings.Contains(lower, "return a - b") || strings.Contains(lower, "resta") {
-		tags = append(tags, "subtracts two integers", "resta dos numeros enteros")
-	}
-	if strings.Contains(lower, "return a * b") || strings.Contains(lower, "multiplicacion") {
-		tags = append(tags, "multiplies two integers", "multiplica dos numeros enteros")
-	}
-	if strings.Contains(lower, "return a / b") || strings.Contains(lower, "division") {
-		tags = append(tags, "divides two integers", "divide dos numeros enteros")
-	}
-	if strings.Contains(lower, "func ") && strings.Contains(lower, " int") {
-		tags = append(tags, "function operating on integer values")
-	}
-
 	if len(tags) == 0 {
 		return "code block"
 	}

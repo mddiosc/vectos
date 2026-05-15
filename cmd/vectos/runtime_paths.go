@@ -10,10 +10,6 @@ import (
 	"vectos/internal/workspace"
 )
 
-// collectExcludedDirs finds all skipped directories within the given root.
-// It delegates to content.CollectExcludedDirs.
-var collectExcludedDirs = content.CollectExcludedDirs
-
 // parseChangedPaths splits a comma-separated string of changed file paths.
 var parseChangedPaths = content.ParseChangedPaths
 
@@ -25,12 +21,6 @@ var collectIndexablePaths = content.CollectIndexablePaths
 // entries matching the changed paths, relative to the workspace scope.
 var filterChangedPaths = content.FilterChangedPaths
 
-// isWithinRoots checks if the given path is within any of the specified roots.
-var isWithinRoots = content.IsWithinRoots
-
-// fileExists reports whether a file exists at the given path.
-var fileExists = content.FileExists
-
 // resolveChangedPath resolves a changed file path against a workspace scope.
 // Exposed as a function for test compatibility.
 func resolveChangedPath(scope workspace.Scope, changed string) (string, error) {
@@ -39,9 +29,6 @@ func resolveChangedPath(scope workspace.Scope, changed string) (string, error) {
 
 // detectLanguage determines the programming/markup language for a given file path.
 var detectLanguage = content.DetectLanguage
-
-// shouldIndexLanguage reports whether a file with the given language should be indexed.
-var shouldIndexLanguage = content.ShouldIndexLanguage
 
 // classifyCategory maps a language to its content category.
 func classifyCategory(language string) string {
