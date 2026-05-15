@@ -177,8 +177,8 @@ func (h *HNSW) SearchScored(query []float32, k int) []ScoredNeighbor {
 	}
 
 	out := make([]ScoredNeighbor, len(candidates))
-	for i, id := range candidates {
-		out[i] = ScoredNeighbor{ID: id, Distance: distance(query, h.nodes[id].vector)}
+	for i, idx := range candidates {
+		out[i] = ScoredNeighbor{ID: h.nodes[idx].id, Distance: distance(query, h.nodes[idx].vector)}
 	}
 	return out
 }

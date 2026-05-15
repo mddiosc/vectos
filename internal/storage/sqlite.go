@@ -629,10 +629,13 @@ func (s *SQLiteStorage) SearchSemantic(queryVector []float32, limit int, include
 
 	// For small indexes (< 1000 chunks), linear scan is faster and more accurate
 	// than HNSW approximate search.
-	if idx != nil && s.chunkCount() >= 1000 {
+	if idx != nil && s.chunkCount() >= 1000 && idx.Dimension() == len(queryVector) {
 		return s.searchViaIndex(idx, queryVector, limit, includeDocs)
 	}
 
+	if idx != nil && idx.Dimension() != len(queryVector) {
+		log.Printf("vectorindex: dimension mismatch (index=%d, query=%d) — falling back to linear scan", idx.Dimension(), len(queryVector))
+	}
 	if idx == nil {
 		log.Println("vectorindex: no index loaded — falling back to linear scan")
 	}

@@ -162,7 +162,7 @@ func buildVectorIndex(store *storage.SQLiteStorage, chunker *indexer.SimpleChunk
 		return
 	}
 
-	idx := vectorindex.NewHNSW(dimension, vectorindex.Config{M: 16, EfConstruction: 200, EfSearch: 100})
+	idx := vectorindex.NewHNSW(dimension, vectorindex.Config{M: 16, EfConstruction: 200, EfSearch: 200})
 	total := len(ids)
 	for i, id := range ids {
 		idx.Insert(id, embeddingsByID[id])

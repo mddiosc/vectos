@@ -54,6 +54,11 @@ func newPathAccumulator() *pathAccumulator {
 }
 
 func (a *pathAccumulator) addFile(absPath string, docsOnly bool) error {
+	fileName := filepath.Base(absPath)
+	if ShouldSkipFile(fileName) {
+		a.addSkipped(absPath)
+		return nil
+	}
 	language, err := DetectLanguage(absPath)
 	if err != nil {
 		return fmt.Errorf("unsupported file type: %s", absPath)
