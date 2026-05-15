@@ -162,12 +162,14 @@ func TestIndexStalenessDetection(t *testing.T) {
 		t.Fatal("expected hash to change after modification")
 	}
 
+	// LoadVectorIndex should now FAIL because chunks changed (hash mismatch).
+	// The returned hash is still valid for comparison.
 	_, savedHash, _, _, err := store.LoadVectorIndex()
-	if err != nil {
-		t.Fatalf("LoadVectorIndex: %v", err)
+	if err == nil {
+		t.Fatal("LoadVectorIndex should return error when chunks changed after index was built")
 	}
 	if savedHash != hash1 {
-		t.Fatalf("saved hash mismatch")
+		t.Fatalf("saved hash mismatch: got %x, want %x", savedHash, hash1)
 	}
 	if savedHash == hash3 {
 		t.Fatal("expected loaded hash to differ from current hash")

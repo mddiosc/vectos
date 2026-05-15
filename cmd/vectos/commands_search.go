@@ -45,15 +45,8 @@ func runSearch(projectBaseDir string, embedConfig config.EmbeddingConfig, query 
 	}
 	defer store.Close()
 
-	if _, loadedHash, _, _, err := store.LoadVectorIndex(); err != nil {
+	if _, _, _, _, err := store.LoadVectorIndex(); err != nil {
 		log.Printf("warning: vector index not available, using linear scan: %v", err)
-	} else {
-		// Validate the loaded index matches current chunk content
-		currentHash, hashErr := store.ChunkTableContentHash()
-		if hashErr != nil || currentHash != loadedHash {
-			store.SetVectorIndex(nil)
-			log.Printf("warning: vector index is stale (chunks changed), using linear scan")
-		}
 	}
 
 	searchRun, err := executeSearchForCLI(store, embedConfig, query, docsOnly)

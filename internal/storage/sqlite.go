@@ -853,15 +853,22 @@ func (s *SQLiteStorage) VectorIndexPath() string {
 }
 
 // LoadVectorIndex attempts to load the HNSW index from disk and sets it
-// on this storage. It returns the loaded index and content hash, or an error
-// if the file cannot be loaded.
-// Note: the caller is responsible for validating the content hash against
-// the current chunk table state.
+// on this storage. It validates the content hash against the current chunk
+// table state. If the hash doesn't match (chunks changed since index was built),
+// the index is not set and an error is returned. Callers should fall back to
+// linear scan.
 func (s *SQLiteStorage) LoadVectorIndex() (*vectorindex.HNSW, [sha256.Size]byte, string, *vectorindex.SQ8Params, error) {
 	idx, hash, compression, params, err := vectorindex.LoadIndex(s.VectorIndexPath())
 	if err != nil {
 		return nil, [sha256.Size]byte{}, "", nil, err
 	}
+
+	// Validate the loaded index matches current chunk content.
+	currentHash, hashErr := s.ChunkTableContentHash()
+	if hashErr == nil && currentHash != hash {
+		return nil, hash, compression, params, fmt.Errorf("vectorindex: content hash mismatch (chunks changed since index was built)")
+	}
+
 	s.SetVectorIndex(idx)
 	return idx, hash, compression, params, nil
 }
