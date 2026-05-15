@@ -777,13 +777,6 @@ func missingEmbeddedAssets(modelDir string) []string {
 	return missing
 }
 
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // validateDownloadContentType checks that the HTTP response Content-Type is an
 // expected binary type. Empty Content-Type is accepted (some CDNs omit it).
 var allowedDownloadContentTypes = map[string]bool{

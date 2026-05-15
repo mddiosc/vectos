@@ -50,7 +50,7 @@ func TestRerankHybridResultsDeduplicatesOverlappingChunks(t *testing.T) {
 func TestRerankHybridResultsPenalizesTestFiles(t *testing.T) {
 	results := rerankHybridResults("structural chunking for TypeScript and React", []storage.CodeChunk{
 		{FilePath: "/tmp/project/internal/indexer/chunker_test.go", Content: "TestChunkStructuredTSXSeparatesPreludeAndBlocks", Category: "source", Score: 0.78},
-		{FilePath: "/tmp/project/internal/indexer/chunker.go", Content: "func (s *SimpleChunker) chunkStructuredFile(filePath, language string, lines []string) []ChunkResult {", Category: "source", Score: 0.77},
+		{FilePath: "/tmp/project/internal/indexer/chunker.go", Content: "func (s *SimpleChunker) chunkStructuredFileImpl(filePath, language string, lines []string, embed bool) []ChunkResult {", Category: "source", Score: 0.77},
 	}, 5)
 
 	if len(results) == 0 {
@@ -88,5 +88,4 @@ func TestRerankHybridResultsPenalizesNonSourceFilesForBroadQueries(t *testing.T)
 		t.Fatalf("expected source routing file first, got %s", results[0].FilePath)
 	}
 }
-
 

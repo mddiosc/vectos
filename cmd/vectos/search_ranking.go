@@ -221,22 +221,6 @@ func isBroadImplementationQuery(queryTokens []string) bool {
 	return len(queryTokens) > 0
 }
 
-func hasAnyToken(tokens []string, candidates ...string) bool {
-	if len(tokens) == 0 || len(candidates) == 0 {
-		return false
-	}
-	lookup := make(map[string]struct{}, len(tokens))
-	for _, token := range tokens {
-		lookup[token] = struct{}{}
-	}
-	for _, candidate := range candidates {
-		if _, ok := lookup[candidate]; ok {
-			return true
-		}
-	}
-	return false
-}
-
 func isBuildArtifactPath(path string) bool {
 	for _, marker := range []string{"/dist/", "/coverage/", "/build/", "/.next/", "/playwright-report/", "/test-results/"} {
 		if strings.Contains(path, marker) {

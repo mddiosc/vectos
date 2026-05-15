@@ -17,11 +17,6 @@ import (
 	"vectos/internal/vectorindex"
 )
 
-type embeddingRow struct {
-	ID      int
-	Vector  []float32
-}
-
 // SQLiteStorage gestiona la persistencia de los trozos de código.
 type SQLiteStorage struct {
 	db        *sql.DB
