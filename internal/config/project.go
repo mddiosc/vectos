@@ -2,10 +2,20 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+func GlobalConfigPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("could not determine home directory: %w", err)
+	}
+	return filepath.Join(homeDir, ".vectos", "config.json"), nil
+}
 
 // IndexExclusionConfig holds per-mode exclusion patterns.
 type IndexExclusionConfig struct {
@@ -50,7 +60,9 @@ func LoadIndexConfig(globalConfigPath, projectDir string) IndexConfig {
 				} `json:"code"`
 			} `json:"index"`
 		}
-		if json.Unmarshal(content, &globalCfg) == nil {
+		if err := json.Unmarshal(content, &globalCfg); err != nil {
+			log.Printf("warning: invalid JSON in %s: %v", globalConfigPath, err)
+		} else {
 			cfg.Docs.Exclude = append(cfg.Docs.Exclude, globalCfg.Index.Docs.Exclude...)
 			cfg.Code.Exclude = append(cfg.Code.Exclude, globalCfg.Index.Code.Exclude...)
 		}
@@ -60,7 +72,9 @@ func LoadIndexConfig(globalConfigPath, projectDir string) IndexConfig {
 	projectConfigPath := filepath.Join(projectDir, "vectos.config.json")
 	if content, err := os.ReadFile(projectConfigPath); err == nil {
 		var pc projectConfigDisk
-		if json.Unmarshal(content, &pc) == nil {
+		if err := json.Unmarshal(content, &pc); err != nil {
+			log.Printf("warning: invalid JSON in %s: %v", projectConfigPath, err)
+		} else {
 			cfg.Docs.Exclude = append(cfg.Docs.Exclude, pc.Index.Docs.Exclude...)
 			cfg.Code.Exclude = append(cfg.Code.Exclude, pc.Index.Code.Exclude...)
 		}

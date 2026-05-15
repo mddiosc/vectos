@@ -20,7 +20,9 @@ func TestLoadIndexConfig_GlobalConfigOnly(t *testing.T) {
 	dir := t.TempDir()
 	globalCfg := `{"index":{"docs":{"exclude":[".agents/**"]},"code":{"exclude":["**/generated/**"]}}}`
 	globalPath := filepath.Join(dir, "global.json")
-	os.WriteFile(globalPath, []byte(globalCfg), 0644)
+	if err := os.WriteFile(globalPath, []byte(globalCfg), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	cfg := LoadIndexConfig(globalPath, filepath.Join(dir, "project"))
 	if len(cfg.Docs.Exclude) != 1 || cfg.Docs.Exclude[0] != ".agents/**" {
@@ -35,12 +37,18 @@ func TestLoadIndexConfig_ProjectConfigAppendedToGlobal(t *testing.T) {
 	dir := t.TempDir()
 	globalCfg := `{"index":{"docs":{"exclude":[".agents/**"]},"code":{"exclude":[]}}}`
 	globalPath := filepath.Join(dir, "global.json")
-	os.WriteFile(globalPath, []byte(globalCfg), 0644)
+	if err := os.WriteFile(globalPath, []byte(globalCfg), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	projectDir := filepath.Join(dir, "project")
-	os.MkdirAll(projectDir, 0755)
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	projectCfg := `{"index":{"docs":{"exclude":["src/content/blog/**"]},"code":{"exclude":["**/__mocks__/**"]}}}`
-	os.WriteFile(filepath.Join(projectDir, "vectos.config.json"), []byte(projectCfg), 0644)
+	if err := os.WriteFile(filepath.Join(projectDir, "vectos.config.json"), []byte(projectCfg), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	cfg := LoadIndexConfig(globalPath, projectDir)
 	if len(cfg.Docs.Exclude) != 2 {
@@ -95,8 +103,10 @@ func TestReadGitignorePatterns_MissingFile(t *testing.T) {
 
 func TestReadGitignorePatterns_BasicParsing(t *testing.T) {
 	dir := t.TempDir()
-	content := "# comment line\n*.log\ndist/\n!important.log\n/node_modules\n"
-	os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(content), 0644)
+	gitignoreContent := "# comment line\n*.log\ndist/\n!important.log\n/node_modules\n"
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(gitignoreContent), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	patterns := ReadGitignorePatterns(dir)
 	expected := []string{"*.log", "dist/", "node_modules"}
@@ -112,8 +122,10 @@ func TestReadGitignorePatterns_BasicParsing(t *testing.T) {
 
 func TestReadGitignorePatterns_LeadsSlashStripped(t *testing.T) {
 	dir := t.TempDir()
-	content := "/dist\n/build\n/coverage\n"
-	os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(content), 0644)
+	gitignoreContent := "/dist\n/build\n/coverage\n"
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(gitignoreContent), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	patterns := ReadGitignorePatterns(dir)
 	for _, p := range patterns {

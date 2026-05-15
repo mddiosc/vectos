@@ -23,7 +23,7 @@ test:
 
 lint:
 	go vet ./...
-	@which staticcheck > /dev/null 2>&1 && staticcheck ./... || echo "staticcheck not installed; skipping"
+	@command -v staticcheck > /dev/null 2>&1 && staticcheck ./... || echo "staticcheck not installed; skipping"
 
 check: lint test
 

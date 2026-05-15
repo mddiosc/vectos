@@ -103,7 +103,10 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 	defer env.store.Close()
 
 	// Merge exclusion patterns: global config + project config + gitignore.
-	globalCfgPath := filepath.Join(projectBaseDir, ".vectos", "config.json")
+	globalCfgPath, _ := config.GlobalConfigPath()
+	if globalCfgPath == "" {
+		globalCfgPath = filepath.Join(projectBaseDir, ".vectos", "config.json")
+	}
 	indexCfg := config.LoadIndexConfig(globalCfgPath, absolutePath)
 	excludePatterns := indexCfg.ExclusionPatterns(docsOnly)
 	gitignorePatterns := config.ReadGitignorePatterns(absolutePath)

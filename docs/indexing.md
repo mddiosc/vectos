@@ -344,6 +344,11 @@ Add an `index` section to set defaults for all projects:
 
 Vectos automatically respects your project's `.gitignore`. Files ignored by git are excluded from indexing. No configuration needed.
 
+Limitations:
+
+- Negation patterns (`!important.log`) are not supported — they are skipped during parsing
+- Only the root `.gitignore` is read; nested `.gitignore` files in subdirectories are not processed
+
 ### Exclusions are cumulative
 
 Hardcoded exclusions always apply. Global config adds more. Project config adds even more. Patterns from all three layers are active simultaneously — removing a global exclusion requires editing the global config.

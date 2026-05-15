@@ -227,14 +227,13 @@ func reindexProject(cache *storeCache, chunker *indexer.SimpleChunker, providerI
 	}
 
 	// Collect all indexable paths from scope roots with exclusion patterns.
-	globalCfgPath := filepath.Join(projectBaseDir, ".vectos", "config.json")
-	projectDir := scope.PrimaryRoot
-	if projectDir == "" && len(scope.Roots) > 0 {
-		projectDir = scope.Roots[0]
+	globalCfgPath, _ := config.GlobalConfigPath()
+	if globalCfgPath == "" {
+		globalCfgPath = filepath.Join(projectBaseDir, ".vectos", "config.json")
 	}
-	indexCfg := config.LoadIndexConfig(globalCfgPath, projectDir)
+	indexCfg := config.LoadIndexConfig(globalCfgPath, projectBaseDir)
 	excludePatterns := indexCfg.ExclusionPatterns(req.Docs)
-	gitignorePatterns := config.ReadGitignorePatterns(projectDir)
+	gitignorePatterns := config.ReadGitignorePatterns(projectBaseDir)
 	excludePatterns = append(excludePatterns, gitignorePatterns...)
 
 	paths, skippedPaths, err := content.CollectIndexablePathsWithExclusions(scope.Roots, req.Docs, excludePatterns)

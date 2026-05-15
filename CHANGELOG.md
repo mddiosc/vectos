@@ -18,6 +18,23 @@ Format per release:
 
 ---
 
+## Unreleased
+
+### Changed
+
+- Documentation updated to reflect jina-embeddings-v3 as default model (docs/development.md)
+- Added HTTP API, HNSW, SQ8, watch mode, and vector index configuration documentation
+- Added CI workflow, make test/lint, and CONTRIBUTING.md
+
+### Fixed
+
+- Global index exclusion config now correctly reads from `~/.vectos/config.json` instead of the project directory
+- Invalid JSON in config files now logs a warning instead of being silently ignored
+- Gitignore patterns read from a consistent path across serve and index commands
+- Resolved staticcheck findings (S1011, U1000, S1017)
+
+---
+
 ## v0.6.0 — 2026-05-15
 
 Feature release focused on search performance, security hardening, automated index freshness, HTTP API completion, and codebase quality.
