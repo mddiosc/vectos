@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"strconv"
+	"time"
 )
 
 type cliFlags struct {
@@ -29,6 +30,9 @@ type cliFlags struct {
 	setupNoGuidance     *bool
 	servePort           *int
 	serveProjectBaseDir *string
+	watchEnabled        *bool
+	watchDebounce       *time.Duration
+	watchIgnore         *string
 }
 
 func newCLIFlags() cliFlags {
@@ -71,6 +75,9 @@ func newCLIFlags() cliFlags {
 		setupNoGuidance:     setupCmd.Bool("no-guidance", false, "Skip global guidance updates"),
 		servePort:           serveCmd.Int("port", servePortDefault, "Port to listen on (default 7438, overridable via VECTOS_PORT env var)"),
 		serveProjectBaseDir: serveCmd.String("project-base-dir", "", "Directory for project index databases (default ~/.vectos/projects)"),
+		watchEnabled:        serveCmd.Bool("watch", true, "enable automatic reindex on file changes"),
+		watchDebounce:       serveCmd.Duration("watch-debounce", 500*time.Millisecond, "debounce delay for file change events"),
+		watchIgnore:         serveCmd.String("watch-ignore", ".git,node_modules,*.lock", "comma-separated glob patterns to ignore"),
 	}
 }
 
