@@ -2,18 +2,18 @@
 Define the supported embedding providers and the safeguards around embedded model asset configuration and downloads.
 ## Requirements
 ### Requirement: Vectos SHALL support multiple embedding provider types
-Vectos SHALL support at least one embedded local provider and one remote URL-based provider for embeddings.
+Vectos SHALL support at least one embedded local provider and one remote URL-based provider for embeddings. The embedded provider SHALL support multiple model options including a code+text-aware model (`jina-embeddings-v3`) and a general-purpose model (`bge-small-en-v1.5`), with the code+text model as the default.
 
 #### Scenario: Use embedded provider by default
 - **WHEN** Vectos starts without an explicit provider override
-- **THEN** it SHALL attempt to use the embedded provider first
+- **THEN** it SHALL attempt to use the embedded provider first, defaulting to the code+text model (`jina-embeddings-v3`)
 
 ### Requirement: Vectos SHALL support standalone local embeddings
-Vectos SHALL be usable for indexing and semantic search without requiring the user to configure or operate an external embeddings provider.
+Vectos SHALL be usable for indexing and semantic search without requiring the user to configure or operate an external embeddings provider. The default embedded model SHALL be `jina-embeddings-v3`, a code+text-aware model producing 1024-dimensional embeddings.
 
 #### Scenario: Index project with no external provider configured
 - **WHEN** the user runs Vectos with default configuration and no remote embeddings endpoint configured
-- **THEN** Vectos SHALL use its embedded local embeddings runtime to generate vectors
+- **THEN** Vectos SHALL use its embedded local embeddings runtime with the code+text model to generate vectors
 
 #### Scenario: Search indexed project with embedded provider
 - **WHEN** a project index was created with the embedded provider
@@ -22,6 +22,14 @@ Vectos SHALL be usable for indexing and semantic search without requiring the us
 #### Scenario: Use remote provider by configuration
 - **WHEN** the user configures a remote provider endpoint
 - **THEN** Vectos SHALL generate embeddings through that endpoint instead of the embedded provider
+
+#### Scenario: User explicitly selects bge-small model
+- **WHEN** the user sets `model_name: "bge-small-en-v1.5"` in the embedded configuration
+- **THEN** Vectos SHALL use the bge-small model with 384-dimensional embeddings instead of the code+text default
+
+#### Scenario: Invalid model name is rejected
+- **WHEN** the user configures an unsupported model name in the embedded configuration
+- **THEN** Vectos SHALL reject the configuration with an error listing the supported models
 
 ### Requirement: Remote providers SHALL use an OpenAI-compatible embeddings API
 Vectos SHALL treat remote URL providers as OpenAI-compatible embeddings endpoints in the initial implementation.

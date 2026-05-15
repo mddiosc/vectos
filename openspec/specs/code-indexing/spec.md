@@ -119,6 +119,10 @@ The system SHALL accept a file path or project directory and index supported sou
 - **WHEN** the system persists a chunk to the database
 - **THEN** it SHALL store the extracted structural signature (if available) and inferred purpose in dedicated columns alongside the content and embedding. The purpose SHALL include TypeScript-specific tags (type definition, enumeration, async function) when applicable.
 
+#### Scenario: Index with different embedding model is detected as stale
+- **WHEN** a project was previously indexed with one embedding model (e.g., bge-small) and the current configuration uses a different model (e.g., jina-embeddings-v3) or different dimensions
+- **THEN** the system SHALL detect the provider/model/dimension mismatch and flag the index as requiring reindex for accurate results
+
 ## ADDED Requirements
 
 ### Requirement: File hash storage tracks indexed file content
