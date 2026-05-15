@@ -629,10 +629,13 @@ func (s *SQLiteStorage) SearchSemantic(queryVector []float32, limit int, include
 
 	// For small indexes (< 1000 chunks), linear scan is faster and more accurate
 	// than HNSW approximate search.
-	if idx != nil && s.chunkCount() >= 1000 {
+	if idx != nil && s.chunkCount() >= 1000 && idx.Dimension() == len(queryVector) {
 		return s.searchViaIndex(idx, queryVector, limit, includeDocs)
 	}
 
+	if idx != nil && idx.Dimension() != len(queryVector) {
+		log.Printf("vectorindex: dimension mismatch (index=%d, query=%d) — falling back to linear scan", idx.Dimension(), len(queryVector))
+	}
 	if idx == nil {
 		log.Println("vectorindex: no index loaded — falling back to linear scan")
 	}
@@ -850,15 +853,28 @@ func (s *SQLiteStorage) VectorIndexPath() string {
 }
 
 // LoadVectorIndex attempts to load the HNSW index from disk and sets it
-// on this storage. It returns the loaded index and content hash, or an error
-// if the file cannot be loaded.
-// Note: the caller is responsible for validating the content hash against
-// the current chunk table state.
+// on this storage. It validates the content hash against the current chunk
+// table state. If the hash doesn't match (chunks changed since index was built),
+// the index is not set and an error is returned. Callers should fall back to
+// linear scan.
 func (s *SQLiteStorage) LoadVectorIndex() (*vectorindex.HNSW, [sha256.Size]byte, string, *vectorindex.SQ8Params, error) {
 	idx, hash, compression, params, err := vectorindex.LoadIndex(s.VectorIndexPath())
 	if err != nil {
 		return nil, [sha256.Size]byte{}, "", nil, err
 	}
+
+	// Validate the loaded index matches current chunk content.
+	currentHash, hashErr := s.ChunkTableContentHash()
+	if hashErr != nil {
+		return nil, hash, compression, params, fmt.Errorf("vectorindex: failed to validate content hash: %w", hashErr)
+	}
+	if currentHash != hash {
+		s.vectIdxMu.Lock()
+		s.vectIdx = nil
+		s.vectIdxMu.Unlock()
+		return nil, hash, compression, params, fmt.Errorf("vectorindex: content hash mismatch (chunks changed since index was built)")
+	}
+
 	s.SetVectorIndex(idx)
 	return idx, hash, compression, params, nil
 }

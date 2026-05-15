@@ -200,6 +200,13 @@ func mergeEmbeddedConfig(dst *EmbeddedProviderConfig, src embeddedProviderConfig
 			return fmt.Errorf("unsupported embedded model %q: must be one of %v", modelName, SupportedEmbeddedModels)
 		}
 		dst.ModelName = modelName
+		// Sync model dir and asset URL to match the selected model
+		if src.ModelDir == nil || strings.TrimSpace(*src.ModelDir) == "" {
+			dst.ModelDir = embeddedModelDir(dst.ModelDir, modelName)
+		}
+		if src.AssetBaseURL == nil || strings.TrimSpace(*src.AssetBaseURL) == "" {
+			dst.AssetBaseURL = embeddedAssetBaseURL(modelName)
+		}
 	}
 	if src.ModelDir != nil && strings.TrimSpace(*src.ModelDir) != "" {
 		dst.ModelDir = strings.TrimSpace(*src.ModelDir)
@@ -267,4 +274,26 @@ func isSupportedEmbeddedModel(name string) bool {
 		}
 	}
 	return false
+}
+
+// embeddedModelDir replaces the last path component with the model name.
+// E.g., "/home/.vectos/models/jina-embeddings-v3" → "/home/.vectos/models/bge-small-en-v1.5"
+func embeddedModelDir(currentDir, modelName string) string {
+	if currentDir == "" {
+		return ""
+	}
+	parent := filepath.Dir(currentDir)
+	return filepath.Join(parent, modelName)
+}
+
+// embeddedAssetBaseURL returns the default asset base URL for a supported model.
+func embeddedAssetBaseURL(modelName string) string {
+	switch modelName {
+	case "jina-embeddings-v3":
+		return DefaultEmbeddedAssetBaseURL
+	case "bge-small-en-v1.5":
+		return DefaultBGEAssetBaseURL
+	default:
+		return ""
+	}
 }

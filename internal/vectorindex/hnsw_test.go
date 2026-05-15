@@ -256,3 +256,35 @@ func sortPairs(pairs []pair) {
 		}
 	}
 }
+
+func TestHNSWSearchScored_NonContiguousExternalIDs(t *testing.T) {
+	cfg := Config{M: 8, EfConstruction: 100, EfSearch: 50}
+	h := NewHNSW(4, cfg)
+
+	// Insert with non-contiguous, non-zero-based IDs to verify
+	// SearchScored returns the external chunk IDs, not internal indices.
+	insertIDs := []int{10, 25, 47, 99}
+	insertVectors := [][]float32{
+		{1.0, 0.0, 0.0, 0.0}, // internal index 0
+		{1.0, 0.1, 0.0, 0.0}, // internal index 1
+		{0.0, 1.0, 0.0, 0.0}, // internal index 2
+		{0.0, 0.1, 1.0, 0.0}, // internal index 3
+	}
+	for i, v := range insertVectors {
+		h.Insert(insertIDs[i], v)
+	}
+
+	query := []float32{1.0, 0.0, 0.0, 0.0}
+	results := h.SearchScored(query, 2)
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+
+	// IDs should be the external ones (10, 25), NOT internal indices (0, 1).
+	if results[0].ID != 10 {
+		t.Errorf("expected external ID 10 as closest, got %d", results[0].ID)
+	}
+	if results[1].ID != 25 {
+		t.Errorf("expected external ID 25 as second closest, got %d", results[1].ID)
+	}
+}

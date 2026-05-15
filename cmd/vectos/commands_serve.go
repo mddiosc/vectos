@@ -128,7 +128,7 @@ func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port in
 	}
 
 	reindexFn := func(req server.ReindexRequest) server.ReindexResponse {
-		return reindexProject(cache, chunker, providerInfo, req)
+		return reindexProject(cache, chunker, providerInfo, req, embedConfig.VectorIndex)
 	}
 	embedFn := func(text string) ([]float32, error) { return embedClient.GetEmbedding(text) }
 	srv := server.NewServer(port, reindexFn, embedFn, activeStore)
@@ -207,7 +207,7 @@ func makeReindexCallback(store *storage.SQLiteStorage, embedClient embeddings.Em
 	}
 }
 
-func reindexProject(cache *storeCache, chunker *indexer.SimpleChunker, providerInfo embeddings.ProviderInfo, req server.ReindexRequest) server.ReindexResponse {
+func reindexProject(cache *storeCache, chunker *indexer.SimpleChunker, providerInfo embeddings.ProviderInfo, req server.ReindexRequest, viCfg config.VectorIndexConfig) server.ReindexResponse {
 	scope, err := workspace.ResolveScope(req.Path, req.Project)
 	if err != nil {
 		return server.ReindexResponse{Status: "error", Message: err.Error()}
@@ -250,7 +250,7 @@ func reindexProject(cache *storeCache, chunker *indexer.SimpleChunker, providerI
 
 	// Index each path.
 	indexedFiles, count := indexPathsIntoStore(store, chunker, paths, nil)
-	buildVectorIndex(store, chunker)
+	buildVectorIndex(store, chunker, viCfg)
 
 	// Clean up excluded directories and skipped paths.
 	cleanupExcludedAndSkipped(store, scope, skippedPaths)

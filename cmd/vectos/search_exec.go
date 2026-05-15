@@ -22,8 +22,11 @@ func executeSearch(store *storage.SQLiteStorage, embedConfig config.EmbeddingCon
 
 	requiresReindex, err := store.RequiresReindex(providerInfo.Provider, providerInfo.Model, providerInfo.Dimensions)
 	if err == nil && requiresReindex {
-		return textSearchFallback(store, query, limit, "text_stale_index",
-			fmt.Sprintf("index uses different embedding model; reindex required for accurate semantic results (current: %s/%dd, index may differ)", providerInfo.Model, providerInfo.Dimensions))
+		warning := fmt.Sprintf("index uses different embedding model; reindex required for accurate semantic results (current: %s/%dd)", providerInfo.Model, providerInfo.Dimensions)
+		if stored, metaErr := store.GetIndexMetadata(); metaErr == nil {
+			warning = fmt.Sprintf("index was built with %s/%dd but current provider is %s/%dd; reindex required for accurate results", stored.Model, stored.Dimensions, providerInfo.Model, providerInfo.Dimensions)
+		}
+		return textSearchFallback(store, query, limit, "text_stale_index", warning)
 	}
 
 	run, ok, err := trySemanticSearch(embedClient, store, query, limit)
