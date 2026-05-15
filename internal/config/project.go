@@ -101,9 +101,7 @@ func ReadGitignorePatterns(projectDir string) []string {
 		if strings.HasPrefix(line, "!") {
 			continue
 		}
-		if strings.HasPrefix(line, "/") {
-			line = line[1:]
-		}
+		line = strings.TrimPrefix(line, "/")
 		patterns = append(patterns, line)
 	}
 	return patterns
