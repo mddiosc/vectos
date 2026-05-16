@@ -51,20 +51,20 @@ func (CodexAdapter) Apply(ctx Context) error {
 		if changed {
 			fmt.Printf("Updated global Codex guidance at %s to prefer Vectos tools.\n", agentsPath)
 		}
-
-		// Install the Vectos skill so agents can load detailed usage patterns
-		skillsDir := filepath.Join(ctx.HomeDir, ".codex", "skills", opencodeSkillName)
-		if err := os.MkdirAll(skillsDir, 0755); err != nil {
-			return fmt.Errorf("failed to create skills directory: %w", err)
-		}
-
-		skillPath := filepath.Join(skillsDir, "SKILL.md")
-		if err := os.WriteFile(skillPath, []byte(opencodeSkillSource), 0644); err != nil {
-			return fmt.Errorf("failed to install Vectos skill: %w", err)
-		}
-
-		fmt.Printf("Installed Vectos skill at %s\n", skillPath)
 	}
+
+	// Install the Vectos skill so agents can load detailed usage patterns
+	skillsDir := filepath.Join(ctx.HomeDir, ".codex", "skills", vectosSkillName)
+	if err := os.MkdirAll(skillsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create skills directory: %w", err)
+	}
+
+	skillPath := filepath.Join(skillsDir, "SKILL.md")
+	if err := os.WriteFile(skillPath, []byte(vectosSkillSource), 0644); err != nil {
+		return fmt.Errorf("failed to install Vectos skill: %w", err)
+	}
+
+	fmt.Printf("Installed Vectos skill at %s\n", skillPath)
 
 	return nil
 }
@@ -83,7 +83,7 @@ func (CodexAdapter) Remove(ctx Context) error {
 	}
 
 	// Remove the Vectos skill
-	skillPath := filepath.Join(ctx.HomeDir, ".codex", "skills", opencodeSkillName, "SKILL.md")
+	skillPath := filepath.Join(ctx.HomeDir, ".codex", "skills", vectosSkillName, "SKILL.md")
 	removedSkill := false
 	if _, err := os.Stat(skillPath); err == nil {
 		if err := os.Remove(skillPath); err != nil {

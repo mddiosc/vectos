@@ -16,14 +16,10 @@ const (
 	opencodeGuidanceEnd   = "<!-- vectos-opencode-guidance:end -->"
 	opencodePluginFile    = "vectos.ts"
 	opencodeConfigDir     = ".config" // XDG-style config directory
-	opencodeSkillName     = "vectos"
 )
 
 //go:embed plugins/vectos.ts
 var opencodePluginSource string
-
-//go:embed skills/vectos/SKILL.md
-var opencodeSkillSource string
 
 func (OpenCodeAdapter) Name() string {
 	return "opencode"
@@ -82,20 +78,20 @@ func (OpenCodeAdapter) Apply(ctx Context) error {
 		if agentsChanged {
 			fmt.Printf("Updated global OpenCode guidance at %s to prefer Vectos tools.\n", agentsPath)
 		}
-
-		// Install the Vectos skill so agents can load detailed usage patterns
-		skillsDir := filepath.Join(ctx.HomeDir, ".agents", "skills", opencodeSkillName)
-		if err := os.MkdirAll(skillsDir, 0755); err != nil {
-			return fmt.Errorf("failed to create skills directory: %w", err)
-		}
-
-		skillPath := filepath.Join(skillsDir, "SKILL.md")
-		if err := os.WriteFile(skillPath, []byte(opencodeSkillSource), 0644); err != nil {
-			return fmt.Errorf("failed to install Vectos skill: %w", err)
-		}
-
-		fmt.Printf("Installed Vectos skill at %s\n", skillPath)
 	}
+
+	// Install the Vectos skill so agents can load detailed usage patterns
+	skillsDir := filepath.Join(ctx.HomeDir, ".agents", "skills", vectosSkillName)
+	if err := os.MkdirAll(skillsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create skills directory: %w", err)
+	}
+
+	skillPath := filepath.Join(skillsDir, "SKILL.md")
+	if err := os.WriteFile(skillPath, []byte(vectosSkillSource), 0644); err != nil {
+		return fmt.Errorf("failed to install Vectos skill: %w", err)
+	}
+
+	fmt.Printf("Installed Vectos skill at %s\n", skillPath)
 
 	// Install the OpenCode plugin for auto-reindex on file changes
 	pluginsDir := filepath.Join(ctx.HomeDir, opencodeConfigDir, "opencode", "plugins")
@@ -138,7 +134,7 @@ func (OpenCodeAdapter) Remove(ctx Context) error {
 	}
 
 	// Remove the Vectos skill
-	skillPath := filepath.Join(ctx.HomeDir, ".agents", "skills", opencodeSkillName, "SKILL.md")
+	skillPath := filepath.Join(ctx.HomeDir, ".agents", "skills", vectosSkillName, "SKILL.md")
 	removedSkill := false
 	if _, err := os.Stat(skillPath); err == nil {
 		if err := os.Remove(skillPath); err != nil {

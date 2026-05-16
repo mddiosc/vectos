@@ -27,7 +27,7 @@ Each setup command creates or updates a Vectos MCP entry in the agent's user-wid
 Flags:
 
 ```
---no-guidance    Skip global guidance updates (only configure MCP)
+--no-guidance    Skip global guidance updates (configure MCP, install skill and plugin)
 --yes, -y        Answer yes to all prompts (non-interactive mode)
 ```
 
@@ -64,7 +64,7 @@ To reinstall without touching the guidance block:
 vectos setup opencode --no-guidance
 ```
 
-This removes only the Vectos-managed MCP entry, the Vectos-managed guidance block, and the installed Vectos skill (where applicable) for that agent. It does not delete unrelated user config.
+Setting `--no-guidance` skips the AGENTS.md/CLAUDE.md guidance block update but still installs the Vectos skill (where supported), the MCP entry, and any plugins. Use this to reconfigure MCP (for example after a binary upgrade) without altering your guidance block.
 
 ## Manual MCP Setup For Other Clients
 
