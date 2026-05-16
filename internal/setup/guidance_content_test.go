@@ -21,6 +21,9 @@ func TestManagedGuidanceMentionsDocsSearchAndDocsIndexing(t *testing.T) {
 		// Nx lib coverage wording
 		"VECTOS_NX_INCLUDE_E2E",
 		"internal dependency libs",
+		// Delegation guidance
+		"specialist agents that perform code search",
+		"enforcement point",
 	}
 
 	for _, want := range checks {

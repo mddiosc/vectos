@@ -51,6 +51,19 @@ func (CodexAdapter) Apply(ctx Context) error {
 		if changed {
 			fmt.Printf("Updated global Codex guidance at %s to prefer Vectos tools.\n", agentsPath)
 		}
+
+		// Install the Vectos skill so agents can load detailed usage patterns
+		skillsDir := filepath.Join(ctx.HomeDir, ".codex", "skills", opencodeSkillName)
+		if err := os.MkdirAll(skillsDir, 0755); err != nil {
+			return fmt.Errorf("failed to create skills directory: %w", err)
+		}
+
+		skillPath := filepath.Join(skillsDir, "SKILL.md")
+		if err := os.WriteFile(skillPath, []byte(opencodeSkillSource), 0644); err != nil {
+			return fmt.Errorf("failed to install Vectos skill: %w", err)
+		}
+
+		fmt.Printf("Installed Vectos skill at %s\n", skillPath)
 	}
 
 	return nil
@@ -69,13 +82,27 @@ func (CodexAdapter) Remove(ctx Context) error {
 		return err
 	}
 
+	// Remove the Vectos skill
+	skillPath := filepath.Join(ctx.HomeDir, ".codex", "skills", opencodeSkillName, "SKILL.md")
+	removedSkill := false
+	if _, err := os.Stat(skillPath); err == nil {
+		if err := os.Remove(skillPath); err != nil {
+			fmt.Printf("Warning: failed to remove Vectos skill at %s: %v\n", skillPath, err)
+		} else {
+			removedSkill = true
+		}
+	}
+
 	if removedConfig {
 		fmt.Printf("Removed Vectos MCP entry from %s.\n", configPath)
 	}
 	if removedGuidance {
 		fmt.Printf("Removed Vectos guidance block from %s.\n", agentsPath)
 	}
-	if !removedConfig && !removedGuidance {
+	if removedSkill {
+		fmt.Printf("Removed Vectos skill at %s.\n", skillPath)
+	}
+	if !removedConfig && !removedGuidance && !removedSkill {
 		fmt.Println("No Vectos-managed Codex setup was found to remove.")
 	}
 

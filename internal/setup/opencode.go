@@ -16,10 +16,14 @@ const (
 	opencodeGuidanceEnd   = "<!-- vectos-opencode-guidance:end -->"
 	opencodePluginFile    = "vectos.ts"
 	opencodeConfigDir     = ".config" // XDG-style config directory
+	opencodeSkillName     = "vectos"
 )
 
 //go:embed plugins/vectos.ts
 var opencodePluginSource string
+
+//go:embed skills/vectos/SKILL.md
+var opencodeSkillSource string
 
 func (OpenCodeAdapter) Name() string {
 	return "opencode"
@@ -78,6 +82,19 @@ func (OpenCodeAdapter) Apply(ctx Context) error {
 		if agentsChanged {
 			fmt.Printf("Updated global OpenCode guidance at %s to prefer Vectos tools.\n", agentsPath)
 		}
+
+		// Install the Vectos skill so agents can load detailed usage patterns
+		skillsDir := filepath.Join(ctx.HomeDir, ".agents", "skills", opencodeSkillName)
+		if err := os.MkdirAll(skillsDir, 0755); err != nil {
+			return fmt.Errorf("failed to create skills directory: %w", err)
+		}
+
+		skillPath := filepath.Join(skillsDir, "SKILL.md")
+		if err := os.WriteFile(skillPath, []byte(opencodeSkillSource), 0644); err != nil {
+			return fmt.Errorf("failed to install Vectos skill: %w", err)
+		}
+
+		fmt.Printf("Installed Vectos skill at %s\n", skillPath)
 	}
 
 	// Install the OpenCode plugin for auto-reindex on file changes
@@ -120,6 +137,17 @@ func (OpenCodeAdapter) Remove(ctx Context) error {
 		}
 	}
 
+	// Remove the Vectos skill
+	skillPath := filepath.Join(ctx.HomeDir, ".agents", "skills", opencodeSkillName, "SKILL.md")
+	removedSkill := false
+	if _, err := os.Stat(skillPath); err == nil {
+		if err := os.Remove(skillPath); err != nil {
+			fmt.Printf("Warning: failed to remove Vectos skill at %s: %v\n", skillPath, err)
+		} else {
+			removedSkill = true
+		}
+	}
+
 	if removedConfig {
 		fmt.Printf("Removed Vectos MCP entry from %s.\n", configPath)
 	}
@@ -129,7 +157,10 @@ func (OpenCodeAdapter) Remove(ctx Context) error {
 	if removedPlugin {
 		fmt.Printf("Removed OpenCode plugin at %s.\n", pluginPath)
 	}
-	if !removedConfig && !removedGuidance && !removedPlugin {
+	if removedSkill {
+		fmt.Printf("Removed Vectos skill at %s.\n", skillPath)
+	}
+	if !removedConfig && !removedGuidance && !removedPlugin && !removedSkill {
 		fmt.Println("No Vectos-managed OpenCode setup was found to remove.")
 	}
 

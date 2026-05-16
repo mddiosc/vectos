@@ -16,10 +16,18 @@ func managedGuidance(startMarker string, endMarker string) string {
 		"If the project is not yet indexed or results are not useful, run `vectos_index_project` or `index_project` and retry. When you need documentation retrieval, index docs separately with `docs: true`.",
 		"",
 		"Use `grep`, `glob`, and direct file reads only as a fallback when Vectos has no useful results or when you need exact pattern matching.",
-		"",
-		"If you create, move, or edit files while working, prefer an incremental refresh with `changed` paths before retrying search. Use a full reindex only when the affected scope is broad or uncertain.",
-		"",
-		"## Nx Monorepo — Lib Coverage",
+
+	"",
+
+	"If you create, move, or edit files while working, prefer an incremental refresh with `changed` paths before retrying search. Use a full reindex only when the affected scope is broad or uncertain.",
+
+	"",
+
+		"When delegating to specialist agents that perform code search, explicitly instruct them to use Vectos search tools before `grep`/`glob`. Sub-agents may not automatically receive tool-preference instructions — the main agent is the enforcement point. If a sub-agent returns without using Vectos, remind it in the next delegation.",
+
+	"",
+
+	"## Nx Monorepo — Lib Coverage",
 		"",
 		"When working inside an Nx monorepo, Vectos includes all internal dependency libs in the resolved scope by default. Only projects with Nx type `\"e2e\"` are excluded. Set `VECTOS_NX_INCLUDE_E2E=1` to override this exclusion.",
 		"",

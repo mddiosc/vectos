@@ -6,4 +6,6 @@ If the requested code is not yet indexed or the MCP search returns no useful res
 
 Use `grep` and direct file reads as a fallback when MCP search is insufficient or when exact string matching is required.
 
+When delegating to specialist agents that perform code search (explorer, fixer, oracle), explicitly instruct them to use `vectos_search_code` before `grep`/`glob`. Sub-agents may not automatically receive these instructions — the orchestrator is the enforcement point. If a sub-agent returns without using Vectos, remind it in the next delegation.
+
 If session-memory tools such as Engram are also available, use them for prior decisions, durable learnings, and historical context. Use Vectos for current code retrieval. Treat them as complementary, not coupled.
