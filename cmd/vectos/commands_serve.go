@@ -314,7 +314,7 @@ func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleCh
 
 	phaseStart := time.Now()
 
-	// Phase 1: chunk every file (no embedding) and clear old rows.
+	// Phase 1: scan files and chunk those whose hash has changed.
 	// Files whose content hash matches the stored hash are skipped entirely.
 	for i, path := range paths {
 		fileHash, err := computeFileHash(path)
@@ -324,9 +324,11 @@ func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleCh
 		}
 
 		// Check if file is already indexed with the same hash (cache hit).
+		// On error, treat as changed to avoid silently skipping files.
 		changed, err := store.HasFileChanged(path, fileHash)
 		if err != nil {
-			log.Printf("warning: failed to check hash for %s: %v", path, err)
+			log.Printf("warning: failed to check hash for %s: %v — treating as changed", path, err)
+			changed = true
 		}
 		if !changed {
 			cachedFiles++
@@ -369,7 +371,7 @@ func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleCh
 		if progress != nil {
 			fmt.Fprintf(progress, "All files up to date — no embedding needed\n")
 		}
-		return indexedFiles + cachedFiles, 0
+		return indexedFiles, 0
 	}
 
 	if progress != nil {
@@ -387,8 +389,12 @@ func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleCh
 		progressFn = func(done, totalChunks int, batchDur time.Duration) {
 			elapsed := time.Since(embedStart)
 			rate := float64(done) / elapsed.Seconds()
-			remaining := time.Duration(float64(totalChunks-done)/rate) * time.Second
-			fmt.Fprintf(progress, "  Embedding: %d/%d chunks (%.1f/sec, ETA %v)\n", done, totalChunks, rate, remaining.Round(time.Second))
+			if rate > 0 {
+				remaining := time.Duration(float64(totalChunks-done)/rate*float64(time.Second))
+				fmt.Fprintf(progress, "  Embedding: %d/%d chunks (%.1f/sec, ETA %v)\n", done, totalChunks, rate, remaining.Round(time.Second))
+			} else {
+				fmt.Fprintf(progress, "  Embedding: %d/%d chunks\n", done, totalChunks)
+			}
 		}
 	}
 	if err := chunker.BatchEmbedChunksWithProgress(pendingChunks, 0, progressFn); err != nil {
@@ -402,6 +408,7 @@ func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleCh
 	// Phase 3: save all chunks to the store.
 	saveStart := time.Now()
 	savedChunks := 0
+	seenPaths := make(map[string]bool)
 	for i, p := range pending {
 		if pendingChunks[i].Vector == nil {
 			continue // skip chunks that couldn't be embedded
@@ -420,11 +427,14 @@ func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleCh
 			log.Printf("warning: failed to save chunk for %s: %v", p.path, err)
 			continue
 		}
-		if err := store.UpsertIndexedFile(p.path, p.hash); err != nil {
-			log.Printf("warning: failed to store hash for %s: %v", p.path, err)
-			continue
-		}
 		savedChunks++
+		// Upsert the file hash once per file, not once per chunk.
+		if !seenPaths[p.path] {
+			seenPaths[p.path] = true
+			if err := store.UpsertIndexedFile(p.path, p.hash); err != nil {
+				log.Printf("warning: failed to store hash for %s: %v", p.path, err)
+			}
+		}
 	}
 	saveElapsed := time.Since(saveStart)
 

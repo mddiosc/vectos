@@ -112,12 +112,12 @@ func (h *HNSW) Insert(id int, vector []float32) {
 	// Phase 1: traverse from top down to level+1 to find entry point for this level.
 	curObj := h.entryPoint
 	for lc := h.maxLevel; lc > level; lc-- {
-		curObj = h.searchLayerLocal(vector, curObj, 1, lc)[0]
+		curObj = h.searchLayerLocal(normalized, curObj, 1, lc)[0]
 	}
 
 	// Phase 2: insert into layers level down to 0.
 	for lc := min(level, h.maxLevel); lc >= 0; lc-- {
-		candidates := h.searchLayerLocal(vector, curObj, h.efConstruction, lc)
+		candidates := h.searchLayerLocal(normalized, curObj, h.efConstruction, lc)
 
 		// Select M neighbors and connect bidirectionally.
 		mMax := h.M
