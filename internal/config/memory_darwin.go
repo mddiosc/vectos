@@ -21,6 +21,11 @@ func availableMemoryMB() uint64 {
 
 	freePages := sysctlUint32("vm.page_free_count")
 	speculativePages := sysctlUint32("vm.page_speculative_count")
+	// page_pageable_internal_count includes dirty/active pages that are not
+	// immediately reclaimable, so this estimate can be optimistic. In practice
+	// it gives a reasonable approximation for batch-size selection: the worst
+	// case is choosing a slightly larger batch than ideal, not a crash.
+	// Activity Monitor uses a similar heuristic (free + inactive + speculative).
 	pageableInternal := sysctlUint32("vm.page_pageable_internal_count")
 
 	availablePages := uint64(freePages) + uint64(speculativePages) + uint64(pageableInternal)
