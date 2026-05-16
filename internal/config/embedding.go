@@ -69,7 +69,45 @@ type EmbeddedProviderConfig struct {
 
 // DefaultEmbeddedBatchSize is the number of texts to embed in a single
 // inference call when the user does not configure batch_size explicitly.
-const DefaultEmbeddedBatchSize = 8
+// Larger batches amortize ONNX session overhead; 32 works well on Apple
+// Silicon with jina-embeddings-v3 (seq_len=512, ~50MB per batch).
+const DefaultEmbeddedBatchSize = 32
+
+// AdaptiveBatchSize returns an appropriate batch size based on the system's
+// available memory. If the user has configured an explicit batch_size, that
+// value should be used instead of calling this function.
+//
+// Memory thresholds (available RAM → batch size):
+//
+//	≥ 4 GB available → 32 (full throughput)
+//	≥ 2 GB available → 16 (balanced)
+//	≥ 1 GB available → 8  (conservative)
+//	< 1 GB available → 4  (survival mode)
+//	unknown          → 16 (safe default)
+//
+// Peak memory per batch with jina-embeddings-v3 (384d, seq_len=512):
+//
+//	batch=32 → ~150-180 MB (ONNX internals + tensors)
+//	batch=16 → ~80-100 MB
+//	batch=8  → ~40-60 MB
+//	batch=4  → ~25-35 MB
+func AdaptiveBatchSize() int {
+	available := availableMemoryMB()
+	if available == 0 {
+		// Cannot determine memory — use a safe middle ground
+		return 16
+	}
+	switch {
+	case available >= 4096:
+		return 32
+	case available >= 2048:
+		return 16
+	case available >= 1024:
+		return 8
+	default:
+		return 4
+	}
+}
 
 type RemoteProviderConfig struct {
 	Enabled  bool   `json:"enabled"`
@@ -157,7 +195,8 @@ func DefaultEmbeddingConfig(homeDir string) EmbeddingConfig {
 			AutoDownload: true,
 			AssetBaseURL: DefaultEmbeddedAssetBaseURL,
 			TimeoutS:     60,
-			BatchSize:    DefaultEmbeddedBatchSize,
+			// 0 = auto-detect based on available RAM (see AdaptiveBatchSize)
+			BatchSize: 0,
 		},
 		Remote: RemoteProviderConfig{
 			Enabled:  false,
