@@ -80,6 +80,19 @@ func (OpenCodeAdapter) Apply(ctx Context) error {
 		}
 	}
 
+	// Install the Vectos skill so agents can load detailed usage patterns
+	skillsDir := filepath.Join(ctx.HomeDir, ".agents", "skills", vectosSkillName)
+	if err := os.MkdirAll(skillsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create skills directory: %w", err)
+	}
+
+	skillPath := filepath.Join(skillsDir, "SKILL.md")
+	if err := os.WriteFile(skillPath, []byte(vectosSkillSource), 0644); err != nil {
+		return fmt.Errorf("failed to install Vectos skill: %w", err)
+	}
+
+	fmt.Printf("Installed Vectos skill at %s\n", skillPath)
+
 	// Install the OpenCode plugin for auto-reindex on file changes
 	pluginsDir := filepath.Join(ctx.HomeDir, opencodeConfigDir, "opencode", "plugins")
 	if err := os.MkdirAll(pluginsDir, 0755); err != nil {
@@ -120,6 +133,17 @@ func (OpenCodeAdapter) Remove(ctx Context) error {
 		}
 	}
 
+	// Remove the Vectos skill
+	skillPath := filepath.Join(ctx.HomeDir, ".agents", "skills", vectosSkillName, "SKILL.md")
+	removedSkill := false
+	if _, err := os.Stat(skillPath); err == nil {
+		if err := os.Remove(skillPath); err != nil {
+			fmt.Printf("Warning: failed to remove Vectos skill at %s: %v\n", skillPath, err)
+		} else {
+			removedSkill = true
+		}
+	}
+
 	if removedConfig {
 		fmt.Printf("Removed Vectos MCP entry from %s.\n", configPath)
 	}
@@ -129,7 +153,10 @@ func (OpenCodeAdapter) Remove(ctx Context) error {
 	if removedPlugin {
 		fmt.Printf("Removed OpenCode plugin at %s.\n", pluginPath)
 	}
-	if !removedConfig && !removedGuidance && !removedPlugin {
+	if removedSkill {
+		fmt.Printf("Removed Vectos skill at %s.\n", skillPath)
+	}
+	if !removedConfig && !removedGuidance && !removedPlugin && !removedSkill {
 		fmt.Println("No Vectos-managed OpenCode setup was found to remove.")
 	}
 
