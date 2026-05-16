@@ -7,7 +7,10 @@ import (
 	"vectos/internal/storage"
 )
 
-func TestPrepareStoreForIndexingClearsChunksOnFullReindex(t *testing.T) {
+func TestPrepareStoreForIndexingPreservesChunksForCaching(t *testing.T) {
+	// With hash-based caching, prepareStoreForIndexing no longer deletes
+	// all chunks on full reindex. Stale files are cleaned up by
+	// cleanupExcludedAndSkipped after indexing completes.
 	pm, err := storage.NewProjectManager(t.TempDir())
 	if err != nil {
 		t.Fatalf("new project manager: %v", err)
@@ -19,8 +22,8 @@ func TestPrepareStoreForIndexingClearsChunksOnFullReindex(t *testing.T) {
 	defer store.Close()
 
 	if _, err := store.SaveChunk(storage.CodeChunk{
-		FilePath:  filepath.Join(t.TempDir(), "stale.md"),
-		Content:   "stale docs chunk",
+		FilePath:  filepath.Join(t.TempDir(), "cached.md"),
+		Content:   "cached docs chunk",
 		StartLine: 1,
 		EndLine:   1,
 		Language:  "markdown",
@@ -37,8 +40,8 @@ func TestPrepareStoreForIndexingClearsChunksOnFullReindex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stats: %v", err)
 	}
-	if stats.ChunkCount != 0 {
-		t.Fatalf("expected empty index after full reindex preparation, got %d chunks", stats.ChunkCount)
+	if stats.ChunkCount != 1 {
+		t.Fatalf("expected cached chunks to be preserved, got %d chunks", stats.ChunkCount)
 	}
 }
 

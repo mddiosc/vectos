@@ -114,7 +114,7 @@ func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port in
 	if err != nil {
 		log.Fatalf("error resolving embedding provider: %v", err)
 	}
-	chunker = indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10}, embedClient)
+	chunker = indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10, BatchSize: embedConfig.Embedded.BatchSize}, embedClient)
 	providerInfo = provider
 
 	var activeStore *storage.SQLiteStorage
@@ -152,7 +152,7 @@ func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port in
 
 		if scope, err := workspace.ResolveScope(projectBaseDir, ""); err == nil {
 			if store, err := cache.getOrCreate(scope.Name, false); err == nil {
-				onChange := makeReindexCallback(store, embedClient)
+				onChange := makeReindexCallback(store, embedClient, embedConfig.Embedded.BatchSize)
 				onDelete := makeDeleteHandler(store)
 				if w, err := watcher.NewWatcher(projectBaseDir, ignorePatterns, watchDebounce, onChange, onDelete); err == nil {
 					if err := w.Start(context.Background()); err == nil {
@@ -188,7 +188,7 @@ func makeDeleteHandler(store *storage.SQLiteStorage) func(string) {
 	}
 }
 
-func makeReindexCallback(store *storage.SQLiteStorage, embedClient embeddings.Embedder) func([]string) {
+func makeReindexCallback(store *storage.SQLiteStorage, embedClient embeddings.Embedder, batchSize int) func([]string) {
 	return func(changedPaths []string) {
 		log.Printf("watcher: detected %d changed files, triggering reindex", len(changedPaths))
 		var actuallyChanged []string
@@ -201,7 +201,7 @@ func makeReindexCallback(store *storage.SQLiteStorage, embedClient embeddings.Em
 		}
 		if len(actuallyChanged) == 0 { return }
 		log.Printf("watcher: %d files actually changed, reindexing", len(actuallyChanged))
-		if _, _, err := indexPaths(store, embedClient, actuallyChanged); err != nil {
+		if _, _, err := indexPaths(store, embedClient, actuallyChanged, batchSize); err != nil {
 			log.Printf("watcher: reindex failed: %v", err)
 		}
 	}
@@ -263,12 +263,9 @@ func reindexProject(cache *storeCache, chunker *indexer.SimpleChunker, providerI
 		}
 	}
 
-	// Prepare store: full reindex clears all chunks, incremental does not.
-	if len(changedPaths) == 0 {
-		if err := store.DeleteAllChunks(); err != nil {
-			return server.ReindexResponse{Status: "error", Message: err.Error()}
-		}
-	}
+	// With hash-based caching, we no longer delete all chunks on full reindex.
+	// Unchanged files are skipped automatically by indexPathsIntoStore.
+	// Stale files (deleted from disk) are cleaned up by cleanupExcludedAndSkipped.
 
 	// Index each path.
 	indexedFiles, count := indexPathsIntoStore(store, chunker, paths, nil)
@@ -310,17 +307,35 @@ type pendingChunk struct {
 
 func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleChunker, paths []string, progress io.Writer) (int, int) {
 	indexedFiles := 0
+	cachedFiles := 0
 	total := len(paths)
 	reportEvery := progressInterval(total)
 	var pending []pendingChunk
 
+	phaseStart := time.Now()
+
 	// Phase 1: chunk every file (no embedding) and clear old rows.
-	for _, path := range paths {
+	// Files whose content hash matches the stored hash are skipped entirely.
+	for i, path := range paths {
 		fileHash, err := computeFileHash(path)
 		if err != nil {
 			log.Printf("warning: failed to hash %s: %v", path, err)
 			continue
 		}
+
+		// Check if file is already indexed with the same hash (cache hit).
+		changed, err := store.HasFileChanged(path, fileHash)
+		if err != nil {
+			log.Printf("warning: failed to check hash for %s: %v", path, err)
+		}
+		if !changed {
+			cachedFiles++
+			if progress != nil && (i+1)%reportEvery == 0 {
+				fmt.Fprintf(progress, "Progress: %d/%d files scanned (%d cached, %d changed)\n", i+1, total, cachedFiles, indexedFiles)
+			}
+			continue
+		}
+
 		language, err := content.DetectLanguage(path)
 		if err != nil {
 			log.Printf("warning: skipping %s — unsupported language: %v", path, err)
@@ -340,25 +355,52 @@ func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleCh
 		}
 		indexedFiles++
 
-		if progress != nil && indexedFiles%reportEvery == 0 && indexedFiles < total {
-			fmt.Fprintf(progress, "Progress: %d/%d files chunked\n", indexedFiles, total)
+		if progress != nil && (i+1)%reportEvery == 0 {
+			fmt.Fprintf(progress, "Progress: %d/%d files scanned (%d cached, %d changed)\n", i+1, total, cachedFiles, indexedFiles)
 		}
 	}
 
-	if progress != nil && indexedFiles > 0 {
-		fmt.Fprintf(progress, "Progress: %d/%d files chunked — generating embeddings in batches...\n", indexedFiles, total)
+	chunkElapsed := time.Since(phaseStart)
+	if progress != nil {
+		fmt.Fprintf(progress, "Phase 1 (scan+chunk): %d files scanned, %d cached, %d to embed (%d chunks) in %v\n", total, cachedFiles, indexedFiles, len(pending), chunkElapsed)
+	}
+
+	if len(pending) == 0 {
+		if progress != nil {
+			fmt.Fprintf(progress, "All files up to date — no embedding needed\n")
+		}
+		return indexedFiles + cachedFiles, 0
+	}
+
+	if progress != nil {
+		fmt.Fprintf(progress, "Phase 2 (embeddings): generating embeddings for %d chunks...\n", len(pending))
 	}
 
 	// Phase 2: batch-embed all pending chunks.
+	embedStart := time.Now()
 	pendingChunks := make([]indexer.ChunkResult, len(pending))
 	for i, p := range pending {
 		pendingChunks[i] = p.chunk
 	}
-	if err := chunker.BatchEmbedChunks(pendingChunks, 0); err != nil {
+	var progressFn indexer.EmbedProgressFunc
+	if progress != nil {
+		progressFn = func(done, totalChunks int, batchDur time.Duration) {
+			elapsed := time.Since(embedStart)
+			rate := float64(done) / elapsed.Seconds()
+			remaining := time.Duration(float64(totalChunks-done)/rate) * time.Second
+			fmt.Fprintf(progress, "  Embedding: %d/%d chunks (%.1f/sec, ETA %v)\n", done, totalChunks, rate, remaining.Round(time.Second))
+		}
+	}
+	if err := chunker.BatchEmbedChunksWithProgress(pendingChunks, 0, progressFn); err != nil {
 		log.Printf("warning: batch embedding failed: %v", err)
+	}
+	embedElapsed := time.Since(embedStart)
+	if progress != nil {
+		fmt.Fprintf(progress, "Phase 2 (embeddings): %d chunks embedded in %v (%.1f chunks/sec)\n", len(pending), embedElapsed, float64(len(pending))/embedElapsed.Seconds())
 	}
 
 	// Phase 3: save all chunks to the store.
+	saveStart := time.Now()
 	savedChunks := 0
 	for i, p := range pending {
 		if pendingChunks[i].Vector == nil {
@@ -384,9 +426,11 @@ func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleCh
 		}
 		savedChunks++
 	}
+	saveElapsed := time.Since(saveStart)
 
 	if progress != nil && indexedFiles > 0 {
-		fmt.Fprintf(progress, "Progress: %d/%d files, %d chunks indexed\n", indexedFiles, total, savedChunks)
+		fmt.Fprintf(progress, "Phase 3 (storage): %d chunks saved in %v\n", savedChunks, saveElapsed)
+		fmt.Fprintf(progress, "Total: %d files, %d chunks indexed (chunk: %v, embed: %v, save: %v)\n", indexedFiles, savedChunks, chunkElapsed, embedElapsed, saveElapsed)
 	}
 	return indexedFiles, savedChunks
 }

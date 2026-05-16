@@ -169,7 +169,7 @@ func runIndexProject(projectBaseDir string, embedConfig config.EmbeddingConfig, 
 		return nil, nil, err
 	}
 
-	indexedFiles, count, err := indexPaths(store, embedClient, paths)
+	indexedFiles, count, err := indexPaths(store, embedClient, paths, embedConfig.Embedded.BatchSize)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -262,8 +262,8 @@ func resolveIndexPaths(scope workspace.Scope, input indexProjectInput) (paths, s
 	return paths, skippedPaths, nil
 }
 
-func indexPaths(store *storage.SQLiteStorage, embedClient embeddings.Embedder, paths []string) (indexedFiles, count int, err error) {
-	chunker := indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10}, embedClient)
+func indexPaths(store *storage.SQLiteStorage, embedClient embeddings.Embedder, paths []string, batchSize int) (indexedFiles, count int, err error) {
+	chunker := indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10, BatchSize: batchSize}, embedClient)
 
 	// Phase 1: chunk every file raw.
 	var pending []struct {

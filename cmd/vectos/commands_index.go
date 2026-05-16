@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"vectos/internal/config"
 	"vectos/internal/content"
@@ -19,7 +20,10 @@ func prepareStoreForIndexing(store *storage.SQLiteStorage, changedPaths []string
 	if len(changedPaths) > 0 {
 		return nil
 	}
-	return store.DeleteAllChunks()
+	// No longer delete all chunks on full reindex — we use hash-based
+	// caching to skip unchanged files. Stale files (deleted from disk)
+	// are cleaned up by cleanupExcludedAndSkipped after indexing.
+	return nil
 }
 
 type indexEnv struct {
@@ -82,11 +86,12 @@ func setupIndexing(projectBaseDir string, scope workspace.Scope, embedConfig con
 		log.Fatalf("error saving index metadata: %v", err)
 	}
 
-	chunker := indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10}, embedClient)
+	chunker := indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10, BatchSize: embedConfig.Embedded.BatchSize}, embedClient)
 	return &indexEnv{store: store, chunker: chunker, embedConfig: embedConfig}
 }
 
 func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePath string, projectName string, changedPaths []string, docsOnly bool) {
+	totalStart := time.Now()
 	fmt.Printf("Indexing: %s\n", filePath)
 
 	if docsOnly {
@@ -99,7 +104,10 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 	}
 
 	scope := resolveAndPrintScope(absolutePath, projectName)
+
+	setupStart := time.Now()
 	env := setupIndexing(projectBaseDir, scope, embedConfig, docsOnly)
+	fmt.Printf("Setup (model init): %v\n", time.Since(setupStart))
 	defer env.store.Close()
 
 	// Merge exclusion patterns: global config + project config + gitignore.
@@ -148,11 +156,18 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 	fmt.Println("Cleaning excluded directories...")
 	cleanupExcludedAndSkipped(env.store, scope, skippedPaths)
 
-	fmt.Printf("Done: %d files, %d chunks indexed (project: %s)\n", indexedFiles, count, scope.Name)
+	fmt.Printf("Done: %d files, %d chunks indexed (project: %s) — total wall time: %v\n", indexedFiles, count, scope.Name, time.Since(totalStart))
 }
 
 func buildVectorIndex(store *storage.SQLiteStorage, chunker *indexer.SimpleChunker, viCfg config.VectorIndexConfig) {
 	if store == nil || chunker == nil {
+		return
+	}
+
+	// Try to load existing vector index — if it's still valid (hash matches),
+	// skip the expensive rebuild entirely.
+	if idx, _, _, _, err := store.LoadVectorIndex(); err == nil && idx != nil {
+		fmt.Printf("Vector index up to date: %d vectors, %d layers (skipped rebuild)\n", idx.Len(), idx.MaxLevel()+1)
 		return
 	}
 
@@ -195,12 +210,15 @@ func buildVectorIndex(store *storage.SQLiteStorage, chunker *indexer.SimpleChunk
 	}
 	idx := vectorindex.NewHNSW(dimension, vectorindex.Config{M: m, EfConstruction: efCons, EfSearch: efSearch})
 	total := len(ids)
+	buildStart := time.Now()
 	for i, id := range ids {
 		idx.Insert(id, embeddingsByID[id])
 		if (i+1)%100 == 0 || i+1 == total {
 			fmt.Printf("Building vector index: %d/%d vectors\n", i+1, total)
 		}
 	}
+	buildElapsed := time.Since(buildStart)
+	fmt.Printf("Vector index insertion: %d vectors in %v\n", total, buildElapsed)
 
 	contentHash, err := store.ChunkTableContentHash()
 	if err != nil {
