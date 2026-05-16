@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
+	"vectos/internal/config"
 	"vectos/internal/content"
 	"vectos/internal/embeddings"
 )
@@ -28,8 +30,9 @@ var tsAsyncPattern = regexp.MustCompile(`(async\s+function\s+[A-Za-z_$]|async\s*
 
 // ChunkConfig define los parámetros para la segmentación del código.
 type ChunkConfig struct {
-	MaxLines int // Máximo de líneas por trozo
-	MinLines int // Mínimo de líneas por trozo
+	MaxLines  int // Máximo de líneas por trozo
+	MinLines  int // Mínimo de líneas por trozo
+	BatchSize int // Tamaño de batch para embeddings (0 = auto-detect)
 }
 
 // ChunkResult contains the content of a chunk and its position.
@@ -365,15 +368,27 @@ func (s *SimpleChunker) buildChunkImpl(filePath, language string, chunkLines []s
 	}
 }
 
+// EmbedProgressFunc is called after each batch with (chunksEmbedded, totalChunks, batchDuration).
+type EmbedProgressFunc func(done, total int, batchDur time.Duration)
+
 // BatchEmbedChunks fills in the Vector field of every chunk in the slice by
 // calling the embedder's GetEmbeddings in batches of at most batchSize.
 // Chunks that already have a non-nil Vector are skipped.
 func (s *SimpleChunker) BatchEmbedChunks(chunks []ChunkResult, batchSize int) error {
+	return s.BatchEmbedChunksWithProgress(chunks, batchSize, nil)
+}
+
+// BatchEmbedChunksWithProgress is like BatchEmbedChunks but reports progress
+// after each batch via the optional callback.
+func (s *SimpleChunker) BatchEmbedChunksWithProgress(chunks []ChunkResult, batchSize int, progress EmbedProgressFunc) error {
 	if s.embedClient == nil {
 		return nil
 	}
 	if batchSize <= 0 {
-		batchSize = 8
+		batchSize = s.config.BatchSize
+	}
+	if batchSize <= 0 {
+		batchSize = config.AdaptiveBatchSize()
 	}
 
 	// Collect indices of chunks that still need embeddings.
@@ -386,19 +401,25 @@ func (s *SimpleChunker) BatchEmbedChunks(chunks []ChunkResult, batchSize int) er
 		}
 	}
 
-	for start := 0; start < len(semanticTexts); start += batchSize {
+	total := len(semanticTexts)
+	for start := 0; start < total; start += batchSize {
 		end := start + batchSize
-		if end > len(semanticTexts) {
-			end = len(semanticTexts)
+		if end > total {
+			end = total
 		}
 		batch := semanticTexts[start:end]
+		batchStart := time.Now()
 		vecs, err := s.embedClient.GetEmbeddings(batch)
 		if err != nil {
 			return fmt.Errorf("batch embedding failed at offset %d: %w", start, err)
 		}
+		batchDur := time.Since(batchStart)
 		for j, vec := range vecs {
 			idx := pending[start+j]
 			chunks[idx].Vector = vec
+		}
+		if progress != nil {
+			progress(end, total, batchDur)
 		}
 	}
 

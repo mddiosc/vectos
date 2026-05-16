@@ -165,7 +165,10 @@ func LoadIndex(path string) (*HNSW, [sha256.Size]byte, string, *SQ8Params, error
 		}
 		vectors := DecodeSQ8(encoded, sq8Params)
 		hnsw.nodes = make([]node, len(vectors))
-		for i, v := range vectors { hnsw.nodes[i] = node{id: i, vector: v} }
+		for i, v := range vectors {
+			normalizeVec(v)
+			hnsw.nodes[i] = node{id: i, vector: v}
+		}
 		for i := 0; i < nodeCount; i++ {
 			id := int(br.i32())
 			layerCount := int(br.i32())
@@ -202,6 +205,8 @@ func LoadIndex(path string) (*HNSW, [sha256.Size]byte, string, *SQ8Params, error
 		for j := 0; j < vectorLen; j++ {
 			vector[j] = br.f32()
 		}
+		// Ensure vectors are normalized for fast dot-product distance.
+		normalizeVec(vector)
 		hnsw.nodes[i] = node{id: id, vector: vector, layers: layers}
 	}
 
