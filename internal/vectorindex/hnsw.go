@@ -90,8 +90,13 @@ func (h *HNSW) Insert(id int, vector []float32) {
 		panic("vectorindex: vector dimension mismatch")
 	}
 
+	// Normalize the vector so distance calculations reduce to 1 - dot(a,b).
+	normalized := make([]float32, len(vector))
+	copy(normalized, vector)
+	normalizeVec(normalized)
+
 	// Allocate node.
-	n := node{id: id, vector: vector}
+	n := node{id: id, vector: normalized}
 	level := randomLevel(h.mL)
 	n.layers = make([][]int, level+1)
 	h.nodes = append(h.nodes, n)
@@ -159,6 +164,11 @@ func (h *HNSW) SearchScored(query []float32, k int) []ScoredNeighbor {
 		return nil
 	}
 
+	// Normalize query to match pre-normalized index vectors.
+	normQuery := make([]float32, len(query))
+	copy(normQuery, query)
+	normalizeVec(normQuery)
+
 	ef := h.efSearch
 	if k > ef {
 		ef = k
@@ -166,10 +176,10 @@ func (h *HNSW) SearchScored(query []float32, k int) []ScoredNeighbor {
 
 	curObj := h.entryPoint
 	for lc := h.maxLevel; lc > 0; lc-- {
-		curObj = h.searchLayerLocal(query, curObj, 1, lc)[0]
+		curObj = h.searchLayerLocal(normQuery, curObj, 1, lc)[0]
 	}
 
-	candidates := h.searchLayerLocal(query, curObj, ef, 0)
+	candidates := h.searchLayerLocal(normQuery, curObj, ef, 0)
 
 	// Extract top-k scored results.
 	if len(candidates) > k {
@@ -178,7 +188,7 @@ func (h *HNSW) SearchScored(query []float32, k int) []ScoredNeighbor {
 
 	out := make([]ScoredNeighbor, len(candidates))
 	for i, idx := range candidates {
-		out[i] = ScoredNeighbor{ID: h.nodes[idx].id, Distance: distance(query, h.nodes[idx].vector)}
+		out[i] = ScoredNeighbor{ID: h.nodes[idx].id, Distance: distance(normQuery, h.nodes[idx].vector)}
 	}
 	return out
 }
@@ -197,9 +207,48 @@ func (h *HNSW) GetVector(id int) []float32 {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-// distance returns the cosine distance between vectors a and b.
+// normalizeVec normalizes a vector in-place to unit length.
+func normalizeVec(v []float32) {
+	var norm float64
+	for _, x := range v {
+		norm += float64(x) * float64(x)
+	}
+	if norm == 0 {
+		return
+	}
+	scale := 1.0 / math.Sqrt(norm)
+	for i := range v {
+		v[i] = float32(float64(v[i]) * scale)
+	}
+}
+
+// distance returns the cosine distance between two pre-normalized vectors.
+// Since vectors are normalized at insertion time, this is simply 1 - dot(a,b).
 func distance(a, b []float32) float64 {
-	return 1.0 - cosineSimilarity(a, b)
+	return 1.0 - dotProduct(a, b)
+}
+
+// dotProduct computes the dot product of two float32 vectors.
+// Uses 8-way loop unrolling to maximize instruction-level parallelism
+// on modern CPUs with wide pipelines (e.g., Apple M-series, AMD Zen).
+func dotProduct(a, b []float32) float64 {
+	n := len(a)
+	var d0, d1, d2, d3, d4, d5, d6, d7 float64
+	i := 0
+	for ; i <= n-8; i += 8 {
+		d0 += float64(a[i]) * float64(b[i])
+		d1 += float64(a[i+1]) * float64(b[i+1])
+		d2 += float64(a[i+2]) * float64(b[i+2])
+		d3 += float64(a[i+3]) * float64(b[i+3])
+		d4 += float64(a[i+4]) * float64(b[i+4])
+		d5 += float64(a[i+5]) * float64(b[i+5])
+		d6 += float64(a[i+6]) * float64(b[i+6])
+		d7 += float64(a[i+7]) * float64(b[i+7])
+	}
+	for ; i < n; i++ {
+		d0 += float64(a[i]) * float64(b[i])
+	}
+	return d0 + d1 + d2 + d3 + d4 + d5 + d6 + d7
 }
 
 // connect adds a bidirectional edge at the given layer.
@@ -215,11 +264,22 @@ func (h *HNSW) prune(layer, nodeIdx, maxN int) {
 		return
 	}
 
+	// Pre-compute distances once instead of recalculating in every sort comparison.
 	vec := h.nodes[nodeIdx].vector
-	sort.Slice(neighbors, func(i, j int) bool {
-		return distance(vec, h.nodes[neighbors[i]].vector) <
-			distance(vec, h.nodes[neighbors[j]].vector)
+	type distEntry struct {
+		idx  int
+		dist float64
+	}
+	entries := make([]distEntry, len(neighbors))
+	for i, nb := range neighbors {
+		entries[i] = distEntry{idx: nb, dist: distance(vec, h.nodes[nb].vector)}
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].dist < entries[j].dist
 	})
+	for i := range entries {
+		neighbors[i] = entries[i].idx
+	}
 	h.nodes[nodeIdx].layers[layer] = neighbors[:maxN]
 }
 
