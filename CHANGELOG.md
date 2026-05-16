@@ -20,6 +20,36 @@ Format per release:
 
 ---
 
+## v0.8.0 — 2026-05-16
+
+Major release focused on indexing performance: HNSW build is 12× faster, incremental reindexes skip unchanged files entirely, and embedding batch size adapts automatically to available RAM.
+
+### Added
+
+- **Adaptive ONNX embedding batch size** — automatically selects batch size based on available RAM: ≥4 GB → 32, ≥2 GB → 16, ≥1 GB → 8, <1 GB → 4. Override via `batch_size` in `~/.vectos/config.json`.
+- **Hash-based embedding cache** — full and incremental reindexes skip files whose content hash hasn't changed. Chunking, embedding, and vector index rebuild are all bypassed for unchanged files.
+- **Per-phase progress reporting** — indexing now reports scan/chunk phase, embedding phase (with throughput rate and ETA), and storage phase separately.
+- **Token efficiency documentation** — new `docs/token-efficiency.md` with benchmark data showing 17× token reduction vs grep-based workflows.
+
+### Changed
+
+- **Effective batch size raised to 32** on machines with ≥4 GB available RAM (was 8). Configurable via `batch_size` in config; set explicitly to keep the old value.
+- **Full reindex no longer deletes all chunks upfront** — unchanged files are preserved, deleted/excluded files are cleaned up at the end by `cleanupExcludedAndSkipped`.
+- **Vector index rebuild skipped** when the content hash matches the stored hash — saves several seconds on large projects with no changes.
+
+### Fixed
+
+- **HNSW graph correctness** — `Insert` was passing the raw (non-normalized) vector to `searchLayerLocal` during graph construction. All stored vectors are pre-normalized, so the query must also be normalized for correct dot-product distances. This degraded neighbor selection quality during index build.
+- **Silent cache hit on DB error** — `HasFileChanged` errors now treat the file as changed instead of silently skipping it, preventing stale index entries after transient DB failures.
+- **Redundant hash upserts** — `UpsertIndexedFile` was called once per chunk instead of once per file, causing N redundant SQL upserts for files with N chunks.
+- **ETA overflow** — embedding progress ETA could produce `+Inf` or a negative duration when `rate == 0` on the first batch.
+
+### Performance
+
+- **HNSW build 12× faster** via pre-normalized vectors (dot product replaces cosine in hot path) and distance caching in `prune`. Benchmarks: 1K vectors 2.85s → 0.23s, 10K vectors 39.6s → 6.93s.
+
+---
+
 ## v0.7.1 — 2026-05-15
 
 ### Fixed
