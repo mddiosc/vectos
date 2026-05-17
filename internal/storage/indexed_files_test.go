@@ -85,6 +85,56 @@ func TestRemoveDeletedFile(t *testing.T) {
 	}
 }
 
+func TestReindexSameFileReplacesOldChunksAndHash(t *testing.T) {
+	store, cleanup := newTestSQLiteStorage(t)
+	defer cleanup()
+
+	path := "src/main.go"
+	if _, err := store.SaveChunk(CodeChunk{FilePath: path, Content: "old-token", StartLine: 1, EndLine: 1, Language: "go", Vector: []float32{1, 0, 0, 0}}); err != nil {
+		t.Fatalf("SaveChunk old: %v", err)
+	}
+	if _, err := store.SaveChunk(CodeChunk{FilePath: path, Content: "old-token-two", StartLine: 2, EndLine: 2, Language: "go", Vector: []float32{1, 0, 0, 0}}); err != nil {
+		t.Fatalf("SaveChunk old second chunk: %v", err)
+	}
+	if err := store.UpsertIndexedFile(path, "hash-old"); err != nil {
+		t.Fatalf("UpsertIndexedFile old: %v", err)
+	}
+
+	if err := store.RemoveDeletedFile(path); err != nil {
+		t.Fatalf("RemoveDeletedFile before reindex: %v", err)
+	}
+	if _, err := store.SaveChunk(CodeChunk{FilePath: path, Content: "new-token", StartLine: 1, EndLine: 1, Language: "go", Vector: []float32{0, 1, 0, 0}}); err != nil {
+		t.Fatalf("SaveChunk new: %v", err)
+	}
+	if err := store.UpsertIndexedFile(path, "hash-new"); err != nil {
+		t.Fatalf("UpsertIndexedFile new: %v", err)
+	}
+
+	var count int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM code_chunks WHERE file_path = ?`, path).Scan(&count); err != nil {
+		t.Fatalf("count chunks after reindex: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("chunks count after reindex = %d, want 1", count)
+	}
+
+	if got, err := store.GetIndexedFileHash(path); err != nil || got != "hash-new" {
+		t.Fatalf("GetIndexedFileHash after reindex = %q, %v; want %q, nil", got, err, "hash-new")
+	}
+
+	if results, err := store.SearchText("old-token"); err != nil {
+		t.Fatalf("SearchText old-token: %v", err)
+	} else if len(results) != 0 {
+		t.Fatalf("expected old chunks to be removed, got %d results", len(results))
+	}
+
+	if results, err := store.SearchText("new-token"); err != nil {
+		t.Fatalf("SearchText new-token: %v", err)
+	} else if len(results) != 1 || results[0].FilePath != path {
+		t.Fatalf("unexpected new-token results: %+v", results)
+	}
+}
+
 var _ *sql.DB
 var _ = filepath.Join
 var _ = os.TempDir

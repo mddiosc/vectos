@@ -1,5 +1,7 @@
 # Vectos
 
+[![v1.0.0](https://img.shields.io/badge/version-v1.0.0-blue)](docs/README.md)
+
 Vectos is a local-first code context engine for AI agents.
 
 It indexes source code into project-scoped SQLite databases, generates code-aware embeddings using **jina-embeddings-v3** (1024-dim, 8192-token context, supports code + text + multilingual), and exposes search and indexing tools over MCP so agent clients can use the indexed codebase as structured context.
@@ -98,6 +100,7 @@ Global defaults can be set in `~/.vectos/config.json` under the `index` key. Pat
 - [CLI Usage](docs/cli.md)
 - [Error Guide](docs/errors.md)
 - [Indexing And Retrieval](docs/indexing.md)
+- [Performance Guide](docs/performance.md)
 - [Nx Scope Model](docs/indexing.md#nx-scope-model)
 - [Development](docs/development.md)
 - [Optional Engram Synergy](docs/engram-synergy.md)
