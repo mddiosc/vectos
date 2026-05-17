@@ -57,7 +57,7 @@ func runSearchCode(projectBaseDir string, embedConfig config.EmbeddingConfig, in
 // resolveScopeAndProjectManager resolves the tool scope and creates a project
 // manager for the given project base directory.
 func resolveScopeAndProjectManager(projectBaseDir string, input searchCodeInput) (*workspace.Scope, *storage.ProjectManager, error) {
-	scope, err := resolveToolScope(input.Path, input.Project)
+	scope, err := resolveToolScopeWithMemory(projectBaseDir, input.Path, input.Project)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -111,7 +111,7 @@ func makeSearchDocsHandler(projectBaseDir string, embedConfig config.EmbeddingCo
 }
 
 func runSearchDocs(projectBaseDir string, embedConfig config.EmbeddingConfig, input searchDocsInput) (*mcpSDK.CallToolResult, any, error) {
-	scope, err := resolveToolScope(input.Path, input.Project)
+	scope, err := resolveToolScopeWithMemory(projectBaseDir, input.Path, input.Project)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -165,7 +165,7 @@ func runIndexProject(projectBaseDir string, embedConfig config.EmbeddingConfig, 
 	}
 	defer store.Close()
 
-	if err := prepareStoreForIndexing(store, changedPaths); err != nil {
+	if err := prepareStoreForIndexing(changedPaths); err != nil {
 		return nil, nil, err
 	}
 
@@ -190,10 +190,12 @@ func setupIndexRequest(projectBaseDir string, embedConfig config.EmbeddingConfig
 	changedPaths []string,
 	err error,
 ) {
-	scope, err = workspace.ResolveScope(input.Path, input.Project)
-	if err != nil {
+	resolvedScope, resolveErr := resolveToolScopeWithMemory(projectBaseDir, input.Path, input.Project)
+	if resolveErr != nil {
+		err = resolveErr
 		return
 	}
+	scope = *resolvedScope
 
 	var pm *storage.ProjectManager
 	pm, err = newProjectManager(projectBaseDir)
