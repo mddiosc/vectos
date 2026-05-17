@@ -45,3 +45,14 @@ func TestComputeFileHash(t *testing.T) {
 		t.Fatalf("empty hash = %s, want %s", emptyHash, hex.EncodeToString(emptyExpected[:]))
 	}
 }
+
+func TestComputeFileHashWrapsReadErrors(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing.txt")
+	_, err := computeFileHash(missing)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if got := err.Error(); got != "cannot read file "+missing+": it does not exist" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

@@ -197,3 +197,14 @@ func TestCollectIndexablePathsWithExclusions_PrunesExcludedDirs(t *testing.T) {
 		t.Fatal("expected at least src/utils.ts to be indexed")
 	}
 }
+
+func TestCollectIndexablePathsWithExclusions_WrapsMissingRootError(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	_, _, err := CollectIndexablePathsWithExclusions([]string{missing}, false, nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if got := err.Error(); got != "cannot access path "+missing+": it does not exist" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
