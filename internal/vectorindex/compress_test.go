@@ -12,14 +12,19 @@ func TestSQ8_RoundTrip(t *testing.T) {
 	vectors := make([][]float32, 100)
 	for i := range vectors {
 		v := make([]float32, 384)
-		for j := range v { v[j] = rand.Float32()*2 - 1 }
+		for j := range v {
+			v[j] = rand.Float32()*2 - 1
+		}
 		vectors[i] = v
 	}
-	params := ComputeSQ8Params(vectors)
+	params, err := ComputeSQ8Params(vectors)
+	if err != nil {
+		t.Fatalf("ComputeSQ8Params: %v", err)
+	}
 	decoded := DecodeSQ8(EncodeSQ8(vectors, params), params)
 	for i := range vectors {
 		for j := range vectors[i] {
-			if err := math.Abs(float64(vectors[i][j]-decoded[i][j])); err > 0.1 {
+			if err := math.Abs(float64(vectors[i][j] - decoded[i][j])); err > 0.1 {
 				t.Fatalf("error too high at %d,%d: %v", i, j, err)
 			}
 		}
@@ -28,13 +33,26 @@ func TestSQ8_RoundTrip(t *testing.T) {
 
 func TestSQ8_SingleVector(t *testing.T) {
 	v := [][]float32{{1, 2, 3}}
-	params := ComputeSQ8Params(v)
+	params, err := ComputeSQ8Params(v)
+	if err != nil {
+		t.Fatalf("ComputeSQ8Params: %v", err)
+	}
 	decoded := DecodeSQ8(EncodeSQ8(v, params), params)
-	if len(decoded) != 1 || len(decoded[0]) != 3 { t.Fatal("bad roundtrip") }
+	if len(decoded) != 1 || len(decoded[0]) != 3 {
+		t.Fatal("bad roundtrip")
+	}
 }
 
 func TestSQ8_EmptyVectors(t *testing.T) {
-	if out := EncodeSQ8(nil, &SQ8Params{}); len(out) != 0 { t.Fatal("expected empty") }
+	if out := EncodeSQ8(nil, &SQ8Params{}); len(out) != 0 {
+		t.Fatal("expected empty")
+	}
+}
+
+func TestSQ8_ParamsReturnErrorOnDimensionMismatch(t *testing.T) {
+	if _, err := ComputeSQ8Params([][]float32{{1, 2, 3}, {1, 2}}); err == nil {
+		t.Fatal("expected dimension mismatch error")
+	}
 }
 
 func TestSQ8_SaveLoadWithCompression(t *testing.T) {
@@ -42,24 +60,47 @@ func TestSQ8_SaveLoadWithCompression(t *testing.T) {
 	path := filepath.Join(dir, "sq8.vectorindex")
 	h := NewHNSW(16, Config{})
 	vectors := make([][]float32, 100)
-	for i := range vectors { vectors[i] = randomVector(16); h.Insert(i, vectors[i]) }
-	params := ComputeSQ8Params(vectors)
-	h.Save(path, sha256.Sum256([]byte("h")), "sq8", params)
+	for i := range vectors {
+		vectors[i] = randomVector(16)
+		if err := h.Insert(i, vectors[i]); err != nil {
+			t.Fatalf("Insert: %v", err)
+		}
+	}
+	params, err := ComputeSQ8Params(vectors)
+	if err != nil {
+		t.Fatalf("ComputeSQ8Params: %v", err)
+	}
+	if err := h.Save(path, sha256.Sum256([]byte("h")), "sq8", params); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
 	loaded, _, compression, _, err := LoadIndex(path)
-	if err != nil || compression != "sq8" || loaded.Len() != 100 { t.Fatalf("load failed: %v %s", err, compression) }
-	if len(loaded.Search(vectors[0], 5)) == 0 { t.Fatal("search failed") }
+	if err != nil || compression != "sq8" || loaded.Len() != 100 {
+		t.Fatalf("load failed: %v %s", err, compression)
+	}
+	if len(loaded.Search(vectors[0], 5)) == 0 {
+		t.Fatal("search failed")
+	}
 }
 
 func TestSQ8_ParamsPersistence(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "params.vectorindex")
 	h := NewHNSW(8, Config{})
-	vectors := [][]float32{{1,2,3,4,5,6,7,8}}
-	h.Insert(1, vectors[0])
-	params := ComputeSQ8Params(vectors)
-	h.Save(path, sha256.Sum256([]byte("p")), "sq8", params)
+	vectors := [][]float32{{1, 2, 3, 4, 5, 6, 7, 8}}
+	if err := h.Insert(1, vectors[0]); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	params, err := ComputeSQ8Params(vectors)
+	if err != nil {
+		t.Fatalf("ComputeSQ8Params: %v", err)
+	}
+	if err := h.Save(path, sha256.Sum256([]byte("p")), "sq8", params); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
 	_, _, compression, loadedParams, err := LoadIndex(path)
-	if err != nil || compression != "sq8" || loadedParams == nil || loadedParams.Dim != params.Dim { t.Fatalf("params not persisted: %v", err) }
+	if err != nil || compression != "sq8" || loadedParams == nil || loadedParams.Dim != params.Dim {
+		t.Fatalf("params not persisted: %v", err)
+	}
 }
 
 // TestBatchCompressIndexEndToEnd tests the full pipeline:
@@ -73,10 +114,15 @@ func TestBatchCompressIndexEndToEnd(t *testing.T) {
 	cfg.withDefaults()
 	idx := NewHNSW(dim, cfg)
 	for i, v := range vectors {
-		idx.Insert(i, v)
+		if err := idx.Insert(i, v); err != nil {
+			t.Fatalf("Insert: %v", err)
+		}
 	}
 
-	params := ComputeSQ8Params(vectors)
+	params, err := ComputeSQ8Params(vectors)
+	if err != nil {
+		t.Fatalf("ComputeSQ8Params: %v", err)
+	}
 	if params == nil || params.Dim != dim {
 		t.Fatalf("unexpected SQ8 params: %+v", params)
 	}

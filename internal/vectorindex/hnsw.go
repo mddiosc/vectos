@@ -43,8 +43,8 @@ func (c *Config) withDefaults() {
 }
 
 type node struct {
-	id       int
-	vector   []float32
+	id     int
+	vector []float32
 	// layers[i] contains the neighbor IDs at level i.
 	layers [][]int
 }
@@ -85,9 +85,9 @@ func (h *HNSW) MaxLevel() int { return h.maxLevel }
 func (h *HNSW) Dimension() int { return h.dimension }
 
 // Insert adds a vector to the index. id must be unique across all insertions.
-func (h *HNSW) Insert(id int, vector []float32) {
+func (h *HNSW) Insert(id int, vector []float32) error {
 	if len(vector) != h.dimension {
-		panic("vectorindex: vector dimension mismatch")
+		return newDimensionMismatchError(h.dimension, len(vector))
 	}
 
 	// Normalize the vector so distance calculations reduce to 1 - dot(a,b).
@@ -106,7 +106,7 @@ func (h *HNSW) Insert(id int, vector []float32) {
 		// First node — no edges to build.
 		h.entryPoint = nodeIdx
 		h.maxLevel = level
-		return
+		return nil
 	}
 
 	// Phase 1: traverse from top down to level+1 to find entry point for this level.
@@ -140,6 +140,8 @@ func (h *HNSW) Insert(id int, vector []float32) {
 		h.maxLevel = level
 		h.entryPoint = nodeIdx
 	}
+
+	return nil
 }
 
 // ScoredNeighbor holds a node ID and its cosine distance from a query.
@@ -456,7 +458,7 @@ type scoredMaxHeap struct {
 	limit  int
 }
 
-func (h *scoredMaxHeap) init()   {}
+func (h *scoredMaxHeap) init()    {}
 func (h *scoredMaxHeap) len() int { return len(h.scores) }
 
 func (h *scoredMaxHeap) push(s scored) {

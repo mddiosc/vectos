@@ -158,22 +158,22 @@ func buildVectorIndex(store *storage.SQLiteStorage, chunker *indexer.SimpleChunk
 	}
 
 	fmt.Println("Building vector index...")
-	embeddingsByID, err := store.GetAllEmbeddings()
+	dimCounts := make(map[int]int)
+	err := store.ForEachEmbedding(func(_ int, vector []float32) error {
+		dimCounts[len(vector)]++
+		return nil
+	})
 	if err != nil {
 		log.Printf("warning: vector index build skipped: %v", err)
 		return
 	}
-	if len(embeddingsByID) == 0 {
+	if len(dimCounts) == 0 {
 		log.Println("vector index build skipped: no embeddings found")
 		return
 	}
 
 	// Determine the dominant embedding dimension (majority vote) to handle
 	// mixed-dimension embeddings that can occur after model changes.
-	dimCounts := make(map[int]int)
-	for _, vector := range embeddingsByID {
-		dimCounts[len(vector)]++
-	}
 	var dimension, maxCount int
 	for dim, count := range dimCounts {
 		if count > maxCount {
@@ -188,19 +188,7 @@ func buildVectorIndex(store *storage.SQLiteStorage, chunker *indexer.SimpleChunk
 	}
 
 	// Filter to only vectors matching the dominant dimension.
-	ids := make([]int, 0, len(embeddingsByID))
-	var skipped int
-	for id, vector := range embeddingsByID {
-		if len(vector) != dimension {
-			skipped++
-			continue
-		}
-		ids = append(ids, id)
-	}
-	if skipped > 0 {
-		log.Printf("warning: skipped %d embeddings with mismatched dimension (expected %d); run 'vectos index .' to rebuild a consistent index", skipped, dimension)
-	}
-	if len(ids) == 0 {
+	if maxCount == 0 {
 		log.Println("vector index build skipped: no valid embeddings after filtering")
 		return
 	}
@@ -218,16 +206,33 @@ func buildVectorIndex(store *storage.SQLiteStorage, chunker *indexer.SimpleChunk
 		efSearch = 200
 	}
 	idx := vectorindex.NewHNSW(dimension, vectorindex.Config{M: m, EfConstruction: efCons, EfSearch: efSearch})
-	total := len(ids)
+	total := maxCount
 	buildStart := time.Now()
-	for i, id := range ids {
-		idx.Insert(id, embeddingsByID[id])
-		if (i+1)%100 == 0 || i+1 == total {
-			fmt.Printf("Building vector index: %d/%d vectors\n", i+1, total)
+	inserted := 0
+	skipped := 0
+	err = store.ForEachEmbedding(func(id int, vector []float32) error {
+		if len(vector) != dimension {
+			skipped++
+			return nil
 		}
+		if err := idx.Insert(id, vector); err != nil {
+			return err
+		}
+		inserted++
+		if inserted%100 == 0 || inserted == total {
+			fmt.Printf("Building vector index: %d/%d vectors\n", inserted, total)
+		}
+		return nil
+	})
+	if err != nil {
+		log.Printf("warning: vector index build skipped: %v", err)
+		return
+	}
+	if skipped > 0 {
+		log.Printf("warning: skipped %d embeddings with mismatched dimension (expected %d); run 'vectos index .' to rebuild a consistent index", skipped, dimension)
 	}
 	buildElapsed := time.Since(buildStart)
-	fmt.Printf("Vector index insertion: %d vectors in %v\n", total, buildElapsed)
+	fmt.Printf("Vector index insertion: %d vectors in %v\n", inserted, buildElapsed)
 
 	contentHash, err := store.ChunkTableContentHash()
 	if err != nil {

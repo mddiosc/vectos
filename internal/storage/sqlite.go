@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -24,6 +25,8 @@ type SQLiteStorage struct {
 	vectIdx   *vectorindex.HNSW
 	vectIdxMu sync.RWMutex
 }
+
+const maxGetAllEmbeddingsBytes = 128 << 20
 
 // IndexStats resume el estado del índice del proyecto activo.
 type IndexStats struct {
@@ -48,7 +51,7 @@ func NewSQLiteStorage(pm *ProjectManager) (*SQLiteStorage, error) {
 	return NewSQLiteStorageForProject(pm, currentDir)
 }
 
-	// NewSQLiteStorageForProject inicializa la base de datos para un proyecto explícito.
+// NewSQLiteStorageForProject inicializa la base de datos para un proyecto explícito.
 func NewSQLiteStorageForProject(pm *ProjectManager, projectDir string) (*SQLiteStorage, error) {
 	_, err := pm.EnsureProjectDir(projectDir)
 	if err != nil {
@@ -60,7 +63,7 @@ func NewSQLiteStorageForProject(pm *ProjectManager, projectDir string) (*SQLiteS
 		return nil, fmt.Errorf("failed to resolve database path: %w", err)
 	}
 
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := openSQLite(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -90,7 +93,7 @@ func NewSQLiteStorageForProjectName(pm *ProjectManager, projectName string) (*SQ
 		return nil, fmt.Errorf("failed to resolve database path: %w", err)
 	}
 
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := openSQLite(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -120,7 +123,7 @@ func NewSQLiteStorageForDocsProjectName(pm *ProjectManager, projectName string) 
 		return nil, fmt.Errorf("failed to resolve docs database path: %w", err)
 	}
 
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := openSQLite(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open docs database: %w", err)
 	}
@@ -136,6 +139,14 @@ func NewSQLiteStorageForDocsProjectName(pm *ProjectManager, projectName string) 
 	}
 
 	return storage, nil
+}
+
+func openSQLite(dbPath string) (*sql.DB, error) {
+	values := url.Values{}
+	values.Set("_journal_mode", "WAL")
+	values.Set("_busy_timeout", "5000")
+	dsn := (&url.URL{Scheme: "file", Path: dbPath, RawQuery: values.Encode()}).String()
+	return sql.Open("sqlite3", dsn)
 }
 
 // migrate crea las tablas necesarias si no existen.
@@ -281,25 +292,57 @@ func (s *SQLiteStorage) SaveChunk(chunk CodeChunk) (int64, error) {
 
 // GetAllEmbeddings returns all chunk IDs with their embedding vectors.
 func (s *SQLiteStorage) GetAllEmbeddings() (map[int][]float32, error) {
+	totalBytes, err := s.totalEmbeddingBytes()
+	if err != nil {
+		return nil, err
+	}
+	if totalBytes > maxGetAllEmbeddingsBytes {
+		return nil, fmt.Errorf("refusing to load %d bytes of embeddings into memory; use streaming iteration instead", totalBytes)
+	}
+
+	out := make(map[int][]float32)
+	if err := s.ForEachEmbedding(func(id int, vector []float32) error {
+		out[id] = vector
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *SQLiteStorage) totalEmbeddingBytes() (int64, error) {
+	var total sql.NullInt64
+	if err := s.db.QueryRow(`SELECT COALESCE(SUM(length(embedding)), 0) FROM code_chunks WHERE embedding IS NOT NULL AND length(embedding) > 0`).Scan(&total); err != nil {
+		return 0, fmt.Errorf("failed to measure embedding footprint: %w", err)
+	}
+	if !total.Valid {
+		return 0, nil
+	}
+	return total.Int64, nil
+}
+
+// ForEachEmbedding streams embeddings without materializing the full dataset.
+func (s *SQLiteStorage) ForEachEmbedding(fn func(id int, vector []float32) error) error {
 	rows, err := s.db.Query(`SELECT id, embedding FROM code_chunks WHERE embedding IS NOT NULL AND length(embedding) > 0 ORDER BY id`)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query embeddings: %w", err)
+		return fmt.Errorf("failed to query embeddings: %w", err)
 	}
 	defer rows.Close()
 
-	out := make(map[int][]float32)
 	for rows.Next() {
 		var id int
 		var blob []byte
 		if err := rows.Scan(&id, &blob); err != nil {
-			return nil, fmt.Errorf("failed to scan embedding: %w", err)
+			return fmt.Errorf("failed to scan embedding: %w", err)
 		}
-		out[id] = decodeVector(blob)
+		if err := fn(id, decodeVector(blob)); err != nil {
+			return err
+		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate embeddings: %w", err)
+		return fmt.Errorf("failed to iterate embeddings: %w", err)
 	}
-	return out, nil
+	return nil
 }
 
 // DeleteChunksByPath elimina chunks previos de un archivo para evitar duplicados en reindexados.
@@ -797,7 +840,23 @@ func (s *SQLiteStorage) searchLinearScan(queryVector []float32, limit int, inclu
 		}
 
 		c.Score = cosineSimilarity(queryVector, vector)
-		results = append(results, c)
+		if limit <= 0 {
+			results = append(results, c)
+			continue
+		}
+		if len(results) < limit {
+			results = append(results, c)
+			continue
+		}
+		minIdx := 0
+		for i := 1; i < len(results); i++ {
+			if results[i].Score < results[minIdx].Score {
+				minIdx = i
+			}
+		}
+		if c.Score > results[minIdx].Score {
+			results[minIdx] = c
+		}
 	}
 
 	if err := rows.Err(); err != nil {
@@ -807,10 +866,6 @@ func (s *SQLiteStorage) searchLinearScan(queryVector []float32, limit int, inclu
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Score > results[j].Score
 	})
-
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-	}
 
 	return results, nil
 }
@@ -948,6 +1003,12 @@ func (s *SQLiteStorage) LoadVectorIndex() (*vectorindex.HNSW, [sha256.Size]byte,
 		s.vectIdx = nil
 		s.vectIdxMu.Unlock()
 		return nil, hash, compression, params, fmt.Errorf("vectorindex: content hash mismatch (chunks changed since index was built)")
+	}
+	if compression == "sq8" && params == nil {
+		return nil, hash, compression, params, fmt.Errorf("vectorindex: sq8 index missing quantization params")
+	}
+	if idx != nil && params != nil && params.Dim != 0 && idx.Dimension() != params.Dim {
+		return nil, hash, compression, params, fmt.Errorf("vectorindex: index dimension %d does not match sq8 params dimension %d", idx.Dimension(), params.Dim)
 	}
 
 	s.SetVectorIndex(idx)

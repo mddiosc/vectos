@@ -59,3 +59,16 @@ func TestEscapeLikeTerm(t *testing.T) {
 		})
 	}
 }
+
+func TestSQLiteStorageEnablesWALMode(t *testing.T) {
+	store, cleanup := newTestSQLiteStorage(t)
+	defer cleanup()
+
+	var journalMode string
+	if err := store.db.QueryRow("PRAGMA journal_mode;").Scan(&journalMode); err != nil {
+		t.Fatalf("query journal_mode: %v", err)
+	}
+	if journalMode != "wal" {
+		t.Fatalf("expected WAL journal mode, got %q", journalMode)
+	}
+}
