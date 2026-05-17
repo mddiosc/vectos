@@ -20,6 +20,45 @@ Format per release:
 
 ---
 
+## v0.10.0 — 2026-05-17
+
+Stability release focused on **indexing robustness**, **configurable Matryoshka dimensions**, and **improved MCP/Nx ergonomics**.
+
+### Added
+
+- **Configurable Matryoshka dimensions** — `vectos index --dimensions <dim>` and `embeddings.embedded.dimensions` config key let you choose the embedding vector size for jina-embeddings-v3. Valid values: 32, 64, 128, 256, 512, 768, 1024. Smaller dimensions trade a small amount of retrieval quality for faster search and lower storage. See [docs/indexing.md](docs/indexing.md#matryoshka-dimensions) for benchmarks and recommendations.
+- **Automatic embedding invalidation on model/dimension change** — when the embedding model or configured dimensions change between runs, `vectos index` automatically clears stale embeddings and rebuilds the vector index. No manual cleanup needed.
+- **Nx last-project memory for MCP** — when calling MCP tools from an Nx workspace root without specifying a project, Vectos now falls back to the last successfully resolved project instead of erroring. The remembered project is stored per-workspace using a canonical path hash (SHA-256).
+- **`InvalidateEmbeddings()` storage method** — new method that clears all embeddings and file hashes while preserving chunk text and metadata, used by the auto-invalidation flow.
+- **`syncIndexMetadata()` shared helper** — unified stale-metadata detection and invalidation logic used by both CLI and MCP indexing paths, eliminating a bug where MCP indexing could skip invalidation.
+- **Mixed-dimension defense in HNSW build** — `buildVectorIndex` now detects mixed-dimension embeddings via majority vote, filters mismatched vectors, and logs a warning instead of panicking.
+- **Matryoshka dimension documentation** — `docs/indexing.md` and `docs/cli.md` updated with dimension configuration, benchmark table, and recommendations.
+
+### Changed
+
+- **Default embedding dimensions reduced from 1024 to 512** — jina-embeddings-v3 now produces 512-dimensional vectors by default via Matryoshka truncation. Retrieval quality loss is negligible (−0.19 nDCG@10 vs full 1024d). Existing indexes are automatically re-embedded on next `vectos index`.
+- **Dimension configuration is model-aware** — the `--dimensions` flag and config key are only accepted for models that support Matryoshka dimensions (currently jina-embeddings-v3). Non-Matryoshka models like bge-small-en-v1.5 reject dimension overrides with a clear error.
+- **OpenCode MCP setup no longer sets a fixed timeout** — the `timeout: 10000` previously injected into `opencode.json` has been removed, preventing premature MCP disconnects during long indexing operations.
+- **Removed dead `prepareStoreForIndexing` function** — this no-op function (left over from the pre-hash-caching era) has been removed from CLI and MCP paths.
+
+### Fixed
+
+- **HNSW panic on mixed-dimension embeddings** — upgrading from bge-small (384d) to jina-v3 (1024d) left old embeddings in the database. The HNSW index builder now handles this gracefully instead of panicking.
+- **MCP indexing skipped stale-embedding invalidation** — `setupIndexRequest` in MCP handlers now uses the same `syncIndexMetadata` helper as CLI, ensuring model/dimension changes trigger proper cleanup.
+- **Incorrect `--reindex` suggestion in warning message** — the mixed-dimension warning previously recommended a non-existent `--reindex` flag; it now suggests `vectos index .`.
+- **Better bind error on port conflict** — `vectos serve` now detects `EADDRINUSE` and returns an actionable error message with the port number instead of a raw syscall error.
+- **Nx fallback preserves original error** — when the remembered-project fallback also fails, the original scope-resolution error is now included in the returned error instead of being silently replaced.
+- **Stable Nx workspace memory key** — workspace identification uses `filepath.Abs` + `filepath.EvalSymlinks` + SHA-256 instead of raw SHA-1, preventing key drift from symlink resolution inconsistencies.
+
+### Known Limitations
+
+- This remains an experimental/internal release. Stability and compatibility are not guaranteed.
+- Supported download platforms remain `darwin/arm64` and `linux/amd64` only.
+- The HNSW vector index is rebuilt on every `vectos index`; incremental index updates are deferred to a future release.
+- Matryoshka dimension configuration is currently supported only for `jina-embeddings-v3`.
+
+---
+
 ## v0.9.0 — 2026-05-16
 
 Agent experience release: `vectos setup` now installs a Vectos skill for AI coding agents, improving discoverability and ensuring sub-agents prefer Vectos MCP tools over built-in file search.
