@@ -54,7 +54,6 @@ func (OpenCodeAdapter) Apply(ctx Context) error {
 	mcpConfig["vectos"] = map[string]interface{}{
 		"type":    "local",
 		"enabled": true,
-		"timeout": 10000,
 		"command": []string{ctx.Executable, "mcp"},
 	}
 	config["mcp"] = mcpConfig

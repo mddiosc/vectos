@@ -16,16 +16,6 @@ import (
 	"vectos/internal/workspace"
 )
 
-func prepareStoreForIndexing(store *storage.SQLiteStorage, changedPaths []string) error {
-	if len(changedPaths) > 0 {
-		return nil
-	}
-	// No longer delete all chunks on full reindex — we use hash-based
-	// caching to skip unchanged files. Stale files (deleted from disk)
-	// are cleaned up by cleanupExcludedAndSkipped after indexing.
-	return nil
-}
-
 type indexEnv struct {
 	store       *storage.SQLiteStorage
 	chunker     *indexer.SimpleChunker
@@ -78,12 +68,12 @@ func setupIndexing(projectBaseDir string, scope workspace.Scope, embedConfig con
 		log.Fatalf("error opening database: %v", err)
 	}
 
-	if err := store.SetIndexMetadata(storage.IndexMetadata{
-		Provider:   providerInfo.Provider,
-		Model:      providerInfo.Model,
-		Dimensions: providerInfo.Dimensions,
-	}); err != nil {
-		log.Fatalf("error saving index metadata: %v", err)
+	message, err := syncIndexMetadata(store, providerInfo)
+	if err != nil {
+		log.Fatalf("error preparing index metadata: %v", err)
+	}
+	if message != "" {
+		fmt.Println(message)
 	}
 
 	chunker := indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10, BatchSize: embedConfig.Embedded.BatchSize}, embedClient)
@@ -138,10 +128,6 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 			log.Fatalf("error filtering changed paths: %v", err)
 		}
 	}
-	if err := prepareStoreForIndexing(env.store, changedPaths); err != nil {
-		log.Fatalf("error preparing index storage: %v", err)
-	}
-
 	totalFiles := len(paths)
 	if len(changedPaths) > 0 {
 		fmt.Printf("Found %d changed supported files\n", totalFiles)
@@ -182,17 +168,40 @@ func buildVectorIndex(store *storage.SQLiteStorage, chunker *indexer.SimpleChunk
 		return
 	}
 
-	ids := make([]int, 0, len(embeddingsByID))
-	var dimension int
-	for id, vector := range embeddingsByID {
-		ids = append(ids, id)
-		if dimension == 0 {
-			dimension = len(vector)
+	// Determine the dominant embedding dimension (majority vote) to handle
+	// mixed-dimension embeddings that can occur after model changes.
+	dimCounts := make(map[int]int)
+	for _, vector := range embeddingsByID {
+		dimCounts[len(vector)]++
+	}
+	var dimension, maxCount int
+	for dim, count := range dimCounts {
+		if count > maxCount {
+			dimension = dim
+			maxCount = count
 		}
 	}
 
 	if dimension == 0 {
 		log.Println("vector index build skipped: empty embeddings")
+		return
+	}
+
+	// Filter to only vectors matching the dominant dimension.
+	ids := make([]int, 0, len(embeddingsByID))
+	var skipped int
+	for id, vector := range embeddingsByID {
+		if len(vector) != dimension {
+			skipped++
+			continue
+		}
+		ids = append(ids, id)
+	}
+	if skipped > 0 {
+		log.Printf("warning: skipped %d embeddings with mismatched dimension (expected %d); run 'vectos index .' to rebuild a consistent index", skipped, dimension)
+	}
+	if len(ids) == 0 {
+		log.Println("vector index build skipped: no valid embeddings after filtering")
 		return
 	}
 

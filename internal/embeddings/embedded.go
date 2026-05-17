@@ -86,21 +86,22 @@ type ProviderStatus struct {
 }
 
 type EmbeddedEmbedder struct {
-	modelName     string
-	modelDir      string
-	autoDownload  bool
-	assetBaseURL  string
-	httpClient    *http.Client
-	status        ProviderStatus
-	tokenizer     *tokenizerpkg.Tokenizer
-	session       *ort.DynamicAdvancedSession
-	inputNames    []string
-	outputNames   []string
-	inputInfo     []ort.InputOutputInfo
-	outputInfo    []ort.InputOutputInfo
-	sequenceLen   int
-	embeddingSize int
-	mu            sync.Mutex
+	modelName       string
+	modelDir        string
+	autoDownload    bool
+	assetBaseURL    string
+	httpClient      *http.Client
+	status          ProviderStatus
+	tokenizer       *tokenizerpkg.Tokenizer
+	session         *ort.DynamicAdvancedSession
+	inputNames      []string
+	outputNames     []string
+	inputInfo       []ort.InputOutputInfo
+	outputInfo      []ort.InputOutputInfo
+	sequenceLen     int
+	embeddingSize   int
+	targetDimension int // Matryoshka truncation target; 0 = no truncation
+	mu              sync.Mutex
 }
 
 func NewEmbeddedEmbedder(cfg config.EmbeddedProviderConfig) (*EmbeddedEmbedder, ProviderInfo, error) {
@@ -132,6 +133,10 @@ func NewEmbeddedEmbedderWithStatus(cfg config.EmbeddedProviderConfig) (*Embedded
 		status.Message = "embedded model directory is required"
 		return nil, status, fmt.Errorf("%s", status.Message)
 	}
+	if err := config.ValidateEmbeddedDimensions(status.Model, cfg.Dimensions); err != nil {
+		status.Message = err.Error()
+		return nil, status, err
+	}
 
 	timeout := 60 * time.Second
 	if cfg.TimeoutS > 0 {
@@ -139,17 +144,24 @@ func NewEmbeddedEmbedderWithStatus(cfg config.EmbeddedProviderConfig) (*Embedded
 	}
 
 	embedder := &EmbeddedEmbedder{
-		modelName:    status.Model,
-		modelDir:     status.ModelDir,
-		autoDownload: cfg.AutoDownload,
-		assetBaseURL: strings.TrimRight(strings.TrimSpace(cfg.AssetBaseURL), "/"),
-		httpClient:   &http.Client{Timeout: timeout},
-		status:       status,
-		sequenceLen:  defaultSequenceLength,
+		modelName:       status.Model,
+		modelDir:        status.ModelDir,
+		autoDownload:    cfg.AutoDownload,
+		assetBaseURL:    strings.TrimRight(strings.TrimSpace(cfg.AssetBaseURL), "/"),
+		httpClient:      &http.Client{Timeout: timeout},
+		status:          status,
+		sequenceLen:     defaultSequenceLength,
+		targetDimension: cfg.Dimensions,
 	}
 
 	if err := embedder.ensureModelReady(); err != nil {
 		return nil, embedder.status, err
+	}
+
+	// Apply Matryoshka truncation: if the target dimension is smaller than
+	// the model's native embedding size, report the truncated dimension.
+	if config.SupportsMatryoshkaDimensions(embedder.modelName) && embedder.targetDimension > 0 && embedder.targetDimension < embedder.embeddingSize {
+		embedder.status.Dimensions = embedder.targetDimension
 	}
 
 	return embedder, embedder.status, nil
@@ -241,6 +253,10 @@ func (e *EmbeddedEmbedder) GetEmbeddings(texts []string) ([][]float32, error) {
 		embedding := meanPoolAndNormalize(seqData, maskRefs[i], outSeqLen, hiddenSize)
 		if len(embedding) == 0 {
 			return nil, fmt.Errorf("embedded pooling produced empty vector for text %d", i)
+		}
+		// Matryoshka truncation: reduce to target dimension and re-normalize.
+		if config.SupportsMatryoshkaDimensions(e.modelName) && e.targetDimension > 0 && e.targetDimension < len(embedding) {
+			embedding = truncateAndNormalize(embedding, e.targetDimension)
 		}
 		results[i] = embedding
 	}
@@ -577,6 +593,31 @@ func meanPoolAndNormalize(data []float32, attentionMask []int64, seqLen, hiddenS
 	}
 
 	return pooled
+}
+
+// truncateAndNormalize implements Matryoshka Representation Learning (MRL)
+// truncation: it slices the embedding to the first targetDim dimensions and
+// re-normalizes to unit length. Re-normalization is required because the
+// original L2 norm was computed over the full vector; truncating changes the
+// magnitude, which would break cosine similarity thresholds.
+func truncateAndNormalize(embedding []float32, targetDim int) []float32 {
+	if targetDim <= 0 || targetDim >= len(embedding) {
+		return embedding
+	}
+	truncated := make([]float32, targetDim)
+	copy(truncated, embedding[:targetDim])
+
+	var norm float64
+	for _, v := range truncated {
+		norm += float64(v * v)
+	}
+	if norm > 0 {
+		denominator := float32(math.Sqrt(norm))
+		for i := range truncated {
+			truncated[i] /= denominator
+		}
+	}
+	return truncated
 }
 
 func (e *EmbeddedEmbedder) ensureRuntimeLibrary() (string, error) {

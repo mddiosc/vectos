@@ -147,6 +147,25 @@ func DiscoverNxProjectNames(path string) ([]string, error) {
 	return names, nil
 }
 
+func DetectNxWorkspaceRoot(path string) (string, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return "", err
+	}
+
+	startDir := absPath
+	if !info.IsDir() {
+		startDir = filepath.Dir(absPath)
+	}
+
+	return detectNxWorkspaceRoot(startDir), nil
+}
+
 func detectNxWorkspaceRoot(startDir string) string {
 	current := startDir
 	for {

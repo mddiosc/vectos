@@ -19,6 +19,7 @@ type cliFlags struct {
 	indexProject        *string
 	indexChanged        *string
 	indexDocs           *bool
+	indexDimensions     *int
 	searchProject       *string
 	searchFull          *bool
 	searchDocs          *bool
@@ -64,6 +65,7 @@ func newCLIFlags() cliFlags {
 		indexProject:        indexCmd.String("project", "", "Nx project name to index with internal workspace dependencies when inside an Nx workspace"),
 		indexChanged:        indexCmd.String("changed", "", "Comma-separated changed file paths to refresh incrementally"),
 		indexDocs:           indexCmd.Bool("docs", false, "Index only documentation files into a separate docs database"),
+		indexDimensions:     indexCmd.Int("dimensions", 0, "Embedding dimensions (32, 64, 128, 256, 512, 768, 1024). Default: 512. Lower = faster + smaller, higher = better quality"),
 		searchProject:       searchCmd.String("project", "", "Nx project name to search with internal workspace dependencies when inside an Nx workspace"),
 		searchFull:          searchCmd.Bool("full", false, "Show full chunk content instead of compact snippets"),
 		searchDocs:          searchCmd.Bool("docs", false, "Search documentation index instead of source code"),

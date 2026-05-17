@@ -57,7 +57,7 @@ func runSearchCode(projectBaseDir string, embedConfig config.EmbeddingConfig, in
 // resolveScopeAndProjectManager resolves the tool scope and creates a project
 // manager for the given project base directory.
 func resolveScopeAndProjectManager(projectBaseDir string, input searchCodeInput) (*workspace.Scope, *storage.ProjectManager, error) {
-	scope, err := resolveToolScope(input.Path, input.Project)
+	scope, err := resolveToolScopeWithMemory(projectBaseDir, input.Path, input.Project)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -111,7 +111,7 @@ func makeSearchDocsHandler(projectBaseDir string, embedConfig config.EmbeddingCo
 }
 
 func runSearchDocs(projectBaseDir string, embedConfig config.EmbeddingConfig, input searchDocsInput) (*mcpSDK.CallToolResult, any, error) {
-	scope, err := resolveToolScope(input.Path, input.Project)
+	scope, err := resolveToolScopeWithMemory(projectBaseDir, input.Path, input.Project)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -165,10 +165,6 @@ func runIndexProject(projectBaseDir string, embedConfig config.EmbeddingConfig, 
 	}
 	defer store.Close()
 
-	if err := prepareStoreForIndexing(store, changedPaths); err != nil {
-		return nil, nil, err
-	}
-
 	indexedFiles, count, err := indexPaths(store, embedClient, paths, embedConfig.Embedded.BatchSize)
 	if err != nil {
 		return nil, nil, err
@@ -190,10 +186,12 @@ func setupIndexRequest(projectBaseDir string, embedConfig config.EmbeddingConfig
 	changedPaths []string,
 	err error,
 ) {
-	scope, err = workspace.ResolveScope(input.Path, input.Project)
-	if err != nil {
+	resolvedScope, resolveErr := resolveToolScopeWithMemory(projectBaseDir, input.Path, input.Project)
+	if resolveErr != nil {
+		err = resolveErr
 		return
 	}
+	scope = *resolvedScope
 
 	var pm *storage.ProjectManager
 	pm, err = newProjectManager(projectBaseDir)
@@ -219,11 +217,7 @@ func setupIndexRequest(projectBaseDir string, embedConfig config.EmbeddingConfig
 		return
 	}
 
-	if err = store.SetIndexMetadata(storage.IndexMetadata{
-		Provider:   providerInfo.Provider,
-		Model:      providerInfo.Model,
-		Dimensions: providerInfo.Dimensions,
-	}); err != nil {
+	if _, err = syncIndexMetadata(store, providerInfo); err != nil {
 		return
 	}
 
@@ -267,10 +261,10 @@ func indexPaths(store *storage.SQLiteStorage, embedClient embeddings.Embedder, p
 
 	// Phase 1: chunk every file raw.
 	var pending []struct {
-		chunk   indexer.ChunkResult
-		path    string
-		lang    string
-		hash    string
+		chunk indexer.ChunkResult
+		path  string
+		lang  string
+		hash  string
 	}
 	for _, path := range paths {
 		hash, err := computeFileHash(path)
@@ -290,10 +284,10 @@ func indexPaths(store *storage.SQLiteStorage, embedClient embeddings.Embedder, p
 		}
 		for _, c := range chunks {
 			pending = append(pending, struct {
-				chunk   indexer.ChunkResult
-				path    string
-				lang    string
-				hash    string
+				chunk indexer.ChunkResult
+				path  string
+				lang  string
+				hash  string
 			}{chunk: c, path: path, lang: language, hash: hash})
 		}
 		indexedFiles++
