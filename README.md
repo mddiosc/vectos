@@ -10,7 +10,9 @@ Vectos is designed to be useful as a standalone product. It can also work alongs
 
 ## Project Status
 
-Vectos is still under active development. Supported file types, setup flows, indexing behavior, and CLI/MCP details may change as the project matures.
+Vectos v1.0 is a stable release. The CLI interface and MCP tool protocol are considered stable — breaking changes will only occur in a new major version.
+
+Supported platforms: `darwin/arm64` and `linux/amd64`.
 
 ## Key Features
 
