@@ -80,8 +80,8 @@ func runIndexCommand(app appContext, args []string) {
 	}
 	// CLI --dimensions flag overrides config file setting.
 	if *app.flags.indexDimensions > 0 {
-		if !config.IsValidMatryoshkaDimension(*app.flags.indexDimensions) {
-			fmt.Fprintf(os.Stderr, "error: unsupported --dimensions %d: must be one of %v\n", *app.flags.indexDimensions, config.MatryoshkaDimensions)
+		if err := config.ValidateEmbeddedDimensions(app.embedConfig.Embedded.ModelName, *app.flags.indexDimensions); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
 		app.embedConfig.Embedded.Dimensions = *app.flags.indexDimensions

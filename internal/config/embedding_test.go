@@ -146,7 +146,7 @@ func TestIsValidMatryoshkaDimension(t *testing.T) {
 
 func TestMergeEmbeddedConfig_DimensionsValidation(t *testing.T) {
 	// Valid dimension should be accepted.
-	dst := EmbeddedProviderConfig{Dimensions: 512}
+	dst := EmbeddedProviderConfig{ModelName: "jina-embeddings-v3", Dimensions: 512}
 	dim256 := 256
 	err := mergeEmbeddedConfig(&dst, embeddedProviderConfigDisk{Dimensions: &dim256})
 	if err != nil {
@@ -157,7 +157,7 @@ func TestMergeEmbeddedConfig_DimensionsValidation(t *testing.T) {
 	}
 
 	// Invalid dimension should be rejected.
-	dst2 := EmbeddedProviderConfig{Dimensions: 512}
+	dst2 := EmbeddedProviderConfig{ModelName: "jina-embeddings-v3", Dimensions: 512}
 	dim100 := 100
 	err = mergeEmbeddedConfig(&dst2, embeddedProviderConfigDisk{Dimensions: &dim100})
 	if err == nil {
@@ -165,6 +165,40 @@ func TestMergeEmbeddedConfig_DimensionsValidation(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unsupported embedding dimensions") {
 		t.Errorf("error should mention unsupported dimensions, got: %v", err)
+	}
+}
+
+func TestMergeEmbeddedConfig_ResetsDimensionsForNonMatryoshkaModel(t *testing.T) {
+	dst := EmbeddedProviderConfig{ModelName: DefaultEmbeddedModel, Dimensions: DefaultMatryoshkaDimensions}
+	bge := "bge-small-en-v1.5"
+	if err := mergeEmbeddedConfig(&dst, embeddedProviderConfigDisk{ModelName: &bge}); err != nil {
+		t.Fatalf("mergeEmbeddedConfig returned error: %v", err)
+	}
+	if dst.Dimensions != 0 {
+		t.Fatalf("expected dimensions to reset for non-Matryoshka model, got %d", dst.Dimensions)
+	}
+}
+
+func TestValidateEmbeddedDimensions_NonMatryoshkaModel(t *testing.T) {
+	err := ValidateEmbeddedDimensions("bge-small-en-v1.5", 256)
+	if err == nil {
+		t.Fatal("expected error for non-Matryoshka model")
+	}
+	if !strings.Contains(err.Error(), "does not support configurable dimensions") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := ValidateEmbeddedDimensions("bge-small-en-v1.5", 0); err != nil {
+		t.Fatalf("expected zero dimensions to be allowed, got %v", err)
+	}
+}
+
+func TestDefaultEmbeddedDimensionsForModel(t *testing.T) {
+	if got := DefaultEmbeddedDimensionsForModel("jina-embeddings-v3"); got != 512 {
+		t.Fatalf("jina default dimensions = %d, want 512", got)
+	}
+	if got := DefaultEmbeddedDimensionsForModel("bge-small-en-v1.5"); got != 0 {
+		t.Fatalf("bge default dimensions = %d, want 0", got)
 	}
 }
 

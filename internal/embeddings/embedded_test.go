@@ -4,7 +4,10 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strings"
 	"testing"
+
+	"vectos/internal/config"
 )
 
 func TestValidateDownloadContentType(t *testing.T) {
@@ -237,5 +240,20 @@ func TestTruncateAndNormalize_DoesNotMutateOriginal(t *testing.T) {
 		if original[i] != originalCopy[i] {
 			t.Errorf("original[%d] mutated: got %f, want %f", i, original[i], originalCopy[i])
 		}
+	}
+}
+
+func TestNewEmbeddedEmbedderWithStatusRejectsDimensionsForNonMatryoshkaModel(t *testing.T) {
+	_, _, err := NewEmbeddedEmbedderWithStatus(config.EmbeddedProviderConfig{
+		Enabled:    true,
+		ModelName:  "bge-small-en-v1.5",
+		ModelDir:   t.TempDir(),
+		Dimensions: 256,
+	})
+	if err == nil {
+		t.Fatal("expected error for non-Matryoshka dimensions")
+	}
+	if got := err.Error(); got == "" || !strings.Contains(got, "does not support configurable dimensions") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -22,13 +22,17 @@ func resolveToolScopeWithMemory(projectBaseDir string, path string, projectName 
 		return scope, nil
 	}
 
-	if strings.TrimSpace(projectName) != "" {
+	if strings.TrimSpace(projectName) != "" || !shouldRetryScopeResolutionWithMemory(err) {
 		return nil, err
 	}
 
-	startPath, startErr := scopeStartPath(path)
-	if startErr != nil {
-		return nil, err
+	startPath := strings.TrimSpace(path)
+	if startPath == "" {
+		wd, wdErr := os.Getwd()
+		if wdErr != nil {
+			return nil, err
+		}
+		startPath = wd
 	}
 
 	workspaceRoot, rootErr := workspace.DetectNxWorkspaceRoot(startPath)
@@ -43,18 +47,18 @@ func resolveToolScopeWithMemory(projectBaseDir string, path string, projectName 
 
 	resolved, fallbackErr := workspace.ResolveScope(startPath, lastProject)
 	if fallbackErr != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w (fallback to remembered Nx project %q also failed: %v)", err, lastProject, fallbackErr)
 	}
 	resolved.Warnings = append(resolved.Warnings, fmt.Sprintf("No Nx project specified from workspace root; reusing last project %q", lastProject))
 	rememberResolvedNxProject(projectBaseDir, resolved)
 	return &resolved, nil
 }
 
-func scopeStartPath(path string) (string, error) {
-	if strings.TrimSpace(path) != "" {
-		return path, nil
+func shouldRetryScopeResolutionWithMemory(err error) bool {
+	if err == nil {
+		return false
 	}
-	return os.Getwd()
+	return strings.Contains(err.Error(), "Nx workspace root") && strings.Contains(err.Error(), "please specify a project name")
 }
 
 func rememberResolvedNxProject(projectBaseDir string, scope workspace.Scope) {
@@ -96,10 +100,18 @@ func loadRememberedNxProject(projectBaseDir string, workspaceRoot string) (strin
 }
 
 func nxWorkspaceMemoryPath(projectBaseDir string, workspaceRoot string) string {
-	normalizedRoot := workspaceRoot
-	if resolved, err := filepath.EvalSymlinks(workspaceRoot); err == nil && strings.TrimSpace(resolved) != "" {
+	normalizedRoot := canonicalWorkspaceRoot(workspaceRoot)
+	sum := sha256.Sum256([]byte(normalizedRoot))
+	return filepath.Join(projectBaseDir, ".nx-workspaces", fmt.Sprintf("%x.json", sum))
+}
+
+func canonicalWorkspaceRoot(workspaceRoot string) string {
+	normalizedRoot := filepath.Clean(strings.TrimSpace(workspaceRoot))
+	if absRoot, err := filepath.Abs(normalizedRoot); err == nil && strings.TrimSpace(absRoot) != "" {
+		normalizedRoot = absRoot
+	}
+	if resolved, err := filepath.EvalSymlinks(normalizedRoot); err == nil && strings.TrimSpace(resolved) != "" {
 		normalizedRoot = resolved
 	}
-	sum := sha1.Sum([]byte(normalizedRoot))
-	return filepath.Join(projectBaseDir, ".nx-workspaces", fmt.Sprintf("%x.json", sum))
+	return filepath.Clean(normalizedRoot)
 }

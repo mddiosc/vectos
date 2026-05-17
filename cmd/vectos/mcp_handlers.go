@@ -165,10 +165,6 @@ func runIndexProject(projectBaseDir string, embedConfig config.EmbeddingConfig, 
 	}
 	defer store.Close()
 
-	if err := prepareStoreForIndexing(changedPaths); err != nil {
-		return nil, nil, err
-	}
-
 	indexedFiles, count, err := indexPaths(store, embedClient, paths, embedConfig.Embedded.BatchSize)
 	if err != nil {
 		return nil, nil, err
@@ -221,11 +217,7 @@ func setupIndexRequest(projectBaseDir string, embedConfig config.EmbeddingConfig
 		return
 	}
 
-	if err = store.SetIndexMetadata(storage.IndexMetadata{
-		Provider:   providerInfo.Provider,
-		Model:      providerInfo.Model,
-		Dimensions: providerInfo.Dimensions,
-	}); err != nil {
+	if _, err = syncIndexMetadata(store, providerInfo); err != nil {
 		return
 	}
 
@@ -269,10 +261,10 @@ func indexPaths(store *storage.SQLiteStorage, embedClient embeddings.Embedder, p
 
 	// Phase 1: chunk every file raw.
 	var pending []struct {
-		chunk   indexer.ChunkResult
-		path    string
-		lang    string
-		hash    string
+		chunk indexer.ChunkResult
+		path  string
+		lang  string
+		hash  string
 	}
 	for _, path := range paths {
 		hash, err := computeFileHash(path)
@@ -292,10 +284,10 @@ func indexPaths(store *storage.SQLiteStorage, embedClient embeddings.Embedder, p
 		}
 		for _, c := range chunks {
 			pending = append(pending, struct {
-				chunk   indexer.ChunkResult
-				path    string
-				lang    string
-				hash    string
+				chunk indexer.ChunkResult
+				path  string
+				lang  string
+				hash  string
 			}{chunk: c, path: path, lang: language, hash: hash})
 		}
 		indexedFiles++

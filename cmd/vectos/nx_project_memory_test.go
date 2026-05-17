@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,5 +90,46 @@ func TestResolveToolScopeWithMemoryRemembersResolvedProject(t *testing.T) {
 	}
 	if remembered != "app-one" {
 		t.Fatalf("unexpected remembered project: got %s want app-one", remembered)
+	}
+}
+
+func TestResolveToolScopeWithMemoryPreservesOriginalError(t *testing.T) {
+	projectBaseDir := t.TempDir()
+	missingPath := filepath.Join(t.TempDir(), "missing")
+
+	_, err := resolveToolScopeWithMemory(projectBaseDir, missingPath, "")
+	if err == nil {
+		t.Fatal("expected error for missing path")
+	}
+	if !strings.Contains(err.Error(), missingPath) {
+		t.Fatalf("expected original error to mention missing path, got: %v", err)
+	}
+}
+
+func TestNxWorkspaceMemoryPathUsesCanonicalRoot(t *testing.T) {
+	projectBaseDir := t.TempDir()
+	parentDir := t.TempDir()
+	realRoot := filepath.Join(parentDir, "real-workspace")
+	if err := os.MkdirAll(realRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+	linkRoot := filepath.Join(parentDir, "workspace-link")
+	if err := os.Symlink(realRoot, linkRoot); err != nil {
+		t.Skipf("symlink not supported: %v", err)
+	}
+
+	realPath := nxWorkspaceMemoryPath(projectBaseDir, realRoot)
+	linkPath := nxWorkspaceMemoryPath(projectBaseDir, linkRoot)
+	if realPath != linkPath {
+		t.Fatalf("expected canonical workspace paths to match:\nreal=%s\nlink=%s", realPath, linkPath)
+	}
+}
+
+func TestShouldRetryScopeResolutionWithMemory(t *testing.T) {
+	if !shouldRetryScopeResolutionWithMemory(fmt.Errorf("path is the Nx workspace root; please specify a project name")) {
+		t.Fatal("expected Nx root ambiguity error to be retryable")
+	}
+	if shouldRetryScopeResolutionWithMemory(fmt.Errorf("path does not exist")) {
+		t.Fatal("did not expect unrelated errors to be retryable")
 	}
 }

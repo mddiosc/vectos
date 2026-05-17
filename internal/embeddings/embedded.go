@@ -133,6 +133,10 @@ func NewEmbeddedEmbedderWithStatus(cfg config.EmbeddedProviderConfig) (*Embedded
 		status.Message = "embedded model directory is required"
 		return nil, status, fmt.Errorf("%s", status.Message)
 	}
+	if err := config.ValidateEmbeddedDimensions(status.Model, cfg.Dimensions); err != nil {
+		status.Message = err.Error()
+		return nil, status, err
+	}
 
 	timeout := 60 * time.Second
 	if cfg.TimeoutS > 0 {
@@ -156,7 +160,7 @@ func NewEmbeddedEmbedderWithStatus(cfg config.EmbeddedProviderConfig) (*Embedded
 
 	// Apply Matryoshka truncation: if the target dimension is smaller than
 	// the model's native embedding size, report the truncated dimension.
-	if embedder.targetDimension > 0 && embedder.targetDimension < embedder.embeddingSize {
+	if config.SupportsMatryoshkaDimensions(embedder.modelName) && embedder.targetDimension > 0 && embedder.targetDimension < embedder.embeddingSize {
 		embedder.status.Dimensions = embedder.targetDimension
 	}
 
@@ -251,7 +255,7 @@ func (e *EmbeddedEmbedder) GetEmbeddings(texts []string) ([][]float32, error) {
 			return nil, fmt.Errorf("embedded pooling produced empty vector for text %d", i)
 		}
 		// Matryoshka truncation: reduce to target dimension and re-normalize.
-		if e.targetDimension > 0 && e.targetDimension < len(embedding) {
+		if config.SupportsMatryoshkaDimensions(e.modelName) && e.targetDimension > 0 && e.targetDimension < len(embedding) {
 			embedding = truncateAndNormalize(embedding, e.targetDimension)
 		}
 		results[i] = embedding

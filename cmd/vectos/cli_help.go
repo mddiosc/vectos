@@ -54,7 +54,7 @@ func printSubcommandHelp(cmd string) {
 		fmt.Println("  --project <name>       Nx project name to scope the index and internal dependencies (optional)")
 		fmt.Println("  --changed <paths>      Comma-separated changed file paths to refresh incrementally")
 		fmt.Println("  --docs                 Index only documentation files into a separate docs database")
-		fmt.Println("  --dimensions <num>     Embedding vector dimensions (default: 512)")
+		fmt.Println("  --dimensions <num>     Embedding vector dimensions for jina-embeddings-v3 (default: 512)")
 		fmt.Println()
 		fmt.Println("Dimensions (Matryoshka Representation Learning):")
 		fmt.Println("  jina-embeddings-v3 supports Matryoshka truncation, allowing you to trade")
