@@ -23,6 +23,15 @@ func TestOpenCodeAdapterInstallsSkill(t *testing.T) {
 	if string(content) != vectosSkillSource {
 		t.Fatalf("unexpected skill content:\nwant: %q\ngot:  %q", vectosSkillSource, string(content))
 	}
+
+	configPath := filepath.Join(dir, ".config", "opencode", "opencode.json")
+	configContent, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("expected config file to exist: %v", err)
+	}
+	if strings.Contains(string(configContent), `"timeout"`) {
+		t.Fatalf("expected OpenCode MCP config to omit timeout, got: %s", string(configContent))
+	}
 }
 
 func TestOpenCodeAdapterRemovesSkill(t *testing.T) {
