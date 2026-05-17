@@ -17,7 +17,13 @@ const (
 	DefaultEmbeddedAssetBaseURL   = "https://huggingface.co/jinaai/jina-embeddings-v3/resolve/main"
 	DefaultBGEAssetBaseURL        = "https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main"
 	DefaultRemoteModel            = "text-embedding-nomic-embed-text-v1.5"
+	DefaultMatryoshkaDimensions   = 512
 )
+
+// MatryoshkaDimensions lists the valid output dimensions supported by
+// Matryoshka Representation Learning (MRL) models like jina-embeddings-v3.
+// Truncating to any of these sizes preserves embedding quality proportionally.
+var MatryoshkaDimensions = []int{32, 64, 128, 256, 512, 768, 1024}
 
 // SupportedEmbeddedModels lists the model names accepted in embedded model_name config.
 var SupportedEmbeddedModels = []string{"jina-embeddings-v3", "bge-small-en-v1.5"}
@@ -65,6 +71,7 @@ type EmbeddedProviderConfig struct {
 	AssetBaseURL string `json:"asset_base_url,omitempty"`
 	TimeoutS     int    `json:"timeout_seconds,omitempty"`
 	BatchSize    int    `json:"batch_size,omitempty"`
+	Dimensions   int    `json:"dimensions,omitempty"`
 }
 
 // DefaultEmbeddedBatchSize is the number of texts to embed in a single
@@ -141,6 +148,7 @@ type embeddedProviderConfigDisk struct {
 	AssetBaseURL *string `json:"asset_base_url,omitempty"`
 	TimeoutS     *int    `json:"timeout_seconds,omitempty"`
 	BatchSize    *int    `json:"batch_size,omitempty"`
+	Dimensions   *int    `json:"dimensions,omitempty"`
 }
 
 type remoteProviderConfigDisk struct {
@@ -196,7 +204,8 @@ func DefaultEmbeddingConfig(homeDir string) EmbeddingConfig {
 			AssetBaseURL: DefaultEmbeddedAssetBaseURL,
 			TimeoutS:     60,
 			// 0 = auto-detect based on available RAM (see AdaptiveBatchSize)
-			BatchSize: 0,
+			BatchSize:  0,
+			Dimensions: DefaultMatryoshkaDimensions,
 		},
 		Remote: RemoteProviderConfig{
 			Enabled:  false,
@@ -258,6 +267,12 @@ func mergeEmbeddedConfig(dst *EmbeddedProviderConfig, src embeddedProviderConfig
 	}
 	if src.BatchSize != nil && *src.BatchSize > 0 {
 		dst.BatchSize = *src.BatchSize
+	}
+	if src.Dimensions != nil && *src.Dimensions > 0 {
+		if !IsValidMatryoshkaDimension(*src.Dimensions) {
+			return fmt.Errorf("unsupported embedding dimensions %d: must be one of %v", *src.Dimensions, MatryoshkaDimensions)
+		}
+		dst.Dimensions = *src.Dimensions
 	}
 	if src.AssetBaseURL != nil && strings.TrimSpace(*src.AssetBaseURL) != "" {
 		trimmed := strings.TrimSpace(*src.AssetBaseURL)
@@ -323,6 +338,17 @@ func embeddedModelDir(currentDir, modelName string) string {
 	}
 	parent := filepath.Dir(currentDir)
 	return filepath.Join(parent, modelName)
+}
+
+// IsValidMatryoshkaDimension returns true if dim is one of the supported
+// Matryoshka truncation sizes.
+func IsValidMatryoshkaDimension(dim int) bool {
+	for _, d := range MatryoshkaDimensions {
+		if d == dim {
+			return true
+		}
+	}
+	return false
 }
 
 // embeddedAssetBaseURL returns the default asset base URL for a supported model.

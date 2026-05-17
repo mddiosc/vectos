@@ -3,7 +3,7 @@
 ## What Vectos Does
 
 - Indexes source files into per-project SQLite databases under `~/.vectos/projects/`
-- Generates embeddings for code chunks using a configurable embedding provider (default: **jina-embeddings-v3**, a code+text-aware model with 1024 dimensions and 8192 token context)
+- Generates embeddings for code chunks using a configurable embedding provider (default: **jina-embeddings-v3**, a code+text-aware model with 8192 token context. Default output: **512 dimensions** via Matryoshka truncation, configurable from 32 to 1024)
 - Supports hybrid retrieval:
   - semantic search with cosine similarity over stored embeddings
   - text fallback when semantic search is unavailable or insufficient
@@ -182,6 +182,47 @@ The embedding batch size controls how many chunks are embedded in a single ONNX 
 
 Default: `32`. Larger values may improve indexing throughput at the cost of higher memory usage.
 
+### Matryoshka Dimensions
+
+jina-embeddings-v3 supports **Matryoshka Representation Learning (MRL)** — embeddings can be truncated to a smaller dimension while preserving most of the search quality. This lets you trade retrieval accuracy for speed and storage.
+
+Set the output dimension with the `--dimensions` flag or via config:
+
+```bash
+vectos index . --dimensions 256
+```
+
+Config in `~/.vectos/config.json`:
+
+```json
+{
+  "embeddings": {
+    "embedded": {
+      "dimensions": 256
+    }
+  }
+}
+```
+
+Valid values: `32`, `64`, `128`, `256`, `512`, `768`, `1024`.
+
+| Dimension | Retrieval Quality (nDCG@10) | vs 1024d | Storage per vector |
+|-----------|----------------------------|----------|-------------------|
+| 1024 | 63.35% | baseline | 4,096 bytes |
+| 768 | 63.30% | −0.05 | 3,072 bytes |
+| 512 | 63.16% | −0.19 | 2,048 bytes ← **default** |
+| 256 | 62.72% | −0.63 | 1,024 bytes |
+| 128 | 61.64% | −1.71 | 512 bytes |
+| 64 | 58.54% | −4.81 | 256 bytes |
+| 32 | 52.54% | −10.81 | 128 bytes |
+
+**Recommendations:**
+- **512** (default) — good balance for most projects
+- **256** — large monorepos where speed and storage matter
+- **1024** — when maximum retrieval precision is critical
+
+Changing dimensions triggers automatic re-embedding of all files. The previous index is invalidated and rebuilt with the new dimension.
+
 Search results preserve both logical project scope and file classification metadata.
 
 For Go, Vectos prefers function-oriented chunk boundaries. For TypeScript and React-heavy files, Vectos now also prefers higher-signal structural boundaries such as exported functions, hooks, components, classes, and common test blocks when those boundaries can be derived safely. When they cannot, it falls back to the generic chunking strategy.
@@ -286,6 +327,7 @@ Typical cases that require reindexing:
 - switching from `embedded` to `remote`
 - changing the embedded model
 - changing the remote model to one with different dimensions
+- changing the Matryoshka `dimensions` setting (e.g., 512 → 256)
 - rebuilding the index with a different embedding space
 
 See also: [Development](development.md)

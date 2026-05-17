@@ -15,6 +15,15 @@ vectos index .
 vectos index sample_code.go
 ```
 
+Control embedding dimensions with `--dimensions` (default: 512):
+
+```bash
+vectos index . --dimensions 256
+vectos index . --dimensions 1024
+```
+
+Valid values: `32`, `64`, `128`, `256`, `512`, `768`, `1024`. Lower values use less storage but reduce retrieval precision slightly. See [Indexing And Retrieval](indexing.md#matryoshka-dimensions) for quality benchmarks.
+
 Refresh only changed files within the selected project scope:
 
 ```bash
