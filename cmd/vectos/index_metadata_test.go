@@ -46,7 +46,9 @@ func TestSyncIndexMetadataInvalidatesStaleEmbeddings(t *testing.T) {
 	}
 
 	idx := vectorindex.NewHNSW(4, vectorindex.Config{})
-	idx.Insert(1, []float32{1, 0, 0, 0})
+	if err := idx.Insert(1, []float32{1, 0, 0, 0}); err != nil {
+		t.Fatalf("insert vector index node: %v", err)
+	}
 	if err := idx.Save(store.VectorIndexPath(), sha256.Sum256([]byte("hash")), "none", nil); err != nil {
 		t.Fatalf("save vector index: %v", err)
 	}

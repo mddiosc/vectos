@@ -10,9 +10,9 @@ type SQ8Params struct {
 }
 
 // ComputeSQ8Params computes min/max per dimension across all vectors.
-func ComputeSQ8Params(vectors [][]float32) *SQ8Params {
+func ComputeSQ8Params(vectors [][]float32) (*SQ8Params, error) {
 	if len(vectors) == 0 {
-		return &SQ8Params{}
+		return &SQ8Params{}, nil
 	}
 	dim := len(vectors[0])
 	params := &SQ8Params{Mins: make([]float32, dim), Maxs: make([]float32, dim), Dim: dim}
@@ -22,14 +22,18 @@ func ComputeSQ8Params(vectors [][]float32) *SQ8Params {
 	}
 	for _, v := range vectors {
 		if len(v) != dim {
-			panic("vectorindex: vector dimension mismatch")
+			return nil, newDimensionMismatchError(dim, len(v))
 		}
 		for i, x := range v {
-			if x < params.Mins[i] { params.Mins[i] = x }
-			if x > params.Maxs[i] { params.Maxs[i] = x }
+			if x < params.Mins[i] {
+				params.Mins[i] = x
+			}
+			if x > params.Maxs[i] {
+				params.Maxs[i] = x
+			}
 		}
 	}
-	return params
+	return params, nil
 }
 
 // EncodeSQ8 quantizes vectors to int8 using the params.
@@ -46,8 +50,12 @@ func EncodeSQ8(vectors [][]float32, params *SQ8Params) []int8 {
 				continue
 			}
 			n := math.Round(float64((x-min)/(max-min)*255 - 128))
-			if n < -128 { n = -128 }
-			if n > 127 { n = 127 }
+			if n < -128 {
+				n = -128
+			}
+			if n > 127 {
+				n = 127
+			}
 			out = append(out, int8(n))
 		}
 	}
@@ -66,7 +74,10 @@ func DecodeSQ8(encoded []int8, params *SQ8Params) [][]float32 {
 		for i := 0; i < params.Dim; i++ {
 			x := float64(encoded[v*params.Dim+i])
 			min, max := float64(params.Mins[i]), float64(params.Maxs[i])
-			if max == min { vec[i] = float32(min); continue }
+			if max == min {
+				vec[i] = float32(min)
+				continue
+			}
 			vec[i] = float32(((x+128)/255)*(max-min) + min)
 		}
 		out[v] = vec

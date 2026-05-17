@@ -196,14 +196,11 @@ func TestHNSW_EfSearch(t *testing.T) {
 	}
 }
 
-func TestHNSWInsert_PanicsOnDimensionMismatch(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic on dimension mismatch")
-		}
-	}()
+func TestHNSWInsert_ReturnsErrorOnDimensionMismatch(t *testing.T) {
 	h := NewHNSW(3, Config{})
-	h.Insert(1, []float32{1, 2})
+	if err := h.Insert(1, []float32{1, 2}); err == nil {
+		t.Fatal("expected dimension mismatch error")
+	}
 }
 
 func TestCosineDistance_Identical(t *testing.T) {
