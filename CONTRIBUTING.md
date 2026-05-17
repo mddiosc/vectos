@@ -1,6 +1,6 @@
 # Contributing to Vectos
 
-Vectos is still in the `0.x` experimental phase. Interfaces, packaging, and behavior may change without notice.
+Vectos follows [SemVer](https://semver.org/). The CLI and MCP interfaces are stable from v1.0 onward — breaking changes require a major version bump.
 
 ## Prerequisites
 

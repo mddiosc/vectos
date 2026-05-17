@@ -2,8 +2,7 @@
 
 ## Release Install
 
-> Experimental/internal builds. Not a stable public release.
-> Supported platforms: `darwin/arm64` and `linux/amd64` only.
+> Supported platforms: `darwin/arm64` and `linux/amd64`.
 
 Install the latest release:
 

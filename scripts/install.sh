@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # Vectos installer
 #
-# Downloads the correct experimental release asset for the current platform,
+# Downloads the correct release asset for the current platform,
 # verifies the checksum, and installs the vectos binary.
 #
 # Usage (from a release):
@@ -211,7 +211,7 @@ case "${OS}/${ARCH}" in
 esac
 
 if [ "$SUPPORTED" = "0" ]; then
-  printf 'Platform %s/%s is not supported by experimental release assets.\n' "$OS" "$ARCH"
+  printf 'Platform %s/%s is not supported by release assets.\n' "$OS" "$ARCH"
   printf 'To install from source instead, run:\n'
   printf '  ./scripts/install.sh --from-source\n'
   exit 1
@@ -280,6 +280,5 @@ ensure_path_config
 
 printf '\nRun `vectos version` to verify the installation.\n'
 printf '\n'
-printf '  ⚠️  Experimental/internal build — not a stable public release.\n'
-printf '  The embedded provider downloads ONNX Runtime and model assets\n'
+printf '  Note: the embedded provider downloads ONNX Runtime and model assets\n'
 printf '  on first use into ~/.vectos/models/\n'

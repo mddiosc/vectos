@@ -2,9 +2,8 @@
 
 All notable changes to Vectos are documented here.
 
-This project uses [SemVer](https://semver.org/) in the `0.x` range.
-Releases in this phase are **experimental/internal builds** — interfaces,
-packaging, and behavior may change without notice.
+This project uses [SemVer](https://semver.org/). From v1.0.0 onward the CLI
+and MCP interfaces are stable — breaking changes require a major version bump.
 
 Format per release:
 
@@ -17,6 +16,43 @@ Format per release:
 ```
 
 ---
+
+## v1.0.0 — 2026-05-18
+
+First stable release. The CLI and MCP tool interfaces are now considered stable.
+
+### Added
+
+- **Streaming embedding iteration** — `ForEachEmbedding()` streams vectors from SQLite without loading the full dataset into memory, keeping heap usage bounded even for 100k+ embedding repos.
+- **Memory-bounded linear scan** — `searchLinearScan()` now keeps only the top-k results in memory during scoring, preventing unbounded growth.
+- **OOM guard on `GetAllEmbeddings()`** — refuses to load more than 128 MiB of embeddings into memory; callers should use `ForEachEmbedding()` instead.
+- **Typed dimension-mismatch errors** — `ErrVectorDimensionMismatch` replaces panics in `HNSW.Insert()` and `ComputeSQ8Params()`, enabling graceful error handling.
+- **User-facing error package (`internal/usererr`)** — wraps filesystem errors with clear, actionable messages (not found, permission denied).
+- **Actionable remote-provider errors** — timeout, rate-limit, auth, and connectivity failures from the embedding API now include remediation hints.
+- **SQLite WAL mode** — all databases open with `_journal_mode=WAL` and `_busy_timeout=5000` for better concurrency.
+- **SQ8 metadata validation on index load** — `LoadVectorIndex()` rejects corrupt state (missing params, dimension mismatch).
+- **Pre-release validation suite** — 100k-embedding stress test, index invalidation/rebuild tests, and CLI smoke test (`index` → `search` → incremental reindex → `status`).
+- **Performance documentation** — `docs/performance.md` with measured streaming and search metrics.
+- **Error guide** — `docs/errors.md` with common error scenarios and remediation steps.
+
+### Changed
+
+- **`HNSW.Insert()` returns `error`** — callers must handle the returned error instead of recovering from a panic.
+- **`ComputeSQ8Params()` returns `(*SQ8Params, error)`** — same pattern as above.
+- **`buildVectorIndex()` streams embeddings** — two-pass streaming rebuild replaces the in-memory `GetAllEmbeddings()` approach.
+- **Release pipeline de-experimentalized** — workflow name, release title, and body no longer carry experimental warnings.
+- **Product messaging updated** — README, CONTRIBUTING, docs, and install script reflect stable v1.0 status.
+
+### Fixed
+
+- **Zero panics in `internal/`** — all dimension-mismatch panics replaced with structured errors.
+- **SQLite lock contention under concurrent access** — WAL + busy timeout eliminates most spurious `database is locked` failures.
+
+### Known Limitations
+
+- Supported platforms remain `darwin/arm64` and `linux/amd64` only.
+- The HNSW vector index is rebuilt on every `vectos index`; incremental index updates are deferred to a future release.
+- Matryoshka dimension configuration is currently supported only for `jina-embeddings-v3`.
 
 ---
 
@@ -52,7 +88,6 @@ Stability release focused on **indexing robustness**, **configurable Matryoshka 
 
 ### Known Limitations
 
-- This remains an experimental/internal release. Stability and compatibility are not guaranteed.
 - Supported download platforms remain `darwin/arm64` and `linux/amd64` only.
 - The HNSW vector index is rebuilt on every `vectos index`; incremental index updates are deferred to a future release.
 - Matryoshka dimension configuration is currently supported only for `jina-embeddings-v3`.

@@ -235,4 +235,4 @@ If Vectos consistently fails (index won't build, MCP down, unsupported file type
 
 1. Try CLI fallback first (`vectos search "query"`).
 2. If CLI also fails, use grep/glob as usual.
-3. Report the issue — Vectos is under active development.
+3. Report the issue — see [troubleshooting](docs/troubleshooting.md).

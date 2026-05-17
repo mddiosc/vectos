@@ -1,7 +1,7 @@
-name: Experimental Release
+name: Release
 
-# Triggered when a version tag is pushed (e.g. v0.1.0).
-# Produces experimental/internal GitHub release assets for darwin/arm64 and linux/amd64.
+# Triggered when a version tag is pushed (e.g. v1.0.0).
+# Produces GitHub release assets for darwin/arm64 and linux/amd64.
 # Each platform builds natively on its own runner to avoid CGO cross-compilation complexity.
 
 on:
@@ -117,9 +117,7 @@ jobs:
             exit 1
           fi
           {
-            printf '> ⚠️ **Experimental/internal build** — not a stable public release.\n'
-            printf '> Interfaces, packaging, and behavior may change without notice.\n'
-            printf '> Supported platforms: `darwin/arm64` and `linux/amd64` only.\n\n'
+            printf '> Supported platforms: `darwin/arm64` and `linux/amd64`.\n\n'
             cat dist/release-notes.md
             printf '\n## Install\n\n'
             printf '```sh\n'
@@ -137,7 +135,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "${{ github.ref_name }} (experimental)"
+          name: "${{ github.ref_name }}"
           body_path: dist/release-body.md
           files: |
             dist/*.tar.gz
