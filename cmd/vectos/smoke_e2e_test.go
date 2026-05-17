@@ -232,6 +232,11 @@ func assertContainsAll(t *testing.T, output string, parts ...string) {
 	}
 }
 
+// smokeVector returns a small deterministic embedding for the smoke test.
+// The dimension is intentionally 8 because the pipeline is dimension-agnostic:
+// detectDimensions samples the provider response, SaveChunk serializes the []float32
+// as-is, and the vector index is built from whatever dimension is stored.
+// Using 8D keeps the smoke test fast while still validating end-to-end behavior.
 func smokeVector(input string) []float32 {
 	vector := make([]float32, 8)
 	switch {
