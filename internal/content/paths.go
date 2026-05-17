@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"vectos/internal/usererr"
 	"vectos/internal/workspace"
 )
 
@@ -30,11 +31,11 @@ func CollectIndexablePathsWithExclusions(inputPaths []string, docsOnly bool, exc
 	for _, path := range inputPaths {
 		absPath, err := filepath.Abs(path)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("failed to resolve absolute path for %s: %w", path, err)
 		}
 		info, err := os.Stat(absPath)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, usererr.WrapPathOp("access", "path", absPath, err)
 		}
 		if !info.IsDir() {
 			if err := acc.addFile(absPath, docsOnly); err != nil {
@@ -129,7 +130,7 @@ func (a *pathAccumulator) addFile(absPath string, docsOnly bool) error {
 func (a *pathAccumulator) walkDir(absPath string, docsOnly bool) error {
 	return filepath.Walk(absPath, func(current string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
-			return walkErr
+			return usererr.WrapPathOp("access", "path", current, walkErr)
 		}
 		if info.IsDir() {
 			if ShouldSkipDir(info.Name()) {

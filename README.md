@@ -96,6 +96,7 @@ Global defaults can be set in `~/.vectos/config.json` under the `index` key. Pat
 - [Installation](docs/installation.md)
 - [Agent Setup](docs/agent-setup.md)
 - [CLI Usage](docs/cli.md)
+- [Error Guide](docs/errors.md)
 - [Indexing And Retrieval](docs/indexing.md)
 - [Nx Scope Model](docs/indexing.md#nx-scope-model)
 - [Development](docs/development.md)

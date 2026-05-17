@@ -3,8 +3,11 @@ package embeddings
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 	"vectos/internal/config"
@@ -63,8 +66,8 @@ func NewRemoteEmbedderFromConfig(cfg config.RemoteProviderConfig) (*RemoteEmbedd
 	}
 
 	return embedder, ProviderInfo{
-		Provider: config.ProviderRemote,
-		Model:    cfg.Model,
+		Provider:   config.ProviderRemote,
+		Model:      cfg.Model,
 		Dimensions: dimensions,
 	}, nil
 }
@@ -147,17 +150,17 @@ func (r *RemoteEmbedder) embed(texts []string) ([][]float32, error) {
 
 	resp, err := r.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call embedding API: %w", err)
+		return nil, r.wrapRequestError(url, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("embedding API returned non-200 status: %d", resp.StatusCode)
+		return nil, describeRemoteStatus(url, resp)
 	}
 
 	var embResp EmbeddingResponse
 	if err := json.NewDecoder(resp.Body).Decode(&embResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, fmt.Errorf("embedding API returned an invalid JSON response: %w", err)
 	}
 
 	if len(embResp.Data) == 0 {
@@ -173,4 +176,37 @@ func (r *RemoteEmbedder) embed(texts []string) ([][]float32, error) {
 	}
 
 	return results, nil
+}
+
+func (r *RemoteEmbedder) wrapRequestError(endpoint string, err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) && urlErr.Timeout() {
+		return fmt.Errorf("embedding API request to %s timed out after %v; check the remote provider or increase embeddings.remote.timeout_seconds: %w", endpoint, r.httpClient.Timeout, err)
+	}
+	if errors.As(err, &urlErr) {
+		return fmt.Errorf("failed to reach embedding API at %s: %w", endpoint, err)
+	}
+	return fmt.Errorf("failed to reach embedding API at %s: %w", endpoint, err)
+}
+
+func describeRemoteStatus(endpoint string, resp *http.Response) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+	detail := strings.TrimSpace(string(body))
+	if detail != "" {
+		detail = fmt.Sprintf(": %s", detail)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return fmt.Errorf("embedding API rejected the request (%s); check embeddings.remote.base_url and upstream authentication%s", resp.Status, detail)
+	case http.StatusNotFound:
+		return fmt.Errorf("embedding API endpoint not found at %s; check embeddings.remote.base_url%s", endpoint, detail)
+	case http.StatusTooManyRequests:
+		return fmt.Errorf("embedding API rate limited the request (%s); retry later or lower request concurrency%s", resp.Status, detail)
+	default:
+		if resp.StatusCode >= 500 {
+			return fmt.Errorf("embedding API is temporarily unavailable (%s)%s", resp.Status, detail)
+		}
+		return fmt.Errorf("embedding API returned %s%s", resp.Status, detail)
+	}
 }

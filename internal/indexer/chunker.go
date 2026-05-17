@@ -10,6 +10,7 @@ import (
 	"vectos/internal/config"
 	"vectos/internal/content"
 	"vectos/internal/embeddings"
+	"vectos/internal/usererr"
 )
 
 var goFuncPattern = regexp.MustCompile(`^func\s+`)
@@ -75,7 +76,7 @@ func (s *SimpleChunker) ChunkFileRaw(filePath string, language string) ([]ChunkR
 func (s *SimpleChunker) chunkFileImpl(filePath string, language string, embed bool) ([]ChunkResult, error) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, err
+		return nil, usererr.WrapPathOp("read", "file", filePath, err)
 	}
 
 	normalized := strings.ReplaceAll(string(content), "\r\n", "\n")
@@ -358,13 +359,13 @@ func (s *SimpleChunker) buildChunkImpl(filePath, language string, chunkLines []s
 	}
 
 	return ChunkResult{
-		Content:       chunkContent,
-		StartLine:     startLine,
-		EndLine:       endLine,
-		Vector:        vector,
-		Signature:     signature,
-		Purpose:       purpose,
-		SemanticText:  semanticContent,
+		Content:      chunkContent,
+		StartLine:    startLine,
+		EndLine:      endLine,
+		Vector:       vector,
+		Signature:    signature,
+		Purpose:      purpose,
+		SemanticText: semanticContent,
 	}
 }
 

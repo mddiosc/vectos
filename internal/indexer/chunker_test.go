@@ -1,6 +1,7 @@
 package indexer
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -108,6 +109,19 @@ func TestBatchEmbedChunks_EmptyChunks(t *testing.T) {
 	}
 	if err := chunker.BatchEmbedChunks([]ChunkResult{}, 32); err != nil {
 		t.Fatalf("BatchEmbedChunks on empty failed: %v", err)
+	}
+}
+
+func TestChunkFileRawWrapsReadErrors(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{MaxLines: 10}, fakeEmbedder{})
+	missing := filepath.Join(t.TempDir(), "missing.ts")
+
+	_, err := chunker.ChunkFileRaw(missing, "typescript")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "cannot read file "+missing) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

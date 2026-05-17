@@ -19,6 +19,7 @@ import (
 	"vectos/internal/indexer"
 	"vectos/internal/server"
 	"vectos/internal/storage"
+	"vectos/internal/usererr"
 	"vectos/internal/watcher"
 	"vectos/internal/workspace"
 )
@@ -194,12 +195,22 @@ func makeReindexCallback(store *storage.SQLiteStorage, embedClient embeddings.Em
 		var actuallyChanged []string
 		for _, path := range changedPaths {
 			hash, err := computeFileHash(path)
-			if err != nil { log.Printf("watcher: failed to hash %s: %v", path, err); continue }
+			if err != nil {
+				log.Printf("watcher: failed to hash %s: %v", path, err)
+				continue
+			}
 			changed, err := store.HasFileChanged(path, hash)
-			if err != nil { log.Printf("watcher: failed to check hash for %s: %v", path, err); continue }
-			if changed { actuallyChanged = append(actuallyChanged, path) }
+			if err != nil {
+				log.Printf("watcher: failed to check hash for %s: %v", path, err)
+				continue
+			}
+			if changed {
+				actuallyChanged = append(actuallyChanged, path)
+			}
 		}
-		if len(actuallyChanged) == 0 { return }
+		if len(actuallyChanged) == 0 {
+			return
+		}
 		log.Printf("watcher: %d files actually changed, reindexing", len(actuallyChanged))
 		if _, _, err := indexPaths(store, embedClient, actuallyChanged, batchSize); err != nil {
 			log.Printf("watcher: reindex failed: %v", err)
@@ -390,7 +401,7 @@ func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleCh
 			elapsed := time.Since(embedStart)
 			rate := float64(done) / elapsed.Seconds()
 			if rate > 0 {
-				remaining := time.Duration(float64(totalChunks-done)/rate*float64(time.Second))
+				remaining := time.Duration(float64(totalChunks-done) / rate * float64(time.Second))
 				fmt.Fprintf(progress, "  Embedding: %d/%d chunks (%.1f/sec, ETA %v)\n", done, totalChunks, rate, remaining.Round(time.Second))
 			} else {
 				fmt.Fprintf(progress, "  Embedding: %d/%d chunks\n", done, totalChunks)
@@ -448,7 +459,7 @@ func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleCh
 func computeFileHash(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", err
+		return "", usererr.WrapPathOp("read", "file", path, err)
 	}
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:]), nil
