@@ -78,7 +78,7 @@ func TestBuildVectorIndexRebuildsAfterFileDeletion(t *testing.T) {
 		t.Fatal("expected vector index hash to change after file deletion")
 	}
 
-	results, err := store.SearchSemantic([]float32{0, 1, 0, 0}, 5, true)
+	results, err := store.SearchSemantic([]float32{1, 0, 0, 0}, 5, true)
 	if err != nil {
 		t.Fatalf("SearchSemantic: %v", err)
 	}

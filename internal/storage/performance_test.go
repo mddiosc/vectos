@@ -9,6 +9,10 @@ import (
 )
 
 func TestStreamingStress_100kEmbeddingsMemoryStable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("stress test skipped in short mode")
+	}
+
 	store, cleanup := newTestSQLiteStorage(t)
 	defer cleanup()
 
@@ -57,7 +61,7 @@ func TestStreamingStress_100kEmbeddingsMemoryStable(t *testing.T) {
 		t.Fatalf("ForEachEmbedding: %v", err)
 	}
 	streamDuration := time.Since(streamStart)
-	streamPeakDelta := streamPeak.Load() - baselineStream
+	streamPeakDelta := heapDelta(streamPeak.Load(), baselineStream)
 	if streamed != embeddingCount {
 		t.Fatalf("streamed %d embeddings, want %d", streamed, embeddingCount)
 	}
@@ -65,10 +69,9 @@ func TestStreamingStress_100kEmbeddingsMemoryStable(t *testing.T) {
 		t.Fatalf("ForEachEmbedding peak heap delta = %d bytes, want <= %d", streamPeakDelta, streamMaxDelta)
 	}
 
-	baselineSearch := currentHeapAlloc()
 	searchStart := time.Now()
 	var results []CodeChunk
-	searchPeak, err := samplePeakHeapAlloc(func() error {
+	searchBaseline, searchPeak, err := samplePeakHeapAlloc(func() error {
 		var searchErr error
 		results, searchErr = store.searchLinearScan(query, resultLimit, true)
 		return searchErr
@@ -77,7 +80,7 @@ func TestStreamingStress_100kEmbeddingsMemoryStable(t *testing.T) {
 		t.Fatalf("searchLinearScan: %v", err)
 	}
 	searchDuration := time.Since(searchStart)
-	searchPeakDelta := searchPeak - baselineSearch
+	searchPeakDelta := heapDelta(searchPeak, searchBaseline)
 	if len(results) != resultLimit {
 		t.Fatalf("searchLinearScan returned %d results, want %d", len(results), resultLimit)
 	}
@@ -97,7 +100,7 @@ func currentHeapAlloc() uint64 {
 	return mem.Alloc
 }
 
-func samplePeakHeapAlloc(fn func() error) (uint64, error) {
+func samplePeakHeapAlloc(fn func() error) (uint64, uint64, error) {
 	baseline := currentHeapAlloc()
 	var peak atomic.Uint64
 	peak.Store(baseline)
@@ -114,11 +117,18 @@ func samplePeakHeapAlloc(fn func() error) (uint64, error) {
 		select {
 		case err := <-done:
 			updatePeakAlloc(&peak)
-			return peak.Load(), err
+			return baseline, peak.Load(), err
 		case <-ticker.C:
 			updatePeakAlloc(&peak)
 		}
 	}
+}
+
+func heapDelta(peak, baseline uint64) uint64 {
+	if peak <= baseline {
+		return 0
+	}
+	return peak - baseline
 }
 
 func updatePeakAlloc(peak *atomic.Uint64) {

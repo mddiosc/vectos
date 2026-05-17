@@ -17,6 +17,10 @@ import (
 )
 
 func TestCLIRealWorldSmokeFlow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("CLI smoke test skipped in short mode")
+	}
+
 	repoRoot := repoRootFromTestWD(t)
 	binaryPath := buildVectosBinary(t, repoRoot)
 	homeDir := t.TempDir()
