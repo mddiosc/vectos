@@ -16,7 +16,7 @@ import (
 	"vectos/internal/workspace"
 )
 
-func prepareStoreForIndexing(store *storage.SQLiteStorage, changedPaths []string) error {
+func prepareStoreForIndexing(changedPaths []string) error {
 	if len(changedPaths) > 0 {
 		return nil
 	}
@@ -76,6 +76,33 @@ func setupIndexing(projectBaseDir string, scope workspace.Scope, embedConfig con
 	}
 	if err != nil {
 		log.Fatalf("error opening database: %v", err)
+	}
+
+	// Detect embedding model change: if the stored metadata differs from the
+	// current provider/model/dimensions, purge all existing embeddings and
+	// file hashes so every file is re-embedded with the new model. Without
+	// this, unchanged files keep their old-dimension embeddings (cache hit)
+	// while changed files get new-dimension embeddings, producing mixed
+	// dimensions that crash the HNSW vector index.
+	needsInvalidation, err := store.RequiresReindex(providerInfo.Provider, providerInfo.Model, providerInfo.Dimensions)
+	if err != nil {
+		log.Printf("warning: could not check for model change: %v", err)
+	}
+	if needsInvalidation {
+		if prev, metaErr := store.GetIndexMetadata(); metaErr == nil {
+			fmt.Printf("Embedding model changed (%s/%dd → %s/%dd) — invalidating existing embeddings\n",
+				prev.Model, prev.Dimensions, providerInfo.Model, providerInfo.Dimensions)
+		} else {
+			fmt.Println("Embedding model changed — invalidating existing embeddings")
+		}
+		if err := store.InvalidateEmbeddings(); err != nil {
+			log.Fatalf("error invalidating stale embeddings: %v", err)
+		}
+		// Remove the on-disk vector index since it was built with the old model.
+		viPath := store.VectorIndexPath()
+		if err := os.Remove(viPath); err != nil && !os.IsNotExist(err) {
+			log.Printf("warning: failed to remove stale vector index %s: %v", viPath, err)
+		}
 	}
 
 	if err := store.SetIndexMetadata(storage.IndexMetadata{
@@ -138,7 +165,7 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 			log.Fatalf("error filtering changed paths: %v", err)
 		}
 	}
-	if err := prepareStoreForIndexing(env.store, changedPaths); err != nil {
+	if err := prepareStoreForIndexing(changedPaths); err != nil {
 		log.Fatalf("error preparing index storage: %v", err)
 	}
 
@@ -182,17 +209,40 @@ func buildVectorIndex(store *storage.SQLiteStorage, chunker *indexer.SimpleChunk
 		return
 	}
 
-	ids := make([]int, 0, len(embeddingsByID))
-	var dimension int
-	for id, vector := range embeddingsByID {
-		ids = append(ids, id)
-		if dimension == 0 {
-			dimension = len(vector)
+	// Determine the dominant embedding dimension (majority vote) to handle
+	// mixed-dimension embeddings that can occur after model changes.
+	dimCounts := make(map[int]int)
+	for _, vector := range embeddingsByID {
+		dimCounts[len(vector)]++
+	}
+	var dimension, maxCount int
+	for dim, count := range dimCounts {
+		if count > maxCount {
+			dimension = dim
+			maxCount = count
 		}
 	}
 
 	if dimension == 0 {
 		log.Println("vector index build skipped: empty embeddings")
+		return
+	}
+
+	// Filter to only vectors matching the dominant dimension.
+	ids := make([]int, 0, len(embeddingsByID))
+	var skipped int
+	for id, vector := range embeddingsByID {
+		if len(vector) != dimension {
+			skipped++
+			continue
+		}
+		ids = append(ids, id)
+	}
+	if skipped > 0 {
+		log.Printf("warning: skipped %d embeddings with mismatched dimension (expected %d); consider re-indexing with --reindex", skipped, dimension)
+	}
+	if len(ids) == 0 {
+		log.Println("vector index build skipped: no valid embeddings after filtering")
 		return
 	}
 

@@ -234,3 +234,166 @@ func TestRequiresReindex_ModelMismatch(t *testing.T) {
 		t.Error("RequiresReindex should return true when provider differs")
 	}
 }
+
+func TestInvalidateEmbeddings(t *testing.T) {
+	store, cleanup := newTestSQLiteStorage(t)
+	defer cleanup()
+
+	// Seed the store with chunks that have embeddings and file hashes.
+	const dim = 384
+	for i := 0; i < 5; i++ {
+		path := fmt.Sprintf("inv-%d.go", i)
+		if _, err := store.SaveChunk(CodeChunk{
+			FilePath:  path,
+			Content:   fmt.Sprintf("chunk %d", i),
+			StartLine: 1,
+			EndLine:   2,
+			Language:  "go",
+			Vector:    randomVector(dim),
+		}); err != nil {
+			t.Fatalf("SaveChunk(%d): %v", i, err)
+		}
+		if err := store.UpsertIndexedFile(path, fmt.Sprintf("hash-%d", i)); err != nil {
+			t.Fatalf("UpsertIndexedFile(%d): %v", i, err)
+		}
+	}
+
+	// Build and set a vector index so we can verify it gets cleared.
+	embeddings, err := store.GetAllEmbeddings()
+	if err != nil {
+		t.Fatalf("GetAllEmbeddings: %v", err)
+	}
+	if len(embeddings) != 5 {
+		t.Fatalf("expected 5 embeddings, got %d", len(embeddings))
+	}
+	idx := vectorindex.NewHNSW(dim, vectorindex.Config{M: 16, EfConstruction: 200, EfSearch: 50})
+	for id, vec := range embeddings {
+		idx.Insert(id, vec)
+	}
+	store.SetVectorIndex(idx)
+	if !store.HasVectorIndex() {
+		t.Fatal("expected vector index to be set")
+	}
+
+	// Verify file hashes exist.
+	for i := 0; i < 5; i++ {
+		h, err := store.GetIndexedFileHash(fmt.Sprintf("inv-%d.go", i))
+		if err != nil {
+			t.Fatalf("GetIndexedFileHash(%d): %v", i, err)
+		}
+		if h == "" {
+			t.Fatalf("expected hash for inv-%d.go", i)
+		}
+	}
+
+	// Invalidate.
+	if err := store.InvalidateEmbeddings(); err != nil {
+		t.Fatalf("InvalidateEmbeddings: %v", err)
+	}
+
+	// Embeddings should be gone.
+	embeddingsAfter, err := store.GetAllEmbeddings()
+	if err != nil {
+		t.Fatalf("GetAllEmbeddings after invalidation: %v", err)
+	}
+	if len(embeddingsAfter) != 0 {
+		t.Fatalf("expected 0 embeddings after invalidation, got %d", len(embeddingsAfter))
+	}
+
+	// File hashes should be gone (forces re-processing).
+	for i := 0; i < 5; i++ {
+		h, err := store.GetIndexedFileHash(fmt.Sprintf("inv-%d.go", i))
+		if err != nil {
+			t.Fatalf("GetIndexedFileHash(%d) after invalidation: %v", i, err)
+		}
+		if h != "" {
+			t.Fatalf("expected empty hash for inv-%d.go after invalidation, got %q", i, h)
+		}
+	}
+
+	// In-memory vector index should be cleared.
+	if store.HasVectorIndex() {
+		t.Fatal("expected vector index to be cleared after invalidation")
+	}
+
+	// Chunk text should still exist (only embeddings were cleared).
+	results, err := store.SearchText("chunk")
+	if err != nil {
+		t.Fatalf("SearchText after invalidation: %v", err)
+	}
+	if len(results) != 5 {
+		t.Fatalf("expected 5 chunks to survive invalidation, got %d", len(results))
+	}
+}
+
+func TestGetAllEmbeddings_MixedDimensions(t *testing.T) {
+	store, cleanup := newTestSQLiteStorage(t)
+	defer cleanup()
+
+	// Insert chunks with two different embedding dimensions (simulates model change).
+	dim384 := 384
+	dim1024 := 1024
+	for i := 0; i < 8; i++ {
+		if _, err := store.SaveChunk(CodeChunk{
+			FilePath:  fmt.Sprintf("file384-%d.go", i),
+			Content:   fmt.Sprintf("chunk dim384 %d", i),
+			StartLine: 1,
+			EndLine:   2,
+			Language:  "go",
+			Vector:    randomVector(dim384),
+		}); err != nil {
+			t.Fatalf("SaveChunk dim384 (%d): %v", i, err)
+		}
+	}
+	for i := 0; i < 3; i++ {
+		if _, err := store.SaveChunk(CodeChunk{
+			FilePath:  fmt.Sprintf("file1024-%d.go", i),
+			Content:   fmt.Sprintf("chunk dim1024 %d", i),
+			StartLine: 1,
+			EndLine:   2,
+			Language:  "go",
+			Vector:    randomVector(dim1024),
+		}); err != nil {
+			t.Fatalf("SaveChunk dim1024 (%d): %v", i, err)
+		}
+	}
+
+	embeddings, err := store.GetAllEmbeddings()
+	if err != nil {
+		t.Fatalf("GetAllEmbeddings: %v", err)
+	}
+
+	// Determine dominant dimension (majority vote) — same logic as buildVectorIndex.
+	dimCounts := make(map[int]int)
+	for _, vec := range embeddings {
+		dimCounts[len(vec)]++
+	}
+	var dimension, maxCount int
+	for dim, count := range dimCounts {
+		if count > maxCount {
+			dimension = dim
+			maxCount = count
+		}
+	}
+
+	if dimension != dim384 {
+		t.Fatalf("expected dominant dimension %d, got %d", dim384, dimension)
+	}
+
+	// Filter and build HNSW — must not panic.
+	var ids []int
+	for id, vec := range embeddings {
+		if len(vec) == dimension {
+			ids = append(ids, id)
+		}
+	}
+
+	idx := vectorindex.NewHNSW(dimension, vectorindex.Config{M: 16, EfConstruction: 200, EfSearch: 50})
+	for _, id := range ids {
+		idx.Insert(id, embeddings[id]) // Should not panic
+	}
+
+	if idx.Len() != 8 {
+		t.Fatalf("expected 8 vectors in index, got %d", idx.Len())
+	}
+}

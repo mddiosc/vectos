@@ -3,9 +3,11 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -102,6 +104,9 @@ func (s *Server) ListenAndServe() error {
 
 	log.Printf("vectos serve listening on 127.0.0.1:%d", s.port)
 	if err := s.httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if isAddrInUse(err) {
+			return fmt.Errorf("port %d already in use (another vectos instance may be running); use --port to specify a different port or stop the existing process", s.port)
+		}
 		return fmt.Errorf("server error: %w", err)
 	}
 	return nil
@@ -206,4 +211,19 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 
 func writeJSONError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"status": "error", "message": message})
+}
+
+// isAddrInUse checks if an error is caused by the address already being in use.
+func isAddrInUse(err error) bool {
+	if err == nil {
+		return false
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		var sysErr *os.SyscallError
+		if errors.As(opErr.Err, &sysErr) {
+			return errors.Is(sysErr.Err, syscall.EADDRINUSE)
+		}
+	}
+	return false
 }

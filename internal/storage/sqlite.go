@@ -326,6 +326,24 @@ func (s *SQLiteStorage) DeleteAllChunks() error {
 	return nil
 }
 
+// InvalidateEmbeddings clears all embedding vectors and file hashes, forcing
+// a full re-embedding on the next index run. Chunk text/metadata is preserved.
+// This should be called when the embedding model changes to avoid mixed
+// dimensions in the database.
+func (s *SQLiteStorage) InvalidateEmbeddings() error {
+	if _, err := s.db.Exec(`UPDATE code_chunks SET embedding = NULL`); err != nil {
+		return fmt.Errorf("failed to clear embeddings: %w", err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM indexed_files`); err != nil {
+		return fmt.Errorf("failed to clear indexed file hashes: %w", err)
+	}
+	// Discard the in-memory vector index since it's now stale.
+	s.vectIdxMu.Lock()
+	s.vectIdx = nil
+	s.vectIdxMu.Unlock()
+	return nil
+}
+
 // escapeLikeTerm escapes SQL LIKE wildcard characters (% and _) and the
 // default escape character (\) in user-provided search terms to prevent
 // wildcard injection attacks.

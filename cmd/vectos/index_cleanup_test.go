@@ -32,7 +32,7 @@ func TestPrepareStoreForIndexingPreservesChunksForCaching(t *testing.T) {
 		t.Fatalf("save chunk: %v", err)
 	}
 
-	if err := prepareStoreForIndexing(store, nil); err != nil {
+	if err := prepareStoreForIndexing(nil); err != nil {
 		t.Fatalf("prepareStoreForIndexing returned error: %v", err)
 	}
 
@@ -67,7 +67,7 @@ func TestPrepareStoreForIndexingKeepsChunksForIncrementalReindex(t *testing.T) {
 		t.Fatalf("save chunk: %v", err)
 	}
 
-	if err := prepareStoreForIndexing(store, []string{"README.md"}); err != nil {
+	if err := prepareStoreForIndexing([]string{"README.md"}); err != nil {
 		t.Fatalf("prepareStoreForIndexing returned error: %v", err)
 	}
 
