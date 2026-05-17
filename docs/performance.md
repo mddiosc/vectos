@@ -17,9 +17,9 @@ These metrics were measured locally on macOS (`darwin`) using the same scenario 
 
 | Operation | Duration | Peak heap delta |
 | --- | ---: | ---: |
-| Insert 100k embeddings | `2.216934916s` | not sampled in the standalone metrics run |
-| Stream 100k embeddings with `ForEachEmbedding()` | `33.891084ms` | `3640016` bytes (`~3.47 MiB`) |
-| Semantic search fallback (`searchLinearScan`, top 10) | `100.09075ms` | `3611848` bytes (`~3.44 MiB`) |
+| Insert 100k embeddings | `~2.22 s` | not sampled in the standalone metrics run |
+| Stream 100k embeddings with `ForEachEmbedding()` | `~33.89 ms` | `~3.47 MiB` |
+| Semantic search fallback (`searchLinearScan`, top 10) | `~100.09 ms` | `~3.44 MiB` |
 
 ## Test Thresholds
 
