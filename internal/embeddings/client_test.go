@@ -1,8 +1,10 @@
 package embeddings
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +28,10 @@ func TestRemoteEmbedderTimeoutErrorIsActionable(t *testing.T) {
 	msg := err.Error()
 	if !strings.Contains(msg, "timed out") || !strings.Contains(msg, "timeout_seconds") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	var urlErr *url.Error
+	if !errors.As(err, &urlErr) {
+		t.Fatalf("expected wrapped *url.Error, got %T", err)
 	}
 }
 

@@ -181,10 +181,10 @@ func (r *RemoteEmbedder) embed(texts []string) ([][]float32, error) {
 func (r *RemoteEmbedder) wrapRequestError(endpoint string, err error) error {
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) && urlErr.Timeout() {
-		return fmt.Errorf("embedding API request to %s timed out after %v; check the remote provider or increase embeddings.remote.timeout_seconds", endpoint, r.httpClient.Timeout)
+		return fmt.Errorf("embedding API request to %s timed out after %v; check the remote provider or increase embeddings.remote.timeout_seconds: %w", endpoint, r.httpClient.Timeout, err)
 	}
 	if errors.As(err, &urlErr) {
-		return fmt.Errorf("failed to reach embedding API at %s: %v", endpoint, urlErr.Err)
+		return fmt.Errorf("failed to reach embedding API at %s: %w", endpoint, err)
 	}
 	return fmt.Errorf("failed to reach embedding API at %s: %w", endpoint, err)
 }

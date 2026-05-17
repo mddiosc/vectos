@@ -12,12 +12,18 @@ func TestWrapPathOp_NotExist(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "cannot read file /tmp/missing.txt: it does not exist") {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected wrapped not-exist error, got %v", err)
+	}
 }
 
 func TestWrapPathOp_Permission(t *testing.T) {
 	err := WrapPathOp("read", "file", "/tmp/secret.txt", os.ErrPermission)
 	if err == nil || !strings.Contains(err.Error(), "cannot read file /tmp/secret.txt: permission denied") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("expected wrapped permission error, got %v", err)
 	}
 }
 
