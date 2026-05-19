@@ -29,11 +29,23 @@ var tsTypeAliasPattern = regexp.MustCompile(`^(export\s+)?type\s+[A-Z][\w$]*(<[^
 var tsEnumPattern = regexp.MustCompile(`^(export\s+)?(const\s+)?enum\s+[A-Z][\w$]*`)
 var tsAsyncPattern = regexp.MustCompile(`(async\s+function\s+[A-Za-z_$]|async\s*\([^)]*\)\s*=>|=\s*async\s*\()`)
 
+// Sub-boundary patterns for splitting oversized chunks within React components.
+var jsReturnPattern = regexp.MustCompile(`^\s*return\s*[\(\{]`)
+var jsInternalDeclPattern = regexp.MustCompile(`^\s+(const|let|var)\s+\w+\s*=`)
+var jsUseHookCallPattern = regexp.MustCompile(`^\s+(const\s+.*=\s*)?use[A-Z]\w*\(`)
+
+const defaultTargetChars = 1200
+const defaultMaxChars = 2500
+const defaultMinChunkChars = 200
+
 // ChunkConfig define los parámetros para la segmentación del código.
 type ChunkConfig struct {
-	MaxLines  int // Máximo de líneas por trozo
-	MinLines  int // Mínimo de líneas por trozo
-	BatchSize int // Tamaño de batch para embeddings (0 = auto-detect)
+	MaxLines      int // Máximo de líneas por trozo (line-based chunking)
+	MinLines      int // Mínimo de líneas por trozo
+	BatchSize     int // Tamaño de batch para embeddings (0 = auto-detect)
+	TargetChars   int // Soft target for chunk size in chars (default: 1200)
+	MaxChars      int // Hard cap for chunk size in chars (default: 2500)
+	MinChunkChars int // Minimum chunk size; smaller fragments merge with neighbor (default: 200)
 }
 
 // ChunkResult contains the content of a chunk and its position.
@@ -55,6 +67,15 @@ type SimpleChunker struct {
 
 // NewSimpleChunker crea una nueva instancia del indexador.
 func NewSimpleChunker(config ChunkConfig, embedClient embeddings.Embedder) *SimpleChunker {
+	if config.TargetChars <= 0 {
+		config.TargetChars = defaultTargetChars
+	}
+	if config.MaxChars <= 0 {
+		config.MaxChars = defaultMaxChars
+	}
+	if config.MinChunkChars <= 0 {
+		config.MinChunkChars = defaultMinChunkChars
+	}
 	return &SimpleChunker{
 		config:      config,
 		embedClient: embedClient,
@@ -159,7 +180,23 @@ func (s *SimpleChunker) chunkGoFileImpl(filePath, language string, lines []strin
 		start := i + 1
 		endIndex := findGoBlockEnd(lines, i)
 
-		chunks = append(chunks, s.buildChunkImpl(filePath, language, lines[i:endIndex+1], start, endIndex+1, embed))
+		blockLines := lines[i : endIndex+1]
+		blockContent := strings.Join(blockLines, "\n")
+
+		// If the Go function exceeds MaxChars, hard-split it.
+		if len(blockContent) > s.config.MaxChars {
+			subChunks := s.hardSplitByChars(blockLines)
+			lineOffset := i
+			for _, sub := range subChunks {
+				subStart := lineOffset + 1
+				subEnd := lineOffset + len(sub)
+				chunks = append(chunks, s.buildChunkImpl(filePath, language, sub, subStart, subEnd, embed))
+				lineOffset += len(sub)
+			}
+		} else {
+			chunks = append(chunks, s.buildChunkImpl(filePath, language, blockLines, start, endIndex+1, embed))
+		}
+
 		i = endIndex + 1
 	}
 
@@ -253,7 +290,23 @@ func (s *SimpleChunker) chunkBraceStructuredFileImpl(filePath, language string, 
 			end = i
 		}
 
-		chunks = append(chunks, s.buildChunkImpl(filePath, language, lines[i:end+1], start, end+1, embed))
+		blockLines := lines[i : end+1]
+		blockContent := strings.Join(blockLines, "\n")
+
+		// If the block exceeds MaxChars, split it into sub-chunks.
+		if len(blockContent) > s.config.MaxChars {
+			subChunks := s.splitOversizedChunk(blockLines, language)
+			lineOffset := i
+			for _, sub := range subChunks {
+				subStart := lineOffset + 1
+				subEnd := lineOffset + len(sub)
+				chunks = append(chunks, s.buildChunkImpl(filePath, language, sub, subStart, subEnd, embed))
+				lineOffset += len(sub)
+			}
+		} else {
+			chunks = append(chunks, s.buildChunkImpl(filePath, language, blockLines, start, end+1, embed))
+		}
+
 		i = end + 1
 	}
 
@@ -266,6 +319,177 @@ func (s *SimpleChunker) chunkBraceStructuredFileImpl(filePath, language string, 
 	}
 
 	return chunks
+}
+
+// splitOversizedChunk splits a chunk that exceeds MaxChars into smaller
+// sub-chunks at semantic boundaries. It tries, in priority order:
+//  1. Top-level declarations (const/let/var at component scope)
+//  2. Hook calls (useEffect, useMemo, useState, etc.)
+//  3. return statement (separates logic from JSX)
+//  4. Blank lines between logical sections
+//  5. Last resort: split at nearest line boundary before MaxChars
+//
+// Fragments smaller than MinChunkChars are merged with their neighbor.
+func (s *SimpleChunker) splitOversizedChunk(lines []string, language string) [][]string {
+	content := strings.Join(lines, "\n")
+	if len(content) <= s.config.MaxChars {
+		return [][]string{lines}
+	}
+
+	// Find all candidate split points (line indices within the chunk).
+	type splitCandidate struct {
+		lineIdx  int
+		priority int // lower = better (1=return, 2=hook, 3=decl, 4=blank)
+	}
+
+	var candidates []splitCandidate
+
+	// Track brace depth to only split at the component's top scope (depth 1).
+	braceDepth := 0
+	for i, line := range lines {
+		braceDepth += strings.Count(line, "{")
+		braceDepth -= strings.Count(line, "}")
+
+		// Only consider splits at the component body scope (depth 1)
+		// or at the top level (depth 0 for non-wrapped code).
+		if braceDepth > 1 {
+			continue
+		}
+
+		trimmed := strings.TrimSpace(line)
+
+		if jsReturnPattern.MatchString(line) {
+			candidates = append(candidates, splitCandidate{i, 1})
+		} else if jsUseHookCallPattern.MatchString(line) {
+			candidates = append(candidates, splitCandidate{i, 2})
+		} else if jsInternalDeclPattern.MatchString(line) && !strings.Contains(trimmed, "=>") {
+			// Internal declaration but not an arrow function (those are boundaries already)
+			candidates = append(candidates, splitCandidate{i, 3})
+		} else if trimmed == "" && i > 0 && i < len(lines)-1 {
+			candidates = append(candidates, splitCandidate{i, 4})
+		}
+	}
+
+	if len(candidates) == 0 {
+		// No semantic boundaries found; fall back to hard split at MaxChars.
+		return s.hardSplitByChars(lines)
+	}
+
+	// Greedily split: accumulate lines until we exceed TargetChars, then
+	// split at the best candidate within the accumulated range.
+	var result [][]string
+	segStart := 0
+
+	for segStart < len(lines) {
+		charCount := 0
+		bestCandidate := -1
+		bestPriority := 999
+
+		for i := segStart; i < len(lines); i++ {
+			charCount += len(lines[i]) + 1 // +1 for newline
+
+			// Check if this line is a split candidate.
+			for _, c := range candidates {
+				if c.lineIdx == i && c.priority < bestPriority && i > segStart {
+					bestCandidate = i
+					bestPriority = c.priority
+				}
+			}
+
+			// Once we exceed target, split at the best candidate found so far.
+			if charCount >= s.config.TargetChars && bestCandidate > segStart {
+				result = append(result, lines[segStart:bestCandidate])
+				segStart = bestCandidate
+				bestCandidate = -1
+				bestPriority = 999
+				charCount = 0
+				break
+			}
+
+			// Hard cap: must split even without a good candidate.
+			if charCount >= s.config.MaxChars {
+				if bestCandidate > segStart {
+					result = append(result, lines[segStart:bestCandidate])
+					segStart = bestCandidate
+				} else {
+					// No candidate at all; split right here.
+					result = append(result, lines[segStart:i+1])
+					segStart = i + 1
+				}
+				bestCandidate = -1
+				bestPriority = 999
+				charCount = 0
+				break
+			}
+
+			// Last line: emit remainder.
+			if i == len(lines)-1 {
+				result = append(result, lines[segStart:])
+				segStart = len(lines)
+			}
+		}
+	}
+
+	// Merge tiny fragments with their neighbor.
+	result = s.mergeTinyFragments(result)
+
+	return result
+}
+
+// hardSplitByChars splits lines at the nearest line boundary before MaxChars.
+func (s *SimpleChunker) hardSplitByChars(lines []string) [][]string {
+	var result [][]string
+	segStart := 0
+	charCount := 0
+
+	for i, line := range lines {
+		charCount += len(line) + 1
+		if charCount >= s.config.MaxChars && i > segStart {
+			result = append(result, lines[segStart:i])
+			segStart = i
+			charCount = len(line) + 1
+		}
+	}
+	if segStart < len(lines) {
+		result = append(result, lines[segStart:])
+	}
+	return result
+}
+
+// mergeTinyFragments merges chunks smaller than MinChunkChars with the next chunk.
+func (s *SimpleChunker) mergeTinyFragments(segments [][]string) [][]string {
+	if len(segments) <= 1 {
+		return segments
+	}
+
+	var merged [][]string
+	for i := 0; i < len(segments); i++ {
+		seg := segments[i]
+		content := strings.Join(seg, "\n")
+
+		if len(content) < s.config.MinChunkChars && i+1 < len(segments) {
+			// Merge with next segment.
+			combined := make([]string, 0, len(seg)+len(segments[i+1]))
+			combined = append(combined, seg...)
+			combined = append(combined, segments[i+1]...)
+			segments[i+1] = combined
+			continue
+		}
+
+		if len(content) < s.config.MinChunkChars && len(merged) > 0 {
+			// Merge with previous segment.
+			prev := merged[len(merged)-1]
+			combined := make([]string, 0, len(prev)+len(seg))
+			combined = append(combined, prev...)
+			combined = append(combined, seg...)
+			merged[len(merged)-1] = combined
+			continue
+		}
+
+		merged = append(merged, seg)
+	}
+
+	return merged
 }
 
 func isBraceStructuredLanguage(language string) bool {
