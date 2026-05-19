@@ -181,7 +181,7 @@ func TestRequiresReindex_ModelMismatch(t *testing.T) {
 	defer cleanup()
 
 	// No metadata → should not require reindex
-	requires, err := store.RequiresReindex("embedded", "jina-embeddings-v3", 1024)
+	requires, err := store.RequiresReindex("embedded", "jina-embeddings-v3", 1024, "fp-v1")
 	if err != nil {
 		t.Fatalf("RequiresReindex (no metadata): %v", err)
 	}
@@ -191,15 +191,16 @@ func TestRequiresReindex_ModelMismatch(t *testing.T) {
 
 	// Set metadata for bge-small
 	if err := store.SetIndexMetadata(IndexMetadata{
-		Provider:   "embedded",
-		Model:      "bge-small-en-v1.5",
-		Dimensions: 384,
+		Provider:         "embedded",
+		Model:            "bge-small-en-v1.5",
+		Dimensions:       384,
+		IndexFingerprint: "fp-v1",
 	}); err != nil {
 		t.Fatalf("SetIndexMetadata: %v", err)
 	}
 
 	// Same model → should not require reindex
-	requires, err = store.RequiresReindex("embedded", "bge-small-en-v1.5", 384)
+	requires, err = store.RequiresReindex("embedded", "bge-small-en-v1.5", 384, "fp-v1")
 	if err != nil {
 		t.Fatalf("RequiresReindex (same model): %v", err)
 	}
@@ -208,7 +209,7 @@ func TestRequiresReindex_ModelMismatch(t *testing.T) {
 	}
 
 	// Different model → should require reindex
-	requires, err = store.RequiresReindex("embedded", "jina-embeddings-v3", 1024)
+	requires, err = store.RequiresReindex("embedded", "jina-embeddings-v3", 1024, "fp-v1")
 	if err != nil {
 		t.Fatalf("RequiresReindex (different model): %v", err)
 	}
@@ -217,7 +218,7 @@ func TestRequiresReindex_ModelMismatch(t *testing.T) {
 	}
 
 	// Different dimensions → should require reindex
-	requires, err = store.RequiresReindex("embedded", "bge-small-en-v1.5", 768)
+	requires, err = store.RequiresReindex("embedded", "bge-small-en-v1.5", 768, "fp-v1")
 	if err != nil {
 		t.Fatalf("RequiresReindex (different dims): %v", err)
 	}
@@ -226,12 +227,47 @@ func TestRequiresReindex_ModelMismatch(t *testing.T) {
 	}
 
 	// Different provider → should require reindex
-	requires, err = store.RequiresReindex("remote", "bge-small-en-v1.5", 384)
+	requires, err = store.RequiresReindex("remote", "bge-small-en-v1.5", 384, "fp-v1")
 	if err != nil {
 		t.Fatalf("RequiresReindex (different provider): %v", err)
 	}
 	if !requires {
 		t.Error("RequiresReindex should return true when provider differs")
+	}
+
+	requires, err = store.RequiresReindex("embedded", "bge-small-en-v1.5", 384, "fp-v2")
+	if err != nil {
+		t.Fatalf("RequiresReindex (different fingerprint): %v", err)
+	}
+	if !requires {
+		t.Error("RequiresReindex should return true when fingerprint differs")
+	}
+}
+
+func TestClearIndexedData(t *testing.T) {
+	store, cleanup := newTestSQLiteStorage(t)
+	defer cleanup()
+
+	if _, err := store.SaveChunk(CodeChunk{FilePath: "wipe.go", Content: "chunk", StartLine: 1, EndLine: 1, Language: "go", Vector: randomVector(4)}); err != nil {
+		t.Fatalf("SaveChunk: %v", err)
+	}
+	if err := store.UpsertIndexedFile("wipe.go", "hash-wipe"); err != nil {
+		t.Fatalf("UpsertIndexedFile: %v", err)
+	}
+
+	if err := store.ClearIndexedData(); err != nil {
+		t.Fatalf("ClearIndexedData: %v", err)
+	}
+
+	stats, err := store.Stats()
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.ChunkCount != 0 || stats.FileCount != 0 || stats.EmbeddedCount != 0 {
+		t.Fatalf("expected empty store after clear, got %+v", stats)
+	}
+	if hash, err := store.GetIndexedFileHash("wipe.go"); err != nil || hash != "" {
+		t.Fatalf("expected cleared file hash, got %q, %v", hash, err)
 	}
 }
 

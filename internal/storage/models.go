@@ -19,8 +19,9 @@ type CodeChunk struct {
 }
 
 type IndexMetadata struct {
-	Provider   string    `json:"provider"`
-	Model      string    `json:"model"`
-	Dimensions int       `json:"dimensions"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	Provider         string    `json:"provider"`
+	Model            string    `json:"model"`
+	Dimensions       int       `json:"dimensions"`
+	IndexFingerprint string    `json:"index_fingerprint,omitempty"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }

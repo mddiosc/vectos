@@ -20,7 +20,7 @@ func executeSearch(store *storage.SQLiteStorage, embedConfig config.EmbeddingCon
 		return textSearchFallback(store, query, limit, "text", "")
 	}
 
-	requiresReindex, err := store.RequiresReindex(providerInfo.Provider, providerInfo.Model, providerInfo.Dimensions)
+	requiresReindex, err := store.RequiresReindex(providerInfo.Provider, providerInfo.Model, providerInfo.Dimensions, currentIndexFingerprint(indexChunkerConfig(embedConfig.Embedded.BatchSize)))
 	if err == nil && requiresReindex {
 		warning := fmt.Sprintf("index uses different embedding model; reindex required for accurate semantic results (current: %s/%dd)", providerInfo.Model, providerInfo.Dimensions)
 		if stored, metaErr := store.GetIndexMetadata(); metaErr == nil {

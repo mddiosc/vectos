@@ -217,8 +217,14 @@ func setupIndexRequest(projectBaseDir string, embedConfig config.EmbeddingConfig
 		return
 	}
 
-	if _, err = syncIndexMetadata(store, providerInfo); err != nil {
+	chunkerConfig := indexChunkerConfig(embedConfig.Embedded.BatchSize)
+	metadataResult, syncErr := syncIndexMetadata(store, providerInfo, currentIndexFingerprint(chunkerConfig))
+	if syncErr != nil {
+		err = syncErr
 		return
+	}
+	if metadataResult.FullRebuild {
+		input.Changed = ""
 	}
 
 	paths, skippedPaths, err = resolveIndexPaths(scope, input)
@@ -257,7 +263,7 @@ func resolveIndexPaths(scope workspace.Scope, input indexProjectInput) (paths, s
 }
 
 func indexPaths(store *storage.SQLiteStorage, embedClient embeddings.Embedder, paths []string, batchSize int) (indexedFiles, count int, err error) {
-	chunker := indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10, BatchSize: batchSize}, embedClient)
+	chunker := indexer.NewSimpleChunker(indexChunkerConfig(batchSize), embedClient)
 
 	// Phase 1: chunk every file raw.
 	var pending []struct {
