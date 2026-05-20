@@ -53,6 +53,13 @@ func runSearch(projectBaseDir string, embedConfig config.EmbeddingConfig, query 
 	if err != nil {
 		log.Fatalf("error running search: %v", err)
 	}
+	callType := searchCallCLICode
+	if docsOnly {
+		callType = searchCallCLIDocs
+	}
+	if err := recordSearchStats(pm, scope, callType, query, searchRun); err != nil {
+		log.Printf("warning: failed to record search stats: %v", err)
+	}
 	results := searchRun.Results
 
 	if strings.TrimSpace(searchRun.Warning) != "" {

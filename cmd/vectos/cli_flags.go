@@ -10,6 +10,7 @@ import (
 type cliFlags struct {
 	indexCmd            *flag.FlagSet
 	searchCmd           *flag.FlagSet
+	gainCmd             *flag.FlagSet
 	benchmarkCmd        *flag.FlagSet
 	statusCmd           *flag.FlagSet
 	mcpCmd              *flag.FlagSet
@@ -23,6 +24,8 @@ type cliFlags struct {
 	searchProject       *string
 	searchFull          *bool
 	searchDocs          *bool
+	gainProject         *string
+	gainVerbose         *bool
 	benchmarkProject    *string
 	statusProject       *string
 	statusDocs          *bool
@@ -39,6 +42,7 @@ type cliFlags struct {
 func newCLIFlags() cliFlags {
 	indexCmd := flag.NewFlagSet("index", flag.ExitOnError)
 	searchCmd := flag.NewFlagSet("search", flag.ExitOnError)
+	gainCmd := flag.NewFlagSet("gain", flag.ExitOnError)
 	benchmarkCmd := flag.NewFlagSet("benchmark", flag.ExitOnError)
 	statusCmd := flag.NewFlagSet("status", flag.ExitOnError)
 	mcpCmd := flag.NewFlagSet("mcp", flag.ExitOnError)
@@ -56,6 +60,7 @@ func newCLIFlags() cliFlags {
 	return cliFlags{
 		indexCmd:            indexCmd,
 		searchCmd:           searchCmd,
+		gainCmd:             gainCmd,
 		benchmarkCmd:        benchmarkCmd,
 		statusCmd:           statusCmd,
 		mcpCmd:              mcpCmd,
@@ -69,6 +74,8 @@ func newCLIFlags() cliFlags {
 		searchProject:       searchCmd.String("project", "", "Nx project name to search with internal workspace dependencies when inside an Nx workspace"),
 		searchFull:          searchCmd.Bool("full", false, "Show full chunk content instead of compact snippets"),
 		searchDocs:          searchCmd.Bool("docs", false, "Search documentation index instead of source code"),
+		gainProject:         gainCmd.String("project", "", "Nx project name to inspect with internal workspace dependencies when inside an Nx workspace"),
+		gainVerbose:         gainCmd.Bool("verbose", false, "Show usage breakdown by search call type"),
 		benchmarkProject:    benchmarkCmd.String("project", "", "Nx project name to benchmark with internal workspace dependencies when inside an Nx workspace"),
 		statusProject:       statusCmd.String("project", "", "Nx project name to inspect with internal workspace dependencies when inside an Nx workspace"),
 		statusDocs:          statusCmd.Bool("docs", false, "Show documentation index status instead of source index"),

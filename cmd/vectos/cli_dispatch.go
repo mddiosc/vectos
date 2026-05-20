@@ -36,6 +36,8 @@ func runCLI(app appContext, args []string) {
 		runIndexCommand(app, commandArgs)
 	case "search":
 		runSearchCommand(app, commandArgs)
+	case "gain":
+		runGainCommand(app, commandArgs)
 	case "benchmark":
 		runBenchmarkCommand(app, commandArgs)
 	case "status":
@@ -119,6 +121,17 @@ func runBenchmarkCommand(app appContext, args []string) {
 		os.Exit(1)
 	}
 	runBenchmark(app.projectBaseDir, app.embedConfig, app.flags.benchmarkCmd.Arg(0), *app.flags.benchmarkProject)
+}
+
+func runGainCommand(app appContext, args []string) {
+	if hasHelpFlag(args) {
+		printSubcommandHelp("gain")
+		os.Exit(0)
+	}
+	if err := app.flags.gainCmd.Parse(args); err != nil {
+		fatalErr(err)
+	}
+	runGain(app.projectBaseDir, *app.flags.gainProject, *app.flags.gainVerbose)
 }
 
 func runStatusCommand(app appContext, args []string) {

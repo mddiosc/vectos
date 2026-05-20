@@ -45,6 +45,9 @@ func runSearchCode(projectBaseDir string, embedConfig config.EmbeddingConfig, in
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := recordSearchStats(pm, scope, searchCallMCPCode, input.Query, run); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to record search stats: %v\n", err)
+	}
 
 	payload := buildMCPSearchPayload(scope, input.Query, run)
 	if len(payload.Results) == 0 {
@@ -138,6 +141,9 @@ func runSearchDocs(projectBaseDir string, embedConfig config.EmbeddingConfig, in
 	run, err := executeSearchDocs(store, embedConfig, input.Query, 5)
 	if err != nil {
 		return nil, nil, err
+	}
+	if err := recordSearchStats(pm, scope, searchCallMCPDocs, input.Query, run); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to record search stats: %v\n", err)
 	}
 
 	return mcpTextResult(buildMCPSearchPayload(scope, input.Query, run))
