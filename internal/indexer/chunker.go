@@ -30,7 +30,7 @@ var tsEnumPattern = regexp.MustCompile(`^(export\s+)?(const\s+)?enum\s+[A-Z][\w$
 var tsAsyncPattern = regexp.MustCompile(`(async\s+function\s+[A-Za-z_$]|async\s*\([^)]*\)\s*=>|=\s*async\s*\()`)
 
 // Sub-boundary patterns for splitting oversized chunks within React components.
-var jsReturnPattern = regexp.MustCompile(`^\s*return\s*[\(\{]`)
+var jsReturnPattern = regexp.MustCompile(`^\s*return(?:\s*[\(\{]|\s+<)`)
 var jsInternalDeclPattern = regexp.MustCompile(`^\s+(const|let|var)\s+\w+\s*=`)
 var jsUseHookCallPattern = regexp.MustCompile(`^\s+(const\s+.*=\s*)?use[A-Z]\w*\(`)
 
@@ -347,27 +347,25 @@ func (s *SimpleChunker) splitOversizedChunk(lines []string, language string) [][
 	// Track brace depth to only split at the component's top scope (depth 1).
 	braceDepth := 0
 	for i, line := range lines {
-		braceDepth += strings.Count(line, "{")
-		braceDepth -= strings.Count(line, "}")
-
-		// Only consider splits at the component body scope (depth 1)
-		// or at the top level (depth 0 for non-wrapped code).
-		if braceDepth > 1 {
-			continue
-		}
-
 		trimmed := strings.TrimSpace(line)
 
-		if jsReturnPattern.MatchString(line) {
-			candidates = append(candidates, splitCandidate{i, 1})
-		} else if jsUseHookCallPattern.MatchString(line) {
-			candidates = append(candidates, splitCandidate{i, 2})
-		} else if jsInternalDeclPattern.MatchString(line) && !strings.Contains(trimmed, "=>") {
-			// Internal declaration but not an arrow function (those are boundaries already)
-			candidates = append(candidates, splitCandidate{i, 3})
-		} else if trimmed == "" && i > 0 && i < len(lines)-1 {
-			candidates = append(candidates, splitCandidate{i, 4})
+		// Only consider splits if the line starts at component body scope (depth 1)
+		// or at the top level (depth 0).
+		if braceDepth <= 1 {
+			if jsReturnPattern.MatchString(line) {
+				candidates = append(candidates, splitCandidate{i, 1})
+			} else if jsUseHookCallPattern.MatchString(line) {
+				candidates = append(candidates, splitCandidate{i, 2})
+			} else if jsInternalDeclPattern.MatchString(line) && !strings.Contains(trimmed, "=>") {
+				// Internal declaration but not an arrow function (those are boundaries already)
+				candidates = append(candidates, splitCandidate{i, 3})
+			} else if trimmed == "" && i > 0 && i < len(lines)-1 {
+				candidates = append(candidates, splitCandidate{i, 4})
+			}
 		}
+
+		braceDepth += strings.Count(line, "{")
+		braceDepth -= strings.Count(line, "}")
 	}
 
 	if len(candidates) == 0 {
@@ -390,7 +388,7 @@ func (s *SimpleChunker) splitOversizedChunk(lines []string, language string) [][
 
 			// Check if this line is a split candidate.
 			for _, c := range candidates {
-				if c.lineIdx == i && c.priority < bestPriority && i > segStart {
+				if c.lineIdx == i && c.priority <= bestPriority && i > segStart {
 					bestCandidate = i
 					bestPriority = c.priority
 				}
@@ -456,7 +454,8 @@ func (s *SimpleChunker) hardSplitByChars(lines []string) [][]string {
 	return result
 }
 
-// mergeTinyFragments merges chunks smaller than MinChunkChars with the next chunk.
+// mergeTinyFragments merges chunks smaller than MinChunkChars with a neighbor
+// when doing so does not violate MaxChars.
 func (s *SimpleChunker) mergeTinyFragments(segments [][]string) [][]string {
 	if len(segments) <= 1 {
 		return segments
@@ -468,22 +467,28 @@ func (s *SimpleChunker) mergeTinyFragments(segments [][]string) [][]string {
 		content := strings.Join(seg, "\n")
 
 		if len(content) < s.config.MinChunkChars && i+1 < len(segments) {
-			// Merge with next segment.
-			combined := make([]string, 0, len(seg)+len(segments[i+1]))
-			combined = append(combined, seg...)
-			combined = append(combined, segments[i+1]...)
-			segments[i+1] = combined
-			continue
+			nextContent := strings.Join(segments[i+1], "\n")
+			if len(content)+1+len(nextContent) <= s.config.MaxChars {
+				// Merge with next segment.
+				combined := make([]string, 0, len(seg)+len(segments[i+1]))
+				combined = append(combined, seg...)
+				combined = append(combined, segments[i+1]...)
+				segments[i+1] = combined
+				continue
+			}
 		}
 
 		if len(content) < s.config.MinChunkChars && len(merged) > 0 {
-			// Merge with previous segment.
 			prev := merged[len(merged)-1]
-			combined := make([]string, 0, len(prev)+len(seg))
-			combined = append(combined, prev...)
-			combined = append(combined, seg...)
-			merged[len(merged)-1] = combined
-			continue
+			prevContent := strings.Join(prev, "\n")
+			if len(prevContent)+1+len(content) <= s.config.MaxChars {
+				// Merge with previous segment.
+				combined := make([]string, 0, len(prev)+len(seg))
+				combined = append(combined, prev...)
+				combined = append(combined, seg...)
+				merged[len(merged)-1] = combined
+				continue
+			}
 		}
 
 		merged = append(merged, seg)

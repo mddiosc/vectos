@@ -370,6 +370,74 @@ func TestSplitOversizedChunk_SplitsAtReturn(t *testing.T) {
 	}
 }
 
+func TestSplitOversizedChunk_SplitsAtHookWithBlock(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      40,
+		TargetChars:   100,
+		MaxChars:      120,
+		MinChunkChars: 40,
+	}, fakeEmbedder{})
+
+	component := `export function MyComponent() {
+  const [state, setState] = useState(false)
+
+  useEffect(() => {
+    const a = 1
+    const b = 2
+    console.log(a, b)
+  }, [])
+
+  return <div>{state}</div>
+}`
+	lines := strings.Split(component, "\n")
+	subChunks := chunker.splitOversizedChunk(lines, "tsx")
+
+	// Expect one sub-chunk to start at the useEffect line.
+	foundHookSplit := false
+	for _, sub := range subChunks {
+		content := strings.Join(sub, "\n")
+		if strings.HasPrefix(strings.TrimSpace(content), "useEffect") {
+			foundHookSplit = true
+		}
+	}
+	if !foundHookSplit {
+		t.Error("expected useEffect to be at the start of a sub-chunk")
+	}
+}
+
+func TestSplitOversizedChunk_SplitsAtLatestCandidateOfSamePriority(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      40,
+		TargetChars:   100,
+		MaxChars:      130,
+		MinChunkChars: 10,
+	}, fakeEmbedder{})
+
+	lines := []string{
+		"const a = 'some long string';", // 30 chars
+		"",                              // blank line index 1 - total: 31 chars
+		"const b = 'some long string';", // 30 chars
+		"",                              // blank line index 3 - total: 62 chars
+		"const c = 'some long string';", // 30 chars
+		"const d = 'some long string';", // 30 chars - total: 123 chars (exceeds TargetChars=100)
+		"const e = 'some long string';",
+	}
+
+	subChunks := chunker.splitOversizedChunk(lines, "tsx")
+
+	if len(subChunks) < 2 {
+		t.Fatalf("expected split, got %d chunks", len(subChunks))
+	}
+
+	// We expect the first chunk to contain up to "const b = ...", i.e. 3 lines.
+	// (split at index 3).
+	// If it used the first candidate (index 1), the first chunk would only have 1 line ("const a = ...").
+	firstChunkLen := len(subChunks[0])
+	if firstChunkLen != 3 {
+		t.Errorf("expected first chunk to have 3 lines (split at blank line index 3), got %d lines: %v", firstChunkLen, subChunks[0])
+	}
+}
+
 func TestSplitOversizedChunk_MergesTinyFragments(t *testing.T) {
 	chunker := NewSimpleChunker(ChunkConfig{
 		MaxLines:      40,
@@ -394,6 +462,59 @@ func TestSplitOversizedChunk_MergesTinyFragments(t *testing.T) {
 		content := strings.Join(sub, "\n")
 		if len(content) < 150 && len(subChunks) > 1 {
 			t.Errorf("sub-chunk %d is too small (%d chars): %q", i, len(content), content)
+		}
+	}
+}
+
+func TestSplitOversizedChunk_SplitsAtBareJSXReturn(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      40,
+		TargetChars:   180,
+		MaxChars:      220,
+		MinChunkChars: 20,
+	}, fakeEmbedder{})
+
+	component := `export function MyComponent() {
+	  doSomethingWithVeryLongNameAndExtraSuffix(state, props, context)
+	  renderSomethingWithVeryLongNameAndExtraSuffix(state, props, context)
+	  trackSomethingWithVeryLongNameAndExtraSuffix(state, props, context)
+	  return <div>{value}{other}</div>
+}`
+	lines := strings.Split(component, "\n")
+	subChunks := chunker.splitOversizedChunk(lines, "tsx")
+
+	foundReturnSplit := false
+	for _, sub := range subChunks {
+		content := strings.Join(sub, "\n")
+		if strings.HasPrefix(strings.TrimSpace(content), "return <") {
+			foundReturnSplit = true
+		}
+	}
+	if !foundReturnSplit {
+		t.Error("expected bare JSX return to be at the start of a sub-chunk")
+	}
+}
+
+func TestMergeTinyFragments_RespectsMaxChars(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      40,
+		TargetChars:   100,
+		MaxChars:      20,
+		MinChunkChars: 10,
+	}, fakeEmbedder{})
+
+	segments := [][]string{
+		{"tiny"},
+		{"123456789012345678"},
+	}
+
+	merged := chunker.mergeTinyFragments(segments)
+	if len(merged) != 2 {
+		t.Fatalf("expected segments to remain separate when merge would exceed MaxChars, got %d", len(merged))
+	}
+	for i, seg := range merged {
+		if got := len(strings.Join(seg, "\n")); got > chunker.config.MaxChars {
+			t.Fatalf("segment %d exceeds MaxChars after mergeTinyFragments: %d > %d", i, got, chunker.config.MaxChars)
 		}
 	}
 }
