@@ -30,6 +30,33 @@ export function Hero() {
 	return <Button />
 }
 
+func TestChunkStrategyForLanguage(t *testing.T) {
+	tests := []struct {
+		language string
+		want     chunkStrategy
+	}{
+		{language: "go", want: chunkStrategyGo},
+		{language: "tsx", want: chunkStrategyBraceStructured},
+		{language: "javascript", want: chunkStrategyBraceStructured},
+		{language: "python", want: chunkStrategyIndentStructured},
+		{language: "shell", want: chunkStrategyIndentStructured},
+		{language: "markdown", want: chunkStrategyDocsStructured},
+		{language: "yaml", want: chunkStrategyLine},
+		{language: "yaml.compose", want: chunkStrategyLine},
+		{language: "bazel.build", want: chunkStrategyLine},
+		{language: "json", want: chunkStrategyLine},
+		{language: "unknown", want: chunkStrategyLine},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.language, func(t *testing.T) {
+			if got := chunkStrategyForLanguage(tt.language); got != tt.want {
+				t.Fatalf("chunkStrategyForLanguage(%q) = %q, want %q", tt.language, got, tt.want)
+			}
+		})
+	}
+}
+
 export function useHeroData() {
 	return useMemo(() => ({ title: "hi" }), [])
 }

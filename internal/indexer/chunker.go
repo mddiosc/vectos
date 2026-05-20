@@ -38,6 +38,16 @@ const defaultTargetChars = 1200
 const defaultMaxChars = 2500
 const defaultMinChunkChars = 200
 
+type chunkStrategy string
+
+const (
+	chunkStrategyGo               chunkStrategy = "go"
+	chunkStrategyBraceStructured  chunkStrategy = "brace_structured"
+	chunkStrategyIndentStructured chunkStrategy = "indent_structured"
+	chunkStrategyDocsStructured   chunkStrategy = "docs_structured"
+	chunkStrategyLine             chunkStrategy = "line"
+)
+
 // ChunkConfig define los parámetros para la segmentación del código.
 type ChunkConfig struct {
 	MaxLines      int // Máximo de líneas por trozo (line-based chunking)
@@ -107,36 +117,35 @@ func (s *SimpleChunker) chunkFileImpl(filePath string, language string, embed bo
 		lines = lines[:len(lines)-1]
 	}
 
-	if language == "go" {
+	switch chunkStrategyForLanguage(language) {
+	case chunkStrategyGo:
 		return s.chunkGoFileImpl(filePath, language, lines, embed)
-	}
-
-	if language == "dockerfile" || strings.HasPrefix(language, "yaml") || strings.HasPrefix(language, "bazel") || isLineChunkedLanguage(language) {
-		return s.chunkByLinesImpl(filePath, language, lines, embed), nil
-	}
-
-	if supportsStructuredChunking(language) {
+	case chunkStrategyBraceStructured, chunkStrategyIndentStructured, chunkStrategyDocsStructured:
 		return s.chunkStructuredFileImpl(filePath, language, lines, embed), nil
+	case chunkStrategyLine:
+		return s.chunkByLinesImpl(filePath, language, lines, embed), nil
 	}
 
 	return s.chunkByLinesImpl(filePath, language, lines, embed), nil
 }
 
-func supportsStructuredChunking(language string) bool {
+func chunkStrategyForLanguage(language string) chunkStrategy {
 	switch language {
-	case "javascript", "typescript", "tsx", "jsx", "python", "java", "shell", "markdown":
-		return true
+	case "go":
+		return chunkStrategyGo
+	case "javascript", "typescript", "tsx", "jsx":
+		return chunkStrategyBraceStructured
+	case "python", "java", "shell":
+		return chunkStrategyIndentStructured
+	case "markdown":
+		return chunkStrategyDocsStructured
+	case "dockerfile", "json", "toml", "ini", "xml", "properties", "makefile", "gitignore", "gradle", "lockfile", "config":
+		return chunkStrategyLine
 	default:
-		return false
-	}
-}
-
-func isLineChunkedLanguage(language string) bool {
-	switch language {
-	case "json", "toml", "ini", "xml", "properties", "makefile", "gitignore", "gradle", "lockfile", "config":
-		return true
-	default:
-		return false
+		if strings.HasPrefix(language, "yaml") || strings.HasPrefix(language, "bazel") {
+			return chunkStrategyLine
+		}
+		return chunkStrategyLine
 	}
 }
 
