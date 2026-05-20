@@ -120,6 +120,9 @@ func TestFormatSearchGainReportVerbose(t *testing.T) {
 	if !strings.Contains(report, "Vectos gain") {
 		t.Fatalf("expected report header, got %q", report)
 	}
+	if !strings.Contains(report, "Returned bytes") || !strings.Contains(report, "Saved bytes") {
+		t.Fatalf("expected byte-based labels in report, got %q", report)
+	}
 	if !strings.Contains(report, "Usage breakdown") {
 		t.Fatalf("expected verbose breakdown, got %q", report)
 	}

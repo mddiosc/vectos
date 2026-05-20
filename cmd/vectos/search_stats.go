@@ -101,6 +101,8 @@ func recordSearchStats(pm *storage.ProjectManager, scope *workspace.Scope, callT
 func measureSnippetChars(results []storage.CodeChunk) int64 {
 	var total int64
 	for _, result := range results {
+		// len(string) counts UTF-8 bytes, which matches the file byte size
+		// comparison used below and keeps the savings estimate internally consistent.
 		total += int64(len(result.Content))
 	}
 	return total
@@ -181,8 +183,8 @@ func buildSearchGainSummary(pm *storage.ProjectManager, scope *workspace.Scope) 
 	}
 	defer f.Close()
 
-	now := time.Now().UTC()
-	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	now := time.Now()
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	sevenDaysAgo := now.AddDate(0, 0, -7)
 
 	scanner := bufio.NewScanner(f)
@@ -196,7 +198,7 @@ func buildSearchGainSummary(pm *storage.ProjectManager, scope *workspace.Scope) 
 		if record.Timestamp.After(sevenDaysAgo) {
 			accumulateGainBucket(&summary.Last7Days, record)
 		}
-		if !record.Timestamp.Before(todayStart) {
+		if !record.Timestamp.Local().Before(todayStart) {
 			accumulateGainBucket(&summary.Today, record)
 		}
 		bucket := summary.ByCall[record.Call]
@@ -253,9 +255,9 @@ func formatSearchGainReport(summary searchGainSummary, verbose bool) string {
 func writeGainBucket(b *strings.Builder, bucket searchGainBucket) {
 	b.WriteString(bucket.Label + "\n")
 	b.WriteString(fmt.Sprintf("  Searches: %d\n", bucket.Calls))
-	b.WriteString(fmt.Sprintf("  Returned chars: %s\n", formatCompactInt(bucket.SnippetChars)))
-	b.WriteString(fmt.Sprintf("  Full-file chars: %s\n", formatCompactInt(bucket.FileChars)))
-	b.WriteString(fmt.Sprintf("  Saved chars: %s\n", formatCompactInt(bucket.SavedChars())))
+	b.WriteString(fmt.Sprintf("  Returned bytes: %s\n", formatCompactInt(bucket.SnippetChars)))
+	b.WriteString(fmt.Sprintf("  Full-file bytes: %s\n", formatCompactInt(bucket.FileChars)))
+	b.WriteString(fmt.Sprintf("  Saved bytes: %s\n", formatCompactInt(bucket.SavedChars())))
 	b.WriteString(fmt.Sprintf("  Saved tokens (~): %s\n", formatCompactInt(bucket.SavedTokensApprox())))
 	b.WriteString(fmt.Sprintf("  Saving: %.1f%%\n\n", bucket.SavingPercent()))
 }

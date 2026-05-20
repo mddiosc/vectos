@@ -109,6 +109,7 @@ func printSubcommandHelp(cmd string) {
 		fmt.Println()
 		fmt.Println("Show an estimated summary of how many characters and tokens Vectos")
 		fmt.Println("saved by returning targeted search chunks instead of full files.")
+		fmt.Println("Character counts are measured as UTF-8 bytes for consistency with file sizes.")
 		fmt.Println("Search stats are recorded per project in ~/.vectos/projects/<project>/search_stats.jsonl.")
 		fmt.Println()
 		fmt.Println(helpHeaderFlags)
