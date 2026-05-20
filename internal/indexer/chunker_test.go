@@ -169,6 +169,86 @@ func TestChunkStructuredShellOversizedBlockSplits(t *testing.T) {
 	}
 }
 
+func TestChunkStructuredMarkdownOversizedSectionSplits(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      200,
+		TargetChars:   180,
+		MaxChars:      260,
+		MinChunkChars: 40,
+	}, fakeEmbedder{})
+
+	lines := strings.Split(`# Overview
+This paragraph explains the architecture in a deliberately verbose way with repeated wording for chunk sizing.
+This paragraph continues the explanation with more deliberately verbose wording for chunk sizing.
+
+This second paragraph adds retrieval notes and more deliberately verbose wording for chunk sizing.
+This second paragraph keeps expanding the section and should help force a split near paragraph boundaries.
+
+- first important bullet with extra wording for chunk sizing
+- second important bullet with extra wording for chunk sizing
+`, "\n")
+
+	chunks := chunker.chunkStructuredFileImpl("README.md", "markdown", lines, true)
+	if len(chunks) < 2 {
+		t.Fatalf("expected oversized markdown section to split, got %d chunks", len(chunks))
+	}
+
+	foundBulletChunk := false
+	for i, c := range chunks {
+		if len(c.Content) > chunker.config.MaxChars {
+			t.Fatalf("chunk %d exceeds MaxChars: %d > %d", i, len(c.Content), chunker.config.MaxChars)
+		}
+		if strings.Contains(c.Content, "first important bullet") {
+			foundBulletChunk = true
+		}
+	}
+	if !foundBulletChunk {
+		t.Fatalf("expected one split chunk to retain the markdown list section")
+	}
+}
+
+func TestChunkStructuredMarkdownKeepsFenceTogetherWhenSplitting(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      200,
+		TargetChars:   220,
+		MaxChars:      320,
+		MinChunkChars: 50,
+	}, fakeEmbedder{})
+
+	lines := strings.Split("# API Notes\n"+
+		"This introduction is intentionally long so the markdown section grows enough to require splitting while staying readable.\n"+
+		"This introduction adds even more context so the chunker prefers a semantic boundary instead of a hard split.\n\n"+
+		"```ts\n"+
+		"export function useFeatureFlag() {\n"+
+		"  return computeFeatureFlagFromEnvironmentAndUserRole();\n"+
+		"}\n"+
+		"```\n\n"+
+		"This trailing explanation is also intentionally verbose so the section still needs multiple chunks after the code block.\n", "\n")
+
+	chunks := chunker.chunkStructuredFileImpl("GUIDE.md", "markdown", lines, true)
+	if len(chunks) < 2 {
+		t.Fatalf("expected markdown section with fence to split, got %d chunks", len(chunks))
+	}
+
+	foundCompleteFence := false
+	for i, c := range chunks {
+		if len(c.Content) > chunker.config.MaxChars {
+			t.Fatalf("chunk %d exceeds MaxChars: %d > %d", i, len(c.Content), chunker.config.MaxChars)
+		}
+		hasOpen := strings.Contains(c.Content, "```ts")
+		hasClose := strings.Contains(c.Content, "\n```") || strings.HasSuffix(c.Content, "```")
+		if hasOpen != hasClose {
+			t.Fatalf("chunk %d split markdown fence unexpectedly:\n%s", i, c.Content)
+		}
+		if hasOpen && hasClose {
+			foundCompleteFence = true
+		}
+	}
+	if !foundCompleteFence {
+		t.Fatalf("expected one split chunk to keep the fenced code block together")
+	}
+}
+
 func TestBatchEmbedChunks_FillsVectors(t *testing.T) {
 	chunker := NewSimpleChunker(ChunkConfig{MaxLines: 10}, fakeEmbedder{})
 

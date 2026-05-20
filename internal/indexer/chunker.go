@@ -23,7 +23,9 @@ var jsTestPattern = regexp.MustCompile(`^(describe|it|test)\s*\(`)
 var pyBlockPattern = regexp.MustCompile(`^(def|class)\s+`)
 var javaBlockPattern = regexp.MustCompile(`^(public|protected|private|static|final|abstract|class|interface|enum|record)\s+`)
 var shellBlockPattern = regexp.MustCompile(`^(function\s+\w+|\w+\s*\(\)\s*\{|if\s|for\s|while\s|case\s)`)
-var markdownBlockPattern = regexp.MustCompile(`^(#{1,4}\s|[-*]\s|\d+\.\s|~~~)`)
+var markdownBlockPattern = regexp.MustCompile("^(#{1,4}\\s|[-*]\\s|\\d+\\.\\s|```|~~~)")
+var markdownFencePattern = regexp.MustCompile("^(```|~~~)")
+var markdownListPattern = regexp.MustCompile(`^([-*]\s|\d+\.\s)`)
 var tsInterfacePattern = regexp.MustCompile(`^(export\s+)?interface\s+[A-Z][\w$]*`)
 var tsTypeAliasPattern = regexp.MustCompile(`^(export\s+)?type\s+[A-Z][\w$]*(<[^>]+>)?\s*=`)
 var tsEnumPattern = regexp.MustCompile(`^(export\s+)?(const\s+)?enum\s+[A-Z][\w$]*`)
@@ -263,10 +265,14 @@ func (s *SimpleChunker) chunkStructuredFileImpl(filePath, language string, lines
 
 		start := i + 1
 		end := len(lines) - 1
-		for j := i + 1; j < len(lines); j++ {
-			if isStructuredBoundary(language, strings.TrimSpace(lines[j])) {
-				end = j - 1
-				break
+		if chunkStrategyForLanguage(language) == chunkStrategyDocsStructured {
+			end = findDocsBlockEnd(lines, i)
+		} else {
+			for j := i + 1; j < len(lines); j++ {
+				if isStructuredBoundary(language, strings.TrimSpace(lines[j])) {
+					end = j - 1
+					break
+				}
 			}
 		}
 
@@ -356,6 +362,8 @@ func (s *SimpleChunker) splitOversizedStructuredChunk(lines []string, language s
 		return s.splitOversizedChunk(lines, language)
 	case chunkStrategyIndentStructured:
 		return s.splitOversizedIndentChunk(lines)
+	case chunkStrategyDocsStructured:
+		return s.splitOversizedDocsChunk(lines)
 	default:
 		return s.hardSplitByChars(lines)
 	}
@@ -449,6 +457,103 @@ func (s *SimpleChunker) splitOversizedIndentChunk(lines []string) [][]string {
 	}
 
 	return s.splitWithCandidates(lines, candidates)
+}
+
+func (s *SimpleChunker) splitOversizedDocsChunk(lines []string) [][]string {
+	content := strings.Join(lines, "\n")
+	if len(content) <= s.config.MaxChars {
+		return [][]string{lines}
+	}
+
+	var candidates []chunkSplitCandidate
+	scanFence := false
+
+	for i, line := range lines {
+		if i == 0 {
+			if markdownFencePattern.MatchString(strings.TrimSpace(line)) {
+				scanFence = !scanFence
+			}
+			continue
+		}
+
+		trimmed := strings.TrimSpace(line)
+		if markdownFencePattern.MatchString(trimmed) {
+			if scanFence {
+				scanFence = false
+				if i+1 < len(lines) {
+					candidates = append(candidates, chunkSplitCandidate{i + 1, 1})
+				}
+			} else {
+				scanFence = true
+			}
+			continue
+		}
+		if scanFence {
+			continue
+		}
+
+		if strings.HasPrefix(trimmed, "#") || markdownListPattern.MatchString(trimmed) {
+			candidates = append(candidates, chunkSplitCandidate{i, 1})
+			continue
+		}
+		if trimmed == "" && i < len(lines)-1 {
+			candidates = append(candidates, chunkSplitCandidate{i, 2})
+		}
+	}
+
+	if len(candidates) == 0 {
+		return s.hardSplitByChars(lines)
+	}
+
+	var result [][]string
+	segStart := 0
+
+	for segStart < len(lines) {
+		charCount := 0
+		bestCandidate := -1
+		bestPriority := 999
+		inFence := false
+
+		for i := segStart; i < len(lines); i++ {
+			trimmed := strings.TrimSpace(lines[i])
+			if markdownFencePattern.MatchString(trimmed) {
+				inFence = !inFence
+			}
+
+			charCount += len(lines[i]) + 1
+
+			for _, c := range candidates {
+				if c.lineIdx == i && c.priority <= bestPriority && i > segStart {
+					bestCandidate = i
+					bestPriority = c.priority
+				}
+			}
+
+			if !inFence && charCount >= s.config.TargetChars && bestCandidate > segStart {
+				result = append(result, lines[segStart:bestCandidate])
+				segStart = bestCandidate
+				break
+			}
+
+			if !inFence && charCount >= s.config.MaxChars {
+				if bestCandidate > segStart {
+					result = append(result, lines[segStart:bestCandidate])
+					segStart = bestCandidate
+				} else {
+					result = append(result, lines[segStart:i+1])
+					segStart = i + 1
+				}
+				break
+			}
+
+			if i == len(lines)-1 {
+				result = append(result, lines[segStart:])
+				segStart = len(lines)
+			}
+		}
+	}
+
+	return s.mergeTinyFragments(result)
 }
 
 func (s *SimpleChunker) splitWithCandidates(lines []string, candidates []chunkSplitCandidate) [][]string {
@@ -577,6 +682,26 @@ func leadingWhitespaceWidth(line string) int {
 		}
 	}
 	return width
+}
+
+func findDocsBlockEnd(lines []string, startIdx int) int {
+	startTrimmed := strings.TrimSpace(lines[startIdx])
+	if markdownFencePattern.MatchString(startTrimmed) {
+		for i := startIdx + 1; i < len(lines); i++ {
+			if markdownFencePattern.MatchString(strings.TrimSpace(lines[i])) {
+				return i
+			}
+		}
+		return len(lines) - 1
+	}
+
+	for i := startIdx + 1; i < len(lines); i++ {
+		if isStructuredBoundary("markdown", strings.TrimSpace(lines[i])) {
+			return i - 1
+		}
+	}
+
+	return len(lines) - 1
 }
 
 func isBraceStructuredLanguage(language string) bool {
