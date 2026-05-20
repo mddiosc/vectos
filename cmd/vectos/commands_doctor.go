@@ -203,7 +203,7 @@ func runIndexChecks(projectBaseDir string, embedConfig config.EmbeddingConfig, s
 	}
 
 	if _, providerInfo, err := embeddings.ResolveEmbedder(embedConfig); err == nil {
-		needsReindex, err := store.RequiresReindex(providerInfo.Provider, providerInfo.Model, providerInfo.Dimensions)
+		needsReindex, err := store.RequiresReindex(providerInfo.Provider, providerInfo.Model, providerInfo.Dimensions, currentIndexFingerprint(indexChunkerConfig(embedConfig.Embedded.BatchSize)))
 		if err == nil && needsReindex {
 			checkFail("Index/provider mismatch: reindex required")
 			checkHint("Run 'vectos index .' to rebuild the index with the current provider")

@@ -149,7 +149,7 @@ func printProviderHealth(embedConfig config.EmbeddingConfig) {
 
 func checkAndPrintReindexStatus(store *storage.SQLiteStorage, embedConfig config.EmbeddingConfig) {
 	if _, providerInfo, err := embeddings.ResolveEmbedder(embedConfig); err == nil {
-		requiresReindex, err := store.RequiresReindex(providerInfo.Provider, providerInfo.Model, providerInfo.Dimensions)
+		requiresReindex, err := store.RequiresReindex(providerInfo.Provider, providerInfo.Model, providerInfo.Dimensions, currentIndexFingerprint(indexChunkerConfig(embedConfig.Embedded.BatchSize)))
 		if err == nil && requiresReindex {
 			fmt.Println("Reindex required: current embedding provider configuration does not match stored index metadata")
 		}

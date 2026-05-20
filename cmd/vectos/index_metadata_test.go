@@ -53,11 +53,12 @@ func TestSyncIndexMetadataInvalidatesStaleEmbeddings(t *testing.T) {
 		t.Fatalf("save vector index: %v", err)
 	}
 
-	message, err := syncIndexMetadata(store, embeddings.ProviderInfo{Provider: "embedded", Model: "jina-embeddings-v3", Dimensions: 512})
+	fingerprint := currentIndexFingerprint(indexChunkerConfig(0))
+	message, err := syncIndexMetadata(store, embeddings.ProviderInfo{Provider: "embedded", Model: "jina-embeddings-v3", Dimensions: 512}, fingerprint)
 	if err != nil {
 		t.Fatalf("syncIndexMetadata: %v", err)
 	}
-	if message == "" {
+	if message.Message == "" {
 		t.Fatal("expected invalidation message")
 	}
 	if _, err := os.Stat(store.VectorIndexPath()); !os.IsNotExist(err) {
@@ -76,7 +77,46 @@ func TestSyncIndexMetadataInvalidatesStaleEmbeddings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get index metadata: %v", err)
 	}
-	if meta.Model != "jina-embeddings-v3" || meta.Dimensions != 512 {
+	if meta.Model != "jina-embeddings-v3" || meta.Dimensions != 512 || meta.IndexFingerprint != fingerprint {
 		t.Fatalf("unexpected metadata after sync: %+v", meta)
+	}
+}
+
+func TestSyncIndexMetadataLegacyFingerprintForcesFullRebuild(t *testing.T) {
+	store := newIndexMetadataTestStore(t)
+
+	if _, err := store.SaveChunk(storage.CodeChunk{FilePath: "legacy.go", Content: "legacy chunk", StartLine: 1, EndLine: 1, Language: "go", Vector: []float32{1, 0, 0, 0}}); err != nil {
+		t.Fatalf("save chunk: %v", err)
+	}
+	if err := store.UpsertIndexedFile("legacy.go", "hash-legacy"); err != nil {
+		t.Fatalf("upsert indexed file: %v", err)
+	}
+	if err := store.SetIndexMetadata(storage.IndexMetadata{Provider: "embedded", Model: "jina-embeddings-v3", Dimensions: 512}); err != nil {
+		t.Fatalf("set legacy metadata: %v", err)
+	}
+
+	fingerprint := currentIndexFingerprint(indexChunkerConfig(0))
+	result, err := syncIndexMetadata(store, embeddings.ProviderInfo{Provider: "embedded", Model: "jina-embeddings-v3", Dimensions: 512}, fingerprint)
+	if err != nil {
+		t.Fatalf("syncIndexMetadata legacy: %v", err)
+	}
+	if !result.FullRebuild {
+		t.Fatal("expected legacy fingerprint to force full rebuild")
+	}
+
+	stats, err := store.Stats()
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+	if stats.ChunkCount != 0 || stats.FileCount != 0 {
+		t.Fatalf("expected cleared index after rebuild trigger, got chunks=%d files=%d", stats.ChunkCount, stats.FileCount)
+	}
+
+	meta, err := store.GetIndexMetadata()
+	if err != nil {
+		t.Fatalf("get index metadata: %v", err)
+	}
+	if meta.IndexFingerprint != fingerprint {
+		t.Fatalf("expected fingerprint %q, got %q", fingerprint, meta.IndexFingerprint)
 	}
 }

@@ -115,7 +115,8 @@ func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port in
 	if err != nil {
 		log.Fatalf("error resolving embedding provider: %v", err)
 	}
-	chunker = indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10, BatchSize: embedConfig.Embedded.BatchSize}, embedClient)
+	chunkerConfig := indexChunkerConfig(embedConfig.Embedded.BatchSize)
+	chunker = indexer.NewSimpleChunker(chunkerConfig, embedClient)
 	providerInfo = provider
 
 	var activeStore *storage.SQLiteStorage
@@ -129,7 +130,7 @@ func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port in
 	}
 
 	reindexFn := func(req server.ReindexRequest) server.ReindexResponse {
-		return reindexProject(cache, chunker, providerInfo, req, embedConfig.VectorIndex, projectBaseDir)
+		return reindexProject(cache, chunker, providerInfo, currentIndexFingerprint(chunkerConfig), req, embedConfig.VectorIndex, projectBaseDir)
 	}
 	embedFn := func(text string) ([]float32, error) { return embedClient.GetEmbedding(text) }
 	srv := server.NewServer(port, reindexFn, embedFn, activeStore)
@@ -218,7 +219,7 @@ func makeReindexCallback(store *storage.SQLiteStorage, embedClient embeddings.Em
 	}
 }
 
-func reindexProject(cache *storeCache, chunker *indexer.SimpleChunker, providerInfo embeddings.ProviderInfo, req server.ReindexRequest, viCfg config.VectorIndexConfig, projectBaseDir string) server.ReindexResponse {
+func reindexProject(cache *storeCache, chunker *indexer.SimpleChunker, providerInfo embeddings.ProviderInfo, indexFingerprint string, req server.ReindexRequest, viCfg config.VectorIndexConfig, projectBaseDir string) server.ReindexResponse {
 	scope, err := workspace.ResolveScope(req.Path, req.Project)
 	if err != nil {
 		return server.ReindexResponse{Status: "error", Message: err.Error()}
@@ -229,11 +230,8 @@ func reindexProject(cache *storeCache, chunker *indexer.SimpleChunker, providerI
 		return server.ReindexResponse{Status: "error", Message: err.Error()}
 	}
 
-	if err := store.SetIndexMetadata(storage.IndexMetadata{
-		Provider:   providerInfo.Provider,
-		Model:      providerInfo.Model,
-		Dimensions: providerInfo.Dimensions,
-	}); err != nil {
+	metadataResult, err := syncIndexMetadata(store, providerInfo, indexFingerprint)
+	if err != nil {
 		return server.ReindexResponse{Status: "error", Message: err.Error()}
 	}
 
@@ -267,11 +265,13 @@ func reindexProject(cache *storeCache, chunker *indexer.SimpleChunker, providerI
 
 	// If changed paths are specified, filter to only those.
 	changedPaths := content.ParseChangedPaths(req.Changed)
-	if len(changedPaths) > 0 {
+	if len(changedPaths) > 0 && !metadataResult.FullRebuild {
 		paths, skippedPaths, err = content.FilterChangedPaths(scope, paths, skippedPaths, changedPaths)
 		if err != nil {
 			return server.ReindexResponse{Status: "error", Message: err.Error()}
 		}
+	} else if len(changedPaths) > 0 && metadataResult.FullRebuild {
+		log.Printf("reindex: ignoring changed-path filter for %s because index format changed", scope.Name)
 	}
 
 	// With hash-based caching, we no longer delete all chunks on full reindex.

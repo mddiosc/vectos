@@ -1,6 +1,7 @@
 package indexer
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -56,6 +57,195 @@ test("works", () => {
 
 	if !strings.Contains(chunks[3].Content, "test(\"works\"") {
 		t.Fatalf("expected test chunk, got %q", chunks[3].Content)
+	}
+}
+
+func TestChunkStrategyForLanguage(t *testing.T) {
+	tests := []struct {
+		language string
+		want     chunkStrategy
+	}{
+		{language: "go", want: chunkStrategyGo},
+		{language: "tsx", want: chunkStrategyBraceStructured},
+		{language: "javascript", want: chunkStrategyBraceStructured},
+		{language: "python", want: chunkStrategyIndentStructured},
+		{language: "shell", want: chunkStrategyIndentStructured},
+		{language: "markdown", want: chunkStrategyDocsStructured},
+		{language: "yaml", want: chunkStrategyLine},
+		{language: "yaml.compose", want: chunkStrategyLine},
+		{language: "bazel.build", want: chunkStrategyLine},
+		{language: "json", want: chunkStrategyLine},
+		{language: "unknown", want: chunkStrategyLine},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.language, func(t *testing.T) {
+			if got := chunkStrategyForLanguage(tt.language); got != tt.want {
+				t.Fatalf("chunkStrategyForLanguage(%q) = %q, want %q", tt.language, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestChunkStructuredPythonOversizedBlockSplits(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      200,
+		TargetChars:   180,
+		MaxChars:      260,
+		MinChunkChars: 40,
+	}, fakeEmbedder{})
+
+	lines := strings.Split(`def compute_value(items):
+    total = 0
+    running_average = 0
+    processed_items = []
+
+    for item in items:
+        total += item.value_with_extra_suffix
+        running_average += item.value_with_extra_suffix / 2
+        processed_items.append(item.value_with_extra_suffix)
+
+    summary = format_summary_with_extra_suffix(total, running_average)
+    details = build_details_with_extra_suffix(processed_items, summary)
+    metrics = collect_metrics_with_extra_suffix(details, summary)
+
+    return total + len(metrics)
+`, "\n")
+
+	chunks := chunker.chunkStructuredFileImpl("calc.py", "python", lines, true)
+	if len(chunks) < 2 {
+		t.Fatalf("expected oversized python block to split, got %d chunks", len(chunks))
+	}
+
+	foundReturnChunk := false
+	for i, c := range chunks {
+		if len(c.Content) > chunker.config.MaxChars {
+			t.Fatalf("chunk %d exceeds MaxChars: %d > %d", i, len(c.Content), chunker.config.MaxChars)
+		}
+		if strings.Contains(c.Content, "return total + len(metrics)") {
+			foundReturnChunk = true
+		}
+	}
+	if !foundReturnChunk {
+		t.Fatalf("expected one split chunk to retain the python return statement")
+	}
+}
+
+func TestChunkStructuredShellOversizedBlockSplits(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      200,
+		TargetChars:   140,
+		MaxChars:      220,
+		MinChunkChars: 30,
+	}, fakeEmbedder{})
+
+	lines := strings.Split(`deploy_app() {
+    local image_reference="registry.example.com/some/very/long/image-reference"
+    local deployment_target="production-cluster-with-extra-suffix"
+
+    run_step_with_extra_suffix build "$image_reference"
+    run_step_with_extra_suffix push "$image_reference"
+    run_step_with_extra_suffix deploy "$deployment_target"
+
+    return 0
+}` , "\n")
+
+	chunks := chunker.chunkStructuredFileImpl("deploy.sh", "shell", lines, true)
+	if len(chunks) < 2 {
+		t.Fatalf("expected oversized shell block to split, got %d chunks", len(chunks))
+	}
+
+	foundReturnChunk := false
+	for i, c := range chunks {
+		if len(c.Content) > chunker.config.MaxChars {
+			t.Fatalf("chunk %d exceeds MaxChars: %d > %d", i, len(c.Content), chunker.config.MaxChars)
+		}
+		if strings.Contains(c.Content, "return 0") {
+			foundReturnChunk = true
+		}
+	}
+	if !foundReturnChunk {
+		t.Fatalf("expected one split chunk to retain the shell return statement")
+	}
+}
+
+func TestChunkStructuredMarkdownOversizedSectionSplits(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      200,
+		TargetChars:   180,
+		MaxChars:      260,
+		MinChunkChars: 40,
+	}, fakeEmbedder{})
+
+	lines := strings.Split(`# Overview
+This paragraph explains the architecture in a deliberately verbose way with repeated wording for chunk sizing.
+This paragraph continues the explanation with more deliberately verbose wording for chunk sizing.
+
+This second paragraph adds retrieval notes and more deliberately verbose wording for chunk sizing.
+This second paragraph keeps expanding the section and should help force a split near paragraph boundaries.
+
+- first important bullet with extra wording for chunk sizing
+- second important bullet with extra wording for chunk sizing
+`, "\n")
+
+	chunks := chunker.chunkStructuredFileImpl("README.md", "markdown", lines, true)
+	if len(chunks) < 2 {
+		t.Fatalf("expected oversized markdown section to split, got %d chunks", len(chunks))
+	}
+
+	foundBulletChunk := false
+	for i, c := range chunks {
+		if len(c.Content) > chunker.config.MaxChars {
+			t.Fatalf("chunk %d exceeds MaxChars: %d > %d", i, len(c.Content), chunker.config.MaxChars)
+		}
+		if strings.Contains(c.Content, "first important bullet") {
+			foundBulletChunk = true
+		}
+	}
+	if !foundBulletChunk {
+		t.Fatalf("expected one split chunk to retain the markdown list section")
+	}
+}
+
+func TestChunkStructuredMarkdownKeepsFenceTogetherWhenSplitting(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      200,
+		TargetChars:   220,
+		MaxChars:      320,
+		MinChunkChars: 50,
+	}, fakeEmbedder{})
+
+	lines := strings.Split("# API Notes\n"+
+		"This introduction is intentionally long so the markdown section grows enough to require splitting while staying readable.\n"+
+		"This introduction adds even more context so the chunker prefers a semantic boundary instead of a hard split.\n\n"+
+		"```ts\n"+
+		"export function useFeatureFlag() {\n"+
+		"  return computeFeatureFlagFromEnvironmentAndUserRole();\n"+
+		"}\n"+
+		"```\n\n"+
+		"This trailing explanation is also intentionally verbose so the section still needs multiple chunks after the code block.\n", "\n")
+
+	chunks := chunker.chunkStructuredFileImpl("GUIDE.md", "markdown", lines, true)
+	if len(chunks) < 2 {
+		t.Fatalf("expected markdown section with fence to split, got %d chunks", len(chunks))
+	}
+
+	foundCompleteFence := false
+	for i, c := range chunks {
+		if len(c.Content) > chunker.config.MaxChars {
+			t.Fatalf("chunk %d exceeds MaxChars: %d > %d", i, len(c.Content), chunker.config.MaxChars)
+		}
+		hasOpen := strings.Contains(c.Content, "```ts")
+		hasClose := strings.Contains(c.Content, "\n```") || strings.HasSuffix(c.Content, "```")
+		if hasOpen != hasClose {
+			t.Fatalf("chunk %d split markdown fence unexpectedly:\n%s", i, c.Content)
+		}
+		if hasOpen && hasClose {
+			foundCompleteFence = true
+		}
+	}
+	if !foundCompleteFence {
+		t.Fatalf("expected one split chunk to keep the fenced code block together")
 	}
 }
 
@@ -190,6 +380,390 @@ func TestInferPurpose_RegularFunctionNoAsync(t *testing.T) {
 	}
 	if !strings.Contains(purpose, "function or callable block") {
 		t.Fatalf("expected 'function or callable block' in purpose, got %q", purpose)
+	}
+}
+
+// --- Smart splitting tests ---
+
+// Helper to generate a large React component for testing.
+func makeLargeComponent(totalLines int) string {
+	var lines []string
+	lines = append(lines,
+		`import { useState, useEffect, useMemo } from 'react'`,
+		`import { useTranslation } from 'react-i18next'`,
+		``,
+		`export default function LargeComponent() {`,
+		`  const [open, setOpen] = useState(false)`,
+		`  const [count, setCount] = useState(0)`,
+		`  const { t } = useTranslation()`,
+		``,
+		`  useEffect(() => {`,
+		`    document.title = t('title')`,
+		`    return () => { document.title = '' }`,
+		`  }, [t])`,
+		``,
+		`  useEffect(() => {`,
+		`    const handler = () => setCount(c => c + 1)`,
+		`    window.addEventListener('scroll', handler)`,
+		`    return () => window.removeEventListener('scroll', handler)`,
+		`  }, [])`,
+		``,
+		`  const handleClick = () => {`,
+		`    setOpen(!open)`,
+		`    console.log('clicked')`,
+		`  }`,
+		``,
+		`  const handleSubmit = (e: React.FormEvent) => {`,
+		`    e.preventDefault()`,
+		`    console.log('submitted')`,
+		`  }`,
+		``,
+	)
+
+	// Pad with handler-like code to reach desired size
+	for len(lines) < totalLines-20 {
+		lines = append(lines,
+			`  const value`+fmt.Sprintf("%d", len(lines))+` = useMemo(() => {`,
+			`    return count * `+fmt.Sprintf("%d", len(lines)),
+			`  }, [count])`,
+			``,
+		)
+	}
+
+	lines = append(lines,
+		`  return (`,
+		`    <div className="container">`,
+		`      <h1>{t('heading')}</h1>`,
+		`      <button onClick={handleClick}>Toggle</button>`,
+		`      <form onSubmit={handleSubmit}>`,
+		`        <input value={count} />`,
+		`      </form>`,
+		`      {open && (`,
+		`        <div className="panel">`,
+		`          <p>{t('content')}</p>`,
+		`        </div>`,
+		`      )}`,
+		`    </div>`,
+		`  )`,
+		`}`,
+	)
+
+	return strings.Join(lines, "\n")
+}
+
+func TestSplitOversizedChunk_SplitsLargeComponent(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      40,
+		TargetChars:   1200,
+		MaxChars:      2500,
+		MinChunkChars: 200,
+	}, fakeEmbedder{})
+
+	// Use 300 lines to ensure the component body exceeds 2500 chars
+	component := makeLargeComponent(300)
+	lines := strings.Split(component, "\n")
+
+	chunks := chunker.chunkBraceStructuredFileImpl("LargeComponent.tsx", "tsx", lines, false)
+
+	// Should produce multiple chunks, not just 1 giant one
+	if len(chunks) < 3 {
+		t.Fatalf("expected at least 3 chunks from large component, got %d (total chars: %d)", len(chunks), len(component))
+	}
+
+	// No chunk should exceed MaxChars
+	for i, c := range chunks {
+		if len(c.Content) > 2500 {
+			t.Errorf("chunk %d exceeds MaxChars: %d chars", i, len(c.Content))
+		}
+	}
+
+	// First chunk should be the prelude (imports)
+	if !strings.Contains(chunks[0].Content, "import") {
+		t.Errorf("expected first chunk to be prelude with imports, got: %s", chunks[0].Content[:min(100, len(chunks[0].Content))])
+	}
+}
+
+func TestSplitOversizedChunk_PreservesSmallChunks(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      40,
+		TargetChars:   1200,
+		MaxChars:      2500,
+		MinChunkChars: 200,
+	}, fakeEmbedder{})
+
+	// A small component should NOT be split
+	small := `export function SmallComponent() {
+  const [x, setX] = useState(0)
+  return <div>{x}</div>
+}`
+	lines := strings.Split("import React from 'react'\n\n"+small, "\n")
+
+	chunks := chunker.chunkBraceStructuredFileImpl("Small.tsx", "tsx", lines, false)
+
+	// Should have prelude + 1 component chunk (not split further)
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 chunks (prelude + component), got %d", len(chunks))
+	}
+}
+
+func TestSplitOversizedChunk_SplitsAtReturn(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      40,
+		TargetChars:   150,
+		MaxChars:      400,
+		MinChunkChars: 50,
+	}, fakeEmbedder{})
+
+	component := `export function MyComponent() {
+  const [state, setState] = useState(false)
+  const [count, setCount] = useState(0)
+
+  useEffect(() => {
+    document.title = 'test'
+    return () => { document.title = '' }
+  }, [])
+
+  const handleClick = () => {
+    setState(!state)
+    setCount(count + 1)
+  }
+
+  return (
+    <div className="wrapper">
+      <h1>Title</h1>
+      <button onClick={handleClick}>Click</button>
+      <span>{count}</span>
+      <p>Some content here</p>
+    </div>
+  )
+}`
+	lines := strings.Split(component, "\n")
+	contentLen := len(strings.Join(lines, "\n"))
+
+	subChunks := chunker.splitOversizedChunk(lines, "tsx")
+
+	if len(subChunks) < 2 {
+		t.Fatalf("expected at least 2 sub-chunks, got %d (content: %d chars, maxChars: %d)", len(subChunks), contentLen, chunker.config.MaxChars)
+	}
+
+	// Check that the return statement creates a split boundary
+	foundReturnSplit := false
+	for _, sub := range subChunks {
+		content := strings.Join(sub, "\n")
+		if strings.HasPrefix(strings.TrimSpace(content), "return") || strings.Contains(content, "\n  return") {
+			foundReturnSplit = true
+		}
+	}
+	if !foundReturnSplit {
+		t.Error("expected return statement to be at the start of a sub-chunk")
+	}
+}
+
+func TestSplitOversizedChunk_SplitsAtHookWithBlock(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      40,
+		TargetChars:   100,
+		MaxChars:      120,
+		MinChunkChars: 40,
+	}, fakeEmbedder{})
+
+	component := `export function MyComponent() {
+  const [state, setState] = useState(false)
+
+  useEffect(() => {
+    const a = 1
+    const b = 2
+    console.log(a, b)
+  }, [])
+
+  return <div>{state}</div>
+}`
+	lines := strings.Split(component, "\n")
+	subChunks := chunker.splitOversizedChunk(lines, "tsx")
+
+	// Expect one sub-chunk to start at the useEffect line.
+	foundHookSplit := false
+	for _, sub := range subChunks {
+		content := strings.Join(sub, "\n")
+		if strings.HasPrefix(strings.TrimSpace(content), "useEffect") {
+			foundHookSplit = true
+		}
+	}
+	if !foundHookSplit {
+		t.Error("expected useEffect to be at the start of a sub-chunk")
+	}
+}
+
+func TestSplitOversizedChunk_SplitsAtLatestCandidateOfSamePriority(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      40,
+		TargetChars:   100,
+		MaxChars:      130,
+		MinChunkChars: 10,
+	}, fakeEmbedder{})
+
+	lines := []string{
+		"const a = 'some long string';", // 30 chars
+		"",                              // blank line index 1 - total: 31 chars
+		"const b = 'some long string';", // 30 chars
+		"",                              // blank line index 3 - total: 62 chars
+		"const c = 'some long string';", // 30 chars
+		"const d = 'some long string';", // 30 chars - total: 123 chars (exceeds TargetChars=100)
+		"const e = 'some long string';",
+	}
+
+	subChunks := chunker.splitOversizedChunk(lines, "tsx")
+
+	if len(subChunks) < 2 {
+		t.Fatalf("expected split, got %d chunks", len(subChunks))
+	}
+
+	// We expect the first chunk to contain up to "const b = ...", i.e. 3 lines.
+	// (split at index 3).
+	// If it used the first candidate (index 1), the first chunk would only have 1 line ("const a = ...").
+	firstChunkLen := len(subChunks[0])
+	if firstChunkLen != 3 {
+		t.Errorf("expected first chunk to have 3 lines (split at blank line index 3), got %d lines: %v", firstChunkLen, subChunks[0])
+	}
+}
+
+func TestSplitOversizedChunk_MergesTinyFragments(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      40,
+		TargetChars:   200,
+		MaxChars:      400,
+		MinChunkChars: 150,
+	}, fakeEmbedder{})
+
+	// Create lines where some splits would produce tiny fragments
+	lines := []string{
+		"const a = 1",
+		"",
+		"const b = 2",
+		"",
+		"const c = 3",
+	}
+
+	subChunks := chunker.splitOversizedChunk(lines, "tsx")
+
+	// No fragment should be smaller than MinChunkChars (unless it's the only one)
+	for i, sub := range subChunks {
+		content := strings.Join(sub, "\n")
+		if len(content) < 150 && len(subChunks) > 1 {
+			t.Errorf("sub-chunk %d is too small (%d chars): %q", i, len(content), content)
+		}
+	}
+}
+
+func TestSplitOversizedChunk_SplitsAtBareJSXReturn(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      40,
+		TargetChars:   180,
+		MaxChars:      220,
+		MinChunkChars: 20,
+	}, fakeEmbedder{})
+
+	component := `export function MyComponent() {
+	  doSomethingWithVeryLongNameAndExtraSuffix(state, props, context)
+	  renderSomethingWithVeryLongNameAndExtraSuffix(state, props, context)
+	  trackSomethingWithVeryLongNameAndExtraSuffix(state, props, context)
+	  return <div>{value}{other}</div>
+}`
+	lines := strings.Split(component, "\n")
+	subChunks := chunker.splitOversizedChunk(lines, "tsx")
+
+	foundReturnSplit := false
+	for _, sub := range subChunks {
+		content := strings.Join(sub, "\n")
+		if strings.HasPrefix(strings.TrimSpace(content), "return <") {
+			foundReturnSplit = true
+		}
+	}
+	if !foundReturnSplit {
+		t.Error("expected bare JSX return to be at the start of a sub-chunk")
+	}
+}
+
+func TestMergeTinyFragments_RespectsMaxChars(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      40,
+		TargetChars:   100,
+		MaxChars:      20,
+		MinChunkChars: 10,
+	}, fakeEmbedder{})
+
+	segments := [][]string{
+		{"tiny"},
+		{"123456789012345678"},
+	}
+
+	merged := chunker.mergeTinyFragments(segments)
+	if len(merged) != 2 {
+		t.Fatalf("expected segments to remain separate when merge would exceed MaxChars, got %d", len(merged))
+	}
+	for i, seg := range merged {
+		if got := len(strings.Join(seg, "\n")); got > chunker.config.MaxChars {
+			t.Fatalf("segment %d exceeds MaxChars after mergeTinyFragments: %d > %d", i, got, chunker.config.MaxChars)
+		}
+	}
+}
+
+func TestSplitOversizedChunk_NoSplitUnderMaxChars(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      40,
+		TargetChars:   1200,
+		MaxChars:      2500,
+		MinChunkChars: 200,
+	}, fakeEmbedder{})
+
+	// Content under MaxChars should not be split
+	lines := []string{
+		"const x = 1",
+		"const y = 2",
+		"return x + y",
+	}
+
+	subChunks := chunker.splitOversizedChunk(lines, "tsx")
+
+	if len(subChunks) != 1 {
+		t.Fatalf("expected 1 chunk for small content, got %d", len(subChunks))
+	}
+}
+
+func TestChunkBraceStructured_GoFunctionSplitting(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      40,
+		TargetChars:   200,
+		MaxChars:      500,
+		MinChunkChars: 50,
+	}, fakeEmbedder{})
+
+	// Build a large Go function with enough content to exceed MaxChars
+	var funcLines []string
+	funcLines = append(funcLines, "func bigFunction() {")
+	for i := 0; i < 80; i++ {
+		funcLines = append(funcLines, fmt.Sprintf("\tresult%d := processItem(%d, \"some-long-argument-string-%d\")", i, i, i))
+	}
+	funcLines = append(funcLines, "}")
+
+	lines := append([]string{"package main", "", "import \"fmt\"", ""}, funcLines...)
+
+	chunks, err := chunker.chunkGoFileImpl("big.go", "go", lines, false)
+	if err != nil {
+		t.Fatalf("chunkGoFileImpl failed: %v", err)
+	}
+
+	// The big function should be split into multiple chunks
+	funcContent := strings.Join(funcLines, "\n")
+	if len(chunks) < 3 {
+		t.Fatalf("expected at least 3 chunks (prelude + split function), got %d (func chars: %d)", len(chunks), len(funcContent))
+	}
+
+	// No chunk should exceed MaxChars
+	for i, c := range chunks {
+		if len(c.Content) > 500 {
+			t.Errorf("chunk %d exceeds MaxChars: %d chars", i, len(c.Content))
+		}
 	}
 }
 

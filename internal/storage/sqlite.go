@@ -168,6 +168,7 @@ func (s *SQLiteStorage) migrate() error {
 		provider TEXT NOT NULL,
 		model TEXT NOT NULL,
 		dimensions INTEGER NOT NULL,
+		index_fingerprint TEXT,
 		updated_at DATETIME NOT NULL
 	);
 	CREATE TABLE IF NOT EXISTS indexed_files (
@@ -192,6 +193,10 @@ func (s *SQLiteStorage) migrate() error {
 	_, err = s.db.Exec(`ALTER TABLE code_chunks ADD COLUMN purpose TEXT`)
 	if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 		return fmt.Errorf("failed to add purpose column: %w", err)
+	}
+	_, err = s.db.Exec(`ALTER TABLE index_metadata ADD COLUMN index_fingerprint TEXT`)
+	if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		return fmt.Errorf("failed to add index_fingerprint column: %w", err)
 	}
 
 	return nil
@@ -381,6 +386,21 @@ func (s *SQLiteStorage) InvalidateEmbeddings() error {
 		return fmt.Errorf("failed to clear indexed file hashes: %w", err)
 	}
 	// Discard the in-memory vector index since it's now stale.
+	s.vectIdxMu.Lock()
+	s.vectIdx = nil
+	s.vectIdxMu.Unlock()
+	return nil
+}
+
+// ClearIndexedData removes persisted chunks and file hashes so the next index
+// run performs a full rebuild from source files.
+func (s *SQLiteStorage) ClearIndexedData() error {
+	if _, err := s.db.Exec(`DELETE FROM code_chunks`); err != nil {
+		return fmt.Errorf("failed to clear code chunks: %w", err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM indexed_files`); err != nil {
+		return fmt.Errorf("failed to clear indexed file hashes: %w", err)
+	}
 	s.vectIdxMu.Lock()
 	s.vectIdx = nil
 	s.vectIdxMu.Unlock()
@@ -694,14 +714,15 @@ func (s *SQLiteStorage) Stats() (IndexStats, error) {
 
 func (s *SQLiteStorage) SetIndexMetadata(metadata IndexMetadata) error {
 	_, err := s.db.Exec(`
-		INSERT INTO index_metadata (id, provider, model, dimensions, updated_at)
-		VALUES (1, ?, ?, ?, ?)
+		INSERT INTO index_metadata (id, provider, model, dimensions, index_fingerprint, updated_at)
+		VALUES (1, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			provider = excluded.provider,
 			model = excluded.model,
 			dimensions = excluded.dimensions,
+			index_fingerprint = excluded.index_fingerprint,
 			updated_at = excluded.updated_at
-	`, metadata.Provider, metadata.Model, metadata.Dimensions, time.Now())
+	`, metadata.Provider, metadata.Model, metadata.Dimensions, metadata.IndexFingerprint, time.Now())
 	if err != nil {
 		return fmt.Errorf("failed to set index metadata: %w", err)
 	}
@@ -709,9 +730,9 @@ func (s *SQLiteStorage) SetIndexMetadata(metadata IndexMetadata) error {
 }
 
 func (s *SQLiteStorage) GetIndexMetadata() (IndexMetadata, error) {
-	row := s.db.QueryRow(`SELECT provider, model, dimensions, updated_at FROM index_metadata WHERE id = 1`)
+	row := s.db.QueryRow(`SELECT provider, model, dimensions, COALESCE(index_fingerprint, ''), updated_at FROM index_metadata WHERE id = 1`)
 	var metadata IndexMetadata
-	if err := row.Scan(&metadata.Provider, &metadata.Model, &metadata.Dimensions, &metadata.UpdatedAt); err != nil {
+	if err := row.Scan(&metadata.Provider, &metadata.Model, &metadata.Dimensions, &metadata.IndexFingerprint, &metadata.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return IndexMetadata{}, err
 		}
@@ -720,7 +741,7 @@ func (s *SQLiteStorage) GetIndexMetadata() (IndexMetadata, error) {
 	return metadata, nil
 }
 
-func (s *SQLiteStorage) RequiresReindex(provider, model string, dimensions int) (bool, error) {
+func (s *SQLiteStorage) RequiresReindex(provider, model string, dimensions int, indexFingerprint string) (bool, error) {
 	metadata, err := s.GetIndexMetadata()
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -729,7 +750,7 @@ func (s *SQLiteStorage) RequiresReindex(provider, model string, dimensions int) 
 		return false, err
 	}
 
-	return metadata.Provider != provider || metadata.Model != model || metadata.Dimensions != dimensions, nil
+	return metadata.Provider != provider || metadata.Model != model || metadata.Dimensions != dimensions || metadata.IndexFingerprint != indexFingerprint, nil
 }
 
 // SearchSemantic performs cosine similarity search over stored embeddings.

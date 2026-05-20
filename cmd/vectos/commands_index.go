@@ -20,6 +20,7 @@ type indexEnv struct {
 	store       *storage.SQLiteStorage
 	chunker     *indexer.SimpleChunker
 	embedConfig config.EmbeddingConfig
+	metadata    syncIndexMetadataResult
 }
 
 func resolveAndPrintScope(absolutePath, projectName string) workspace.Scope {
@@ -68,16 +69,17 @@ func setupIndexing(projectBaseDir string, scope workspace.Scope, embedConfig con
 		log.Fatalf("error opening database: %v", err)
 	}
 
-	message, err := syncIndexMetadata(store, providerInfo)
+	chunkerConfig := indexChunkerConfig(embedConfig.Embedded.BatchSize)
+	metadata, err := syncIndexMetadata(store, providerInfo, currentIndexFingerprint(chunkerConfig))
 	if err != nil {
 		log.Fatalf("error preparing index metadata: %v", err)
 	}
-	if message != "" {
-		fmt.Println(message)
+	if metadata.Message != "" {
+		fmt.Println(metadata.Message)
 	}
 
-	chunker := indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 10, BatchSize: embedConfig.Embedded.BatchSize}, embedClient)
-	return &indexEnv{store: store, chunker: chunker, embedConfig: embedConfig}
+	chunker := indexer.NewSimpleChunker(chunkerConfig, embedClient)
+	return &indexEnv{store: store, chunker: chunker, embedConfig: embedConfig, metadata: metadata}
 }
 
 func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePath string, projectName string, changedPaths []string, docsOnly bool) {
@@ -122,11 +124,13 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 		log.Fatalf("error collecting indexable paths: %v", err)
 	}
 
-	if len(changedPaths) > 0 {
+	if len(changedPaths) > 0 && !env.metadata.FullRebuild {
 		paths, skippedPaths, err = filterChangedPaths(scope, paths, skippedPaths, changedPaths)
 		if err != nil {
 			log.Fatalf("error filtering changed paths: %v", err)
 		}
+	} else if len(changedPaths) > 0 && env.metadata.FullRebuild {
+		fmt.Println("Ignoring changed-path filter because index format changed and requires a full rebuild")
 	}
 	totalFiles := len(paths)
 	if len(changedPaths) > 0 {
