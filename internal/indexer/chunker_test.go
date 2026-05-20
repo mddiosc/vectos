@@ -30,33 +30,6 @@ export function Hero() {
 	return <Button />
 }
 
-func TestChunkStrategyForLanguage(t *testing.T) {
-	tests := []struct {
-		language string
-		want     chunkStrategy
-	}{
-		{language: "go", want: chunkStrategyGo},
-		{language: "tsx", want: chunkStrategyBraceStructured},
-		{language: "javascript", want: chunkStrategyBraceStructured},
-		{language: "python", want: chunkStrategyIndentStructured},
-		{language: "shell", want: chunkStrategyIndentStructured},
-		{language: "markdown", want: chunkStrategyDocsStructured},
-		{language: "yaml", want: chunkStrategyLine},
-		{language: "yaml.compose", want: chunkStrategyLine},
-		{language: "bazel.build", want: chunkStrategyLine},
-		{language: "json", want: chunkStrategyLine},
-		{language: "unknown", want: chunkStrategyLine},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.language, func(t *testing.T) {
-			if got := chunkStrategyForLanguage(tt.language); got != tt.want {
-				t.Fatalf("chunkStrategyForLanguage(%q) = %q, want %q", tt.language, got, tt.want)
-			}
-		})
-	}
-}
-
 export function useHeroData() {
 	return useMemo(() => ({ title: "hi" }), [])
 }
@@ -84,6 +57,115 @@ test("works", () => {
 
 	if !strings.Contains(chunks[3].Content, "test(\"works\"") {
 		t.Fatalf("expected test chunk, got %q", chunks[3].Content)
+	}
+}
+
+func TestChunkStrategyForLanguage(t *testing.T) {
+	tests := []struct {
+		language string
+		want     chunkStrategy
+	}{
+		{language: "go", want: chunkStrategyGo},
+		{language: "tsx", want: chunkStrategyBraceStructured},
+		{language: "javascript", want: chunkStrategyBraceStructured},
+		{language: "python", want: chunkStrategyIndentStructured},
+		{language: "shell", want: chunkStrategyIndentStructured},
+		{language: "markdown", want: chunkStrategyDocsStructured},
+		{language: "yaml", want: chunkStrategyLine},
+		{language: "yaml.compose", want: chunkStrategyLine},
+		{language: "bazel.build", want: chunkStrategyLine},
+		{language: "json", want: chunkStrategyLine},
+		{language: "unknown", want: chunkStrategyLine},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.language, func(t *testing.T) {
+			if got := chunkStrategyForLanguage(tt.language); got != tt.want {
+				t.Fatalf("chunkStrategyForLanguage(%q) = %q, want %q", tt.language, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestChunkStructuredPythonOversizedBlockSplits(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      200,
+		TargetChars:   180,
+		MaxChars:      260,
+		MinChunkChars: 40,
+	}, fakeEmbedder{})
+
+	lines := strings.Split(`def compute_value(items):
+    total = 0
+    running_average = 0
+    processed_items = []
+
+    for item in items:
+        total += item.value_with_extra_suffix
+        running_average += item.value_with_extra_suffix / 2
+        processed_items.append(item.value_with_extra_suffix)
+
+    summary = format_summary_with_extra_suffix(total, running_average)
+    details = build_details_with_extra_suffix(processed_items, summary)
+    metrics = collect_metrics_with_extra_suffix(details, summary)
+
+    return total + len(metrics)
+`, "\n")
+
+	chunks := chunker.chunkStructuredFileImpl("calc.py", "python", lines, true)
+	if len(chunks) < 2 {
+		t.Fatalf("expected oversized python block to split, got %d chunks", len(chunks))
+	}
+
+	foundReturnChunk := false
+	for i, c := range chunks {
+		if len(c.Content) > chunker.config.MaxChars {
+			t.Fatalf("chunk %d exceeds MaxChars: %d > %d", i, len(c.Content), chunker.config.MaxChars)
+		}
+		if strings.Contains(c.Content, "return total + len(metrics)") {
+			foundReturnChunk = true
+		}
+	}
+	if !foundReturnChunk {
+		t.Fatalf("expected one split chunk to retain the python return statement")
+	}
+}
+
+func TestChunkStructuredShellOversizedBlockSplits(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      200,
+		TargetChars:   140,
+		MaxChars:      220,
+		MinChunkChars: 30,
+	}, fakeEmbedder{})
+
+	lines := strings.Split(`deploy_app() {
+    local image_reference="registry.example.com/some/very/long/image-reference"
+    local deployment_target="production-cluster-with-extra-suffix"
+
+    run_step_with_extra_suffix build "$image_reference"
+    run_step_with_extra_suffix push "$image_reference"
+    run_step_with_extra_suffix deploy "$deployment_target"
+
+    return 0
+}` , "\n")
+
+	chunks := chunker.chunkStructuredFileImpl("deploy.sh", "shell", lines, true)
+	if len(chunks) < 2 {
+		t.Fatalf("expected oversized shell block to split, got %d chunks", len(chunks))
+	}
+
+	foundReturnChunk := false
+	for i, c := range chunks {
+		if len(c.Content) > chunker.config.MaxChars {
+			t.Fatalf("chunk %d exceeds MaxChars: %d > %d", i, len(c.Content), chunker.config.MaxChars)
+		}
+		if strings.Contains(c.Content, "return 0") {
+			foundReturnChunk = true
+		}
+	}
+	if !foundReturnChunk {
+		t.Fatalf("expected one split chunk to retain the shell return statement")
 	}
 }
 
