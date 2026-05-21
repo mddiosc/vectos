@@ -29,6 +29,7 @@ type mcpSearchFileResult struct {
 	LineRanges []storage.LineRange `json:"line_ranges"`
 	Signatures []string           `json:"signatures"`
 	Hint       string             `json:"hint,omitempty"`
+	Preview    string             `json:"preview,omitempty"`
 }
 
 type mcpIndexPayload struct {
@@ -57,13 +58,16 @@ func buildMCPSearchPayload(scope *workspace.Scope, query string, searchRun searc
 					relPath = p
 				}
 			}
+			relevance := int(math.Round(fr.Relevance * 100))
 			hint := buildHintForFileResult(fr, query)
+			preview := buildPreviewForFileResult(fr)
 			payload.Results = append(payload.Results, mcpSearchFileResult{
 				FilePath:   relPath,
-				Relevance:  int(math.Round(fr.Relevance * 100)),
+				Relevance:  relevance,
 				LineRanges: fr.LineRanges,
 				Signatures: fr.Signatures,
 				Hint:       hint,
+				Preview:    preview,
 			})
 		}
 	}
@@ -100,6 +104,18 @@ func buildHintForFileResult(fr storage.SearchFileResult, query string) string {
 	default:
 		return "code"
 	}
+}
+
+// buildPreviewForFileResult decides whether to include a preview snippet.
+// High-confidence results (>= 0.90) omit the preview to keep payloads lean;
+// the agent trusts the match and will open the file directly.
+// Lower-confidence results include the preview so the agent can decide
+// whether to read the file without an extra round-trip.
+func buildPreviewForFileResult(fr storage.SearchFileResult) string {
+	if fr.Relevance >= highConfidenceThreshold {
+		return ""
+	}
+	return fr.Preview
 }
 
 func buildMCPMissingIndexPayload(scope *workspace.Scope) mcpSearchPayload {

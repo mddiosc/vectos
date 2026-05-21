@@ -4,6 +4,13 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
+)
+
+const (
+	// maxPreviewBytes is the hard cap for preview text per file result.
+	// Keeps MCP payloads compact (~180 bytes × 5 results ≈ 900 bytes of previews).
+	maxPreviewBytes = 180
 )
 
 type LineRange struct {
@@ -21,6 +28,7 @@ type SearchFileResult struct {
 	Signatures []string    `json:"signatures"`
 	Purpose    string      `json:"purpose,omitempty"`
 	Hint       string      `json:"hint,omitempty"`
+	Preview    string      `json:"preview,omitempty"`
 }
 
 type fileEntry struct {
@@ -75,6 +83,7 @@ func addChunkToFileEntry(byFile map[string]*fileEntry, chunk CodeChunk) {
 				Language:  chunk.Language,
 				Category:  chunk.Category,
 				Relevance: chunk.Score,
+				Preview:   ExtractChunkPreview(chunk.Content, maxPreviewBytes),
 			},
 			sigSet:    make(map[string]struct{}),
 			seenLines: make(map[string]struct{}),
@@ -84,6 +93,12 @@ func addChunkToFileEntry(byFile map[string]*fileEntry, chunk CodeChunk) {
 
 	if chunk.Score > fe.result.Relevance {
 		fe.result.Relevance = chunk.Score
+		// Defense in depth: update preview if a higher-scoring chunk arrives.
+		// Under normal flow (CollapseFileResults pre-sorts by score desc),
+		// the first chunk is already the best, so this branch rarely fires.
+		if p := ExtractChunkPreview(chunk.Content, maxPreviewBytes); p != "" {
+			fe.result.Preview = p
+		}
 	}
 
 	if chunk.Purpose != "" && fe.purpose == "" {
@@ -130,4 +145,57 @@ func mergeLineRanges(ranges []LineRange, window int) []LineRange {
 	}
 
 	return merged
+}
+
+// ExtractChunkPreview produces a compact, single-line preview from chunk content.
+// It collapses whitespace, trims to maxBytes, and appends "..." when truncated.
+// Truncation is rune-safe: it never splits a multi-byte UTF-8 character.
+// Returns "" for empty or whitespace-only content.
+// When maxBytes is 0, no truncation is applied.
+func ExtractChunkPreview(content string, maxBytes int) string {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return ""
+	}
+
+	// Collapse all whitespace (newlines, tabs, runs of spaces) into single spaces.
+	trimmed = strings.Join(strings.Fields(trimmed), " ")
+
+	if maxBytes <= 0 || len(trimmed) <= maxBytes {
+		return trimmed
+	}
+
+	// Truncate rune-safe: convert to runes, find a cut point that fits in maxBytes.
+	runes := []rune(trimmed)
+	ellipsis := "..."
+
+	// Binary-search-style: find the largest rune prefix that fits in maxBytes - len(ellipsis).
+	budget := maxBytes - len(ellipsis)
+	if budget <= 0 {
+		return ellipsis
+	}
+
+	// Walk runes and accumulate byte length until we exceed the budget.
+	byteLen := 0
+	cutRune := 0
+	for i, r := range runes {
+		runeBytes := len(string(r))
+		if byteLen+runeBytes > budget {
+			break
+		}
+		byteLen += runeBytes
+		cutRune = i + 1
+	}
+
+	if cutRune == 0 {
+		return ellipsis
+	}
+
+	// Try to break at the last space before the cut point for cleaner output.
+	candidate := string(runes[:cutRune])
+	if idx := strings.LastIndex(candidate, " "); idx > len(candidate)/2 {
+		candidate = candidate[:idx]
+	}
+
+	return candidate + ellipsis
 }
