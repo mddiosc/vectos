@@ -163,6 +163,38 @@ func TestBuildMCPSearchPayloadHighConfidenceNoPreview(t *testing.T) {
 	}
 }
 
+func TestBuildMCPSearchPayloadPreviewBoundaryScore(t *testing.T) {
+	// Relevance exactly 0.90 should NOT have preview (>= threshold).
+	atThreshold := []storage.SearchFileResult{
+		{
+			FilePath: "/tmp/a.go", FileName: "a.go", Language: "go", Category: "source",
+			Relevance: 0.90, LineRanges: []storage.LineRange{{Start: 1, End: 10}},
+			Preview: "func A() {}",
+		},
+	}
+	payload := buildMCPSearchPayload(&workspace.Scope{Name: "test"}, "query", searchRun{
+		Mode: "semantic_hybrid", FileResults: atThreshold,
+	})
+	if payload.Results[0].Preview != "" {
+		t.Fatalf("expected no preview at exact threshold 0.90, got %q", payload.Results[0].Preview)
+	}
+
+	// Relevance 0.899 should have preview (< threshold).
+	belowThreshold := []storage.SearchFileResult{
+		{
+			FilePath: "/tmp/b.go", FileName: "b.go", Language: "go", Category: "source",
+			Relevance: 0.899, LineRanges: []storage.LineRange{{Start: 1, End: 10}},
+			Preview: "func B() {}",
+		},
+	}
+	payload2 := buildMCPSearchPayload(&workspace.Scope{Name: "test"}, "query", searchRun{
+		Mode: "semantic_hybrid", FileResults: belowThreshold,
+	})
+	if payload2.Results[0].Preview == "" {
+		t.Fatal("expected preview just below threshold 0.899")
+	}
+}
+
 func TestBuildMCPSearchPayloadPreviewMaxLength(t *testing.T) {
 	longPreview := strings.Repeat("x", 300)
 	fileResults := []storage.SearchFileResult{

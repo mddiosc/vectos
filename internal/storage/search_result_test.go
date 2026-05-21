@@ -128,6 +128,86 @@ func TestCollapseFileResultsPreviewFromBestChunk(t *testing.T) {
 	}
 }
 
+func TestExtractChunkPreview_UTF8MultibyteSafe(t *testing.T) {
+	// Content with multi-byte characters (Spanish, emoji, Japanese).
+	// Each ñ = 2 bytes, each emoji = 4 bytes, each kanji = 3 bytes.
+	content := "función principal() { // コメント 🚀 return resultado }"
+	preview := ExtractChunkPreview(content, 30)
+	if len(preview) > 30 {
+		t.Fatalf("preview exceeds maxBytes: got %d bytes", len(preview))
+	}
+	if !strings.HasSuffix(preview, "...") {
+		t.Fatalf("expected truncation, got %q", preview)
+	}
+	// Verify the preview is valid UTF-8 by checking it round-trips.
+	for i, r := range preview {
+		if r == '\uFFFD' {
+			t.Fatalf("invalid UTF-8 at byte %d in preview %q", i, preview)
+		}
+	}
+}
+
+func TestExtractChunkPreview_UTF8ExactBoundary(t *testing.T) {
+	// Build content where a 2-byte char (ñ) sits right at the byte boundary.
+	// "a" repeated 176 times = 176 bytes, then "ñ" (2 bytes) = 178 bytes total.
+	// maxBytes=178 should include the ñ without truncation.
+	content := strings.Repeat("a", 176) + "ñ"
+	preview := ExtractChunkPreview(content, 178)
+	if preview != content {
+		t.Fatalf("expected content to pass through at exact boundary, got len=%d", len(preview))
+	}
+
+	// maxBytes=177 should truncate before the ñ (not split it).
+	preview2 := ExtractChunkPreview(content, 177)
+	if len(preview2) > 177 {
+		t.Fatalf("preview exceeds maxBytes: got %d bytes", len(preview2))
+	}
+	// Must not contain a broken ñ.
+	for _, r := range preview2 {
+		if r == '\uFFFD' {
+			t.Fatalf("broken UTF-8 in preview: %q", preview2)
+		}
+	}
+}
+
+func TestExtractChunkPreview_ZeroMaxBytes(t *testing.T) {
+	content := "func main() { fmt.Println(\"hello\") }"
+	preview := ExtractChunkPreview(content, 0)
+	if preview != content {
+		t.Fatalf("maxBytes=0 should not truncate, got %q", preview)
+	}
+}
+
+func TestExtractChunkPreview_VerySmallMaxBytes(t *testing.T) {
+	content := "func main() {}"
+	// maxBytes=3 means only room for "..."
+	preview := ExtractChunkPreview(content, 3)
+	if preview != "..." {
+		t.Fatalf("maxBytes=3 should return just ellipsis, got %q", preview)
+	}
+	// maxBytes=4 should fit at least 1 char + "..."
+	preview2 := ExtractChunkPreview(content, 4)
+	if len(preview2) > 4 {
+		t.Fatalf("preview exceeds maxBytes=4: got %d bytes", len(preview2))
+	}
+}
+
+func TestCollapseFileResultsEmptyContentChunk(t *testing.T) {
+	chunks := []CodeChunk{
+		{
+			FilePath: "/tmp/empty.go", Content: "   \n\t  \n", StartLine: 1, EndLine: 2,
+			Language: "go", Category: "source", Score: 0.80,
+		},
+	}
+	results := CollapseFileResults(chunks, 5)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Preview != "" {
+		t.Fatalf("expected empty preview for whitespace-only chunk, got %q", results[0].Preview)
+	}
+}
+
 func TestCollapseFileResultsMultipleFilesEachGetPreview(t *testing.T) {
 	chunks := []CodeChunk{
 		{
