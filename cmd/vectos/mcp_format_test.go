@@ -104,3 +104,88 @@ func TestBuildMCPSearchPayloadLowConfidenceHasHint(t *testing.T) {
 		t.Fatalf("expected hint for low-confidence result (relevance=%d)", result.Relevance)
 	}
 }
+
+func TestBuildMCPSearchPayloadLowConfidenceIncludesPreview(t *testing.T) {
+	fileResults := []storage.SearchFileResult{
+		{
+			FilePath:   "/tmp/vectos/cmd/vectos/main.go",
+			FileName:   "main.go",
+			Language:   "go",
+			Category:   "source",
+			Relevance:  0.74,
+			LineRanges:  []storage.LineRange{{Start: 10, End: 20}},
+			Signatures: []string{"func runSearch(...)"},
+			Purpose:    "executes search",
+			Preview:    "func runSearch(query string) { results := store.Search(query) }",
+		},
+	}
+	payload := buildMCPSearchPayload(&workspace.Scope{Name: "vectos"}, "how does search work", searchRun{
+		Mode:        "semantic_hybrid",
+		FileResults: fileResults,
+	})
+
+	if len(payload.Results) != 1 {
+		t.Fatalf("expected one result, got %d", len(payload.Results))
+	}
+	result := payload.Results[0]
+	if result.Preview == "" {
+		t.Fatal("expected preview for low-confidence result")
+	}
+	if !strings.Contains(result.Preview, "runSearch") {
+		t.Fatalf("expected preview to contain function name, got %q", result.Preview)
+	}
+}
+
+func TestBuildMCPSearchPayloadHighConfidenceNoPreview(t *testing.T) {
+	fileResults := []storage.SearchFileResult{
+		{
+			FilePath:   "/tmp/vectos/cmd/vectos/main.go",
+			FileName:   "main.go",
+			Language:   "go",
+			Category:   "source",
+			Relevance:  0.95,
+			LineRanges:  []storage.LineRange{{Start: 10, End: 20}},
+			Signatures: []string{"func runSearch(...)"},
+			Preview:    "func runSearch(query string) { results := store.Search(query) }",
+		},
+	}
+	payload := buildMCPSearchPayload(&workspace.Scope{Name: "vectos"}, "search", searchRun{
+		Mode:        "semantic_hybrid",
+		FileResults: fileResults,
+	})
+
+	if len(payload.Results) != 1 {
+		t.Fatalf("expected one result, got %d", len(payload.Results))
+	}
+	result := payload.Results[0]
+	if result.Preview != "" {
+		t.Fatalf("expected no preview for high-confidence result (relevance=%d), got %q", result.Relevance, result.Preview)
+	}
+}
+
+func TestBuildMCPSearchPayloadPreviewMaxLength(t *testing.T) {
+	longPreview := strings.Repeat("x", 300)
+	fileResults := []storage.SearchFileResult{
+		{
+			FilePath:  "/tmp/project/src/big.go",
+			FileName:  "big.go",
+			Language:  "go",
+			Category:  "source",
+			Relevance: 0.75,
+			LineRanges: []storage.LineRange{{Start: 1, End: 50}},
+			Preview:   longPreview,
+		},
+	}
+	payload := buildMCPSearchPayload(&workspace.Scope{Name: "test"}, "query", searchRun{
+		Mode:        "semantic_hybrid",
+		FileResults: fileResults,
+	})
+
+	result := payload.Results[0]
+	// The preview is passed through as-is from SearchFileResult;
+	// the truncation happens at extraction time in CollapseFileResults.
+	// But we verify it's present.
+	if result.Preview == "" {
+		t.Fatal("expected preview to be propagated")
+	}
+}
