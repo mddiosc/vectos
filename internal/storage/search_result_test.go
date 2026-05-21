@@ -58,13 +58,9 @@ func TestExtractChunkPreview_TruncatesAtWordBoundary(t *testing.T) {
 	if !strings.HasSuffix(preview, "...") {
 		t.Fatalf("expected truncation marker, got %q", preview)
 	}
-	// Should not cut in the middle of a word.
-	beforeEllipsis := strings.TrimSuffix(preview, "...")
-	if beforeEllipsis != "" && beforeEllipsis[len(beforeEllipsis)-1] != ' ' && !strings.HasSuffix(beforeEllipsis, ")") {
-		// Word-boundary heuristic: last char before "..." should be a space or punctuation,
-		// unless the cut point happens to land exactly at a word end.
-		// This is a soft check — the important thing is the length cap.
-	}
+	// Word-boundary heuristic: last char before "..." should not be in the middle of a word.
+	// This is a soft check — the important thing is the length cap.
+	_ = strings.TrimSuffix(preview, "...")
 }
 
 func TestCollapseFileResultsIncludesPreview(t *testing.T) {
