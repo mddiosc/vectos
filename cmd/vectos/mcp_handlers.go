@@ -320,15 +320,16 @@ func indexPaths(store *storage.SQLiteStorage, embedClient embeddings.Embedder, p
 			continue
 		}
 		if _, err := store.SaveChunk(storage.CodeChunk{
-			FilePath:  p.path,
-			Content:   allChunks[i].Content,
-			StartLine: allChunks[i].StartLine,
-			EndLine:   allChunks[i].EndLine,
-			Language:  p.lang,
-			Category:  classifyCategory(p.lang),
-			Vector:    allChunks[i].Vector,
-			Signature: allChunks[i].Signature,
-			Purpose:   allChunks[i].Purpose,
+			FilePath:       p.path,
+			Content:        allChunks[i].Content,
+			StartLine:      allChunks[i].StartLine,
+			EndLine:        allChunks[i].EndLine,
+			Language:       p.lang,
+			Category:       classifyCategory(p.lang),
+			Vector:         allChunks[i].Vector,
+			Signature:      allChunks[i].Signature,
+			Purpose:        allChunks[i].Purpose,
+			PreviewSnippet: allChunks[i].PreviewSnippet,
 		}); err != nil {
 			return 0, 0, err
 		}

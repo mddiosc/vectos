@@ -2,6 +2,7 @@ package indexer
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -914,5 +915,82 @@ func TestInferPurpose_TableDriven(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestBuildPreviewSnippet(t *testing.T) {
+	tests := []struct {
+		content  string
+		language string
+		want     string
+	}{
+		{
+			content:  "",
+			language: "go",
+			want:     "",
+		},
+		{
+			content:  "func main() { fmt.Println(\"hello\") }",
+			language: "go",
+			want:     "func main() { fmt.Println(\"hello\") }",
+		},
+		{
+			content:  "export function Navbar() {\n  return <nav>...</nav>\n}",
+			language: "tsx",
+			want:     "export function Navbar() { return <nav>...</nav>",
+		},
+		{
+			content:  "def authenticate(token):\n    if not token:\n        raise ValueError\n    return True",
+			language: "python",
+			want:     "def authenticate(token): if not token:",
+		},
+		{
+			content:  "package main\n\nimport (\n\t\"fmt\"\n)\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n",
+			language: "go",
+			want:     "func main() { fmt.Println(\"hello\")",
+		},
+		{
+			content:  "package main\n\nimport (\n\t\"fmt\"\n\t\"net/http\"\n)\n",
+			language: "go",
+			want:     "\"fmt\" \"net/http\"",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.language, func(t *testing.T) {
+			got := buildPreviewSnippet(tt.content, tt.language)
+			if got != tt.want {
+				t.Errorf("buildPreviewSnippet() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestChunkResultIncludesPreviewSnippet(t *testing.T) {
+	chunker := NewSimpleChunker(ChunkConfig{
+		MaxLines:      10,
+		TargetChars:   1200,
+		MaxChars:      2500,
+		MinChunkChars: 200,
+		BatchSize:     5,
+	}, nil) // nil embedClient — no actual embedding
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.go")
+	code := "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n"
+	if err := os.WriteFile(path, []byte(code), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	results, err := chunker.ChunkFileRaw(path, "go")
+	if err != nil {
+		t.Fatalf("ChunkFileRaw: %v", err)
+	}
+	for _, r := range results {
+		if r.PreviewSnippet == "" {
+			t.Errorf("got empty PreviewSnippet for chunk %q", r.Content)
+		}
+		if strings.Contains(r.PreviewSnippet, "\n") {
+			t.Errorf("PreviewSnippet should be single-line: %q", r.PreviewSnippet)
+		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
@@ -83,7 +84,7 @@ func addChunkToFileEntry(byFile map[string]*fileEntry, chunk CodeChunk) {
 				Language:  chunk.Language,
 				Category:  chunk.Category,
 				Relevance: chunk.Score,
-				Preview:   ExtractChunkPreview(chunk.Content, maxPreviewBytes),
+				Preview:   ExtractChunkPreview(chunk, maxPreviewBytes),
 			},
 			sigSet:    make(map[string]struct{}),
 			seenLines: make(map[string]struct{}),
@@ -96,7 +97,7 @@ func addChunkToFileEntry(byFile map[string]*fileEntry, chunk CodeChunk) {
 		// Defense in depth: update preview if a higher-scoring chunk arrives.
 		// Under normal flow (CollapseFileResults pre-sorts by score desc),
 		// the first chunk is already the best, so this branch rarely fires.
-		if p := ExtractChunkPreview(chunk.Content, maxPreviewBytes); p != "" {
+		if p := ExtractChunkPreview(chunk, maxPreviewBytes); p != "" {
 			fe.result.Preview = p
 		}
 	}
@@ -148,11 +149,52 @@ func mergeLineRanges(ranges []LineRange, window int) []LineRange {
 }
 
 // ExtractChunkPreview produces a compact, single-line preview from chunk content.
-// It collapses whitespace, trims to maxBytes, and appends "..." when truncated.
-// Truncation is rune-safe: it never splits a multi-byte UTF-8 character.
-// Returns "" for empty or whitespace-only content.
+// It prefers the stored PreviewSnippet (computed during indexing) when available,
+// falling back to on-the-fly extraction from Content.
 // When maxBytes is 0, no truncation is applied.
-func ExtractChunkPreview(content string, maxBytes int) string {
+func ExtractChunkPreview(chunk CodeChunk, maxBytes int) string {
+	// Use the stored preview snippet computed during indexing when available.
+	if chunk.PreviewSnippet != "" {
+		if maxBytes <= 0 || len(chunk.PreviewSnippet) <= maxBytes {
+			return chunk.PreviewSnippet
+		}
+		return truncateRuneSafe(chunk.PreviewSnippet, maxBytes)
+	}
+	// Fall back to extracting from content.
+	return extractPreviewFromContent(chunk.Content, maxBytes)
+}
+
+// truncateRuneSafe truncates a string to maxBytes without splitting multi-byte
+// UTF-8 characters, appending "..." when truncated.
+// Uses for-range over string (iterates runes) and utf8.RuneLen to avoid
+// allocating intermediate []rune and per-rune string conversions.
+func truncateRuneSafe(s string, maxBytes int) string {
+	if maxBytes <= 0 || len(s) <= maxBytes {
+		return s
+	}
+	ellipsis := "..."
+	budget := maxBytes - len(ellipsis)
+	if budget <= 0 {
+		return ellipsis
+	}
+
+	byteLen := 0
+	var lastValid int
+	for i, r := range s {
+		runeBytes := utf8.RuneLen(r)
+		if byteLen+runeBytes > budget {
+			break
+		}
+		byteLen += runeBytes
+		lastValid = i + runeBytes // byte offset after this rune
+	}
+	if lastValid == 0 {
+		return ellipsis
+	}
+	return s[:lastValid] + ellipsis
+}
+
+func extractPreviewFromContent(content string, maxBytes int) string {
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {
 		return ""
