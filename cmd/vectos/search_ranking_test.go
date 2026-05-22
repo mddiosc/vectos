@@ -153,3 +153,52 @@ func TestDedupeByFile_MaxPerFile(t *testing.T) {
 		t.Fatalf("expected 3 results (max 2 per file), got %d", len(deduped))
 	}
 }
+
+func TestIsTestFilePath(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected bool
+	}{
+		// Go test files
+		{"src/auth_test.go", true},
+		{"src/auth.go", false},
+
+		// TS/JS test files
+		{"src/hooks_test.ts", true},
+		{"src/hooks_test.tsx", true},
+		{"src/hooks.ts", false},
+
+		// Spec files (Playwright, Jest)
+		{"e2e/contact.spec.ts", true},
+		{"e2e/contact.spec.tsx", true},
+		{"src/components/__tests__/button.spec.js", true},
+
+		// e2e directories
+		{"e2e/fixtures/index.ts", true},
+		{"e2e/home.spec.ts", true},
+		{"src/e2e/helpers.ts", true},
+
+		// __tests__ directories
+		{"src/components/__tests__/Button.test.tsx", true},
+
+		// tests directories
+		{"src/tests/setup.ts", true},
+
+		// Cypress directories
+		{"cypress/integration/login.ts", true},
+
+		// Non-test files
+		{"src/pages/Home/index.tsx", false},
+		{"src/components/Navbar.tsx", false},
+		{"internal/storage/sqlite.go", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			got := isTestFilePath(tt.path)
+			if got != tt.expected {
+				t.Errorf("isTestFilePath(%q) = %v, want %v", tt.path, got, tt.expected)
+			}
+		})
+	}
+}

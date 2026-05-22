@@ -14,7 +14,31 @@ var tokenPattern = regexp.MustCompile(`[a-z0-9]+`)
 
 func isTestFilePath(path string) bool {
 	base := filepath.Base(path)
-	return strings.HasSuffix(base, "_test.go") || strings.Contains(path, ".test.") || strings.Contains(path, "/test/") || strings.Contains(path, "\\test\\")
+	return strings.HasSuffix(base, "_test.go") ||
+		strings.HasSuffix(base, "_test.ts") ||
+		strings.HasSuffix(base, "_test.tsx") ||
+		strings.HasSuffix(base, "_test.js") ||
+		strings.HasSuffix(base, "_test.jsx") ||
+		strings.HasSuffix(base, "_test.py") ||
+		strings.HasSuffix(base, ".spec.ts") ||
+		strings.HasSuffix(base, ".spec.tsx") ||
+		strings.HasSuffix(base, ".spec.js") ||
+		strings.HasSuffix(base, ".spec.jsx") ||
+		strings.Contains(path, ".test.") ||
+		strings.Contains(path, "/test/") ||
+		strings.Contains(path, "\\test\\") ||
+		strings.Contains(path, "/e2e/") ||
+		strings.Contains(path, "\\e2e\\") ||
+		strings.HasPrefix(path, "e2e/") ||
+		strings.HasPrefix(path, "e2e\\") ||
+		strings.Contains(path, "/__tests__/") ||
+		strings.Contains(path, "\\__tests__\\") ||
+		strings.Contains(path, "/tests/") ||
+		strings.Contains(path, "\\tests\\") ||
+		strings.Contains(path, "/cypress/") ||
+		strings.Contains(path, "\\cypress\\") ||
+		strings.HasPrefix(path, "cypress/") ||
+		strings.HasPrefix(path, "cypress\\")
 }
 
 func isBuildArtifactPath(path string) bool {
