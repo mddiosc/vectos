@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	rrfConstant           = 60.0
+	rrfConstant           = 40.0 // lower k = more weight to top-ranked results
 	rrfVectorLimit        = 35
 	rrfKeywordLimit       = 15
 	rrfFinalLimit         = 10
@@ -85,7 +85,10 @@ func applyFusionPenalties(results []storage.CodeChunk) []storage.CodeChunk {
 		pathLower := strings.ToLower(results[i].FilePath)
 
 		if isTestFilePath(pathLower) {
-			results[i].Score -= 0.08
+			results[i].Score -= 0.15
+		}
+		if isImportPrelude(results[i]) {
+			results[i].Score -= 0.12
 		}
 		if isBuildArtifactPath(pathLower) {
 			results[i].Score -= 0.25

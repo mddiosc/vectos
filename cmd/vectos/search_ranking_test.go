@@ -202,3 +202,80 @@ func TestIsTestFilePath(t *testing.T) {
 		})
 	}
 }
+
+func TestIsImportPrelude(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		expected bool
+	}{
+		{
+			"go imports only",
+			`package main
+
+import (
+	"fmt"
+	"net/http"
+)`,
+			true,
+		},
+		{
+			"go with function",
+			`package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("hello")
+}`,
+			false,
+		},
+		{
+			"ts imports only",
+			`import React from 'react'
+import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router'`,
+			true,
+		},
+		{
+			"ts component",
+			`import React from 'react'
+import { useTranslation } from 'react-i18next'
+
+export default function Navbar() {
+  return <nav>...</nav>
+}`,
+			false,
+		},
+		{
+			"python imports",
+			`from typing import List, Optional
+import os
+import sys`,
+			true,
+		},
+		{
+			"python with def",
+			`import os
+
+def main():
+    print("hello")`,
+			false,
+		},
+		{
+			"empty",
+			"",
+			false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := storage.CodeChunk{Content: tt.content}
+			got := isImportPrelude(c)
+			if got != tt.expected {
+				t.Errorf("isImportPrelude() = %v, want %v\ncontent: %s", got, tt.expected, tt.content)
+			}
+		})
+	}
+}

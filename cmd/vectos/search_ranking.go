@@ -65,6 +65,59 @@ func looksLikeHelpText(candidate storage.CodeChunk) bool {
 	return false
 }
 
+// isImportPrelude detects chunks that are predominantly import/package
+// declarations with no substantive code. A chunk is considered a prelude when
+// it has at least one import/package line AND zero function/type/class/export
+// declarations.
+func isImportPrelude(c storage.CodeChunk) bool {
+	lines := strings.Split(c.Content, "\n")
+	if len(lines) == 0 {
+		return false
+	}
+	hasImport := false
+	for _, l := range lines {
+		t := strings.TrimSpace(l)
+		if t == "" {
+			continue
+		}
+		// Check for import/package lines.
+		if strings.HasPrefix(t, "import ") || strings.HasPrefix(t, "import\t") ||
+			strings.HasPrefix(t, "import(") ||
+			strings.HasPrefix(t, "import {") ||
+			strings.HasPrefix(t, "import type") ||
+			strings.HasPrefix(t, "package ") ||
+			strings.HasPrefix(t, "from ") && !strings.Contains(t, "def ") ||
+			strings.HasPrefix(t, "require(") ||
+			strings.HasPrefix(t, "use ") {
+			hasImport = true
+			continue
+		}
+		// If we find a code declaration, this is not a pure prelude.
+		if strings.HasPrefix(t, "func ") ||
+			strings.HasPrefix(t, "type ") ||
+			strings.HasPrefix(t, "var ") ||
+			strings.HasPrefix(t, "const ") ||
+			strings.HasPrefix(t, "class ") ||
+			strings.HasPrefix(t, "def ") ||
+			strings.HasPrefix(t, "export ") ||
+			strings.HasPrefix(t, "interface ") ||
+			strings.HasPrefix(t, "enum ") ||
+			strings.HasPrefix(t, "async function ") ||
+			strings.HasPrefix(t, "function ") ||
+			strings.HasPrefix(t, "public ") ||
+			strings.HasPrefix(t, "private ") ||
+			strings.HasPrefix(t, "protected ") ||
+			strings.HasPrefix(t, "useEffect") ||
+			strings.HasPrefix(t, "useState") ||
+			strings.HasPrefix(t, "useCallback") ||
+			strings.HasPrefix(t, "return ") ||
+			strings.HasPrefix(t, "return(") {
+			return false
+		}
+	}
+	return hasImport
+}
+
 // --- Token utilities (used by search_fusion.go tests and benchmarks) ---
 
 func tokenizeForRanking(input string) []string {
