@@ -400,7 +400,7 @@ func TestGetAllEmbeddings_MixedDimensions(t *testing.T) {
 		t.Fatalf("GetAllEmbeddings: %v", err)
 	}
 
-	// Determine dominant dimension (majority vote) — same logic as buildVectorIndex.
+	// Determine dominant dimension (majority vote).
 	dimCounts := make(map[int]int)
 	for _, vec := range embeddings {
 		dimCounts[len(vec)]++

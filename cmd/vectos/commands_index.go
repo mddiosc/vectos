@@ -141,7 +141,7 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 	fmt.Println("Processing files...")
 
 	indexedFiles, count := indexPathsIntoStore(env.store, env.chunker, paths, os.Stdout)
-	buildVectorIndex(env.store, env.chunker, env.embedConfig.VectorIndex)
+	buildVectorIndex(env.store, env.embedConfig.VectorIndex)
 
 	fmt.Println("Cleaning excluded directories...")
 	cleanupExcludedAndSkipped(env.store, scope, skippedPaths)
@@ -149,7 +149,7 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 	fmt.Printf("Done: %d files, %d chunks indexed (project: %s) — total wall time: %v\n", indexedFiles, count, scope.Name, time.Since(totalStart))
 }
 
-func buildVectorIndex(store *storage.SQLiteStorage, _ *indexer.SimpleChunker, viCfg config.VectorIndexConfig) {
+func buildVectorIndex(store *storage.SQLiteStorage, viCfg config.VectorIndexConfig) {
 	if store == nil {
 		return
 	}
@@ -162,9 +162,10 @@ func buildVectorIndex(store *storage.SQLiteStorage, _ *indexer.SimpleChunker, vi
 	}
 
 	fmt.Println("Building vector index...")
+	start := time.Now()
 	if err := store.RebuildVectorIndex(); err != nil {
 		log.Printf("warning: vector index build failed: %v", err)
 		return
 	}
-	fmt.Println("Vector index built.")
+	fmt.Printf("Vector index built in %v.\n", time.Since(start).Round(time.Millisecond))
 }

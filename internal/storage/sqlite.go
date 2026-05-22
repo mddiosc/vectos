@@ -1056,7 +1056,7 @@ func (s *SQLiteStorage) RebuildVectorIndex() error {
 
 func (s *SQLiteStorage) rebuildVectorIndexLocked() error {
 
-	// Determine dominant dimension — same logic as buildVectorIndex in commands_index.go.
+	// Determine dominant dimension by majority vote across all stored embeddings.
 	dimCounts := make(map[int]int)
 	if err := s.ForEachEmbedding(func(_ int, vector []float32) error {
 		dimCounts[len(vector)]++
