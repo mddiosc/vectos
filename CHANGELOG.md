@@ -17,6 +17,89 @@ Format per release:
 
 ---
 
+## v1.1.0 — 2026-05-23
+
+Search quality, HNSW resilience, preview snippets, and token savings tracking.
+
+### Added
+
+- **Smart chunk splitting** — oversized chunks in TSX/JSX/TS/JS, Go, Python/Shell,
+  and Markdown are now split at semantic boundaries (return, hook calls,
+  declarations) with configurable TargetChars (1200) and MaxChars (2500)
+  thresholds. Reduces max chunk size from 23k to 11k chars on real projects.
+- **Automatic full reindex on format changes** — persisted `index_fingerprint`
+  detects chunker/format changes and triggers a full rebuild, eliminating stale
+  chunks after upgrades.
+- **`vectos gain` command** — per-project search stats persist to
+  `~/.vectos/projects/<name>/search_stats.jsonl` and show estimated token savings
+  (snippet bytes vs full-file bytes) bucketed by Today / Last 7 days / All time.
+  Supports `--verbose` for per-call-type breakdowns.
+- **MCP preview snippets** — search results now include a compact, single-line
+  `preview` field extracted from the chunk content. Omitted for high-confidence
+  results (relevance ≥ 0.90) to keep payloads small.
+- **Preview snippets materialized at indexing time** — previews are computed
+  once during chunking, persisted in `code_chunks.preview_snippet`, and reused
+  at search time. Smart line extraction picks the declaration/signature line
+  (func, export, def, class, hook) rather than collapsing all content.
+- **HNSW auto-rebuild** — when the vector index goes stale (chunks changed),
+  `SearchSemantic` automatically rebuilds it from stored embeddings without
+  re-embedding. No more silent linear-scan fallback until manual `vectos index`.
+- **Import prelude penalty** — chunks consisting only of imports/package
+  declarations (no function, type, class, export) are penalized (×0.4) in
+  search results, reducing keyword-search noise from prelude chunks.
+
+### Changed
+
+- **RRF constant lowered 60→40** — gives more weight to top-ranked results
+  and reduces noise from low-ranked keyword matches.
+- **Penalties are multiplicative** — test files ×0.05, build artifacts ×0.2,
+  help text ×0.5, import preludes ×0.4. Replace the previous additive scheme
+  that could produce negative scores with k=40.
+- **Results re-sorted after penalties** — a penalized top hit now correctly
+  drops below an unpenalized second-place result.
+- **Expanded test file detection** — `e2e/`, `__tests__/`, `cypress/`,
+  `*.spec.*`, and `*_test.{ts,tsx,js,jsx,py}` files are now recognized and
+  penalized in addition to Go `_test.go`.
+- **`buildVectorIndex` deduplicated** — delegates to the new
+  `RebuildVectorIndex` storage method, cutting ~80 lines of duplicated HNSW
+  construction logic.
+- **SQLite migration robustness** — column existence checked via
+  `pragma_table_info` instead of brittle error-string matching.
+- **OpenCode GitHub Action disabled** — the action requires an external API
+  key (Anthropic, Google, or Hugging Face); the workflow file is removed.
+
+### Fixed
+
+- **e2e/spec test files outranking source code** — test file penalty was too
+  weak (×0.3), allowing tests scoring high on both vector and keyword ranks to
+  stay above actual components. Now ×0.05.
+- **`applyFusionPenalties` didn't re-sort** — modified scores but left the
+  original order intact, making penalties invisible in practice.
+- **HNSW index stuck stale** — after chunk changes, the vector index hash
+  diverged permanently, forcing every search to O(n) linear scan until explicit
+  `vectos index`. Now auto-rebuilds on first stale hit.
+- **Preview truncation not rune-safe** — `ExtractChunkPreview` could split
+  multi-byte UTF-8 characters (ñ, emoji, CJK). Now uses `for-range` over string
+  + `utf8.RuneLen()`.
+- **`executeSearchDocs` missing HNSW params** — the docs search path didn't
+  call `SetVectorIndexParams`, causing auto-rebuilds to use default M=16
+  instead of the configured value.
+- **`isImportPrelude` false positives** — Go variables named `use` and Python
+  `from sys_defs import X` no longer trigger the import-prelude penalty.
+
+### Known Limitations
+
+- Auto-rebuilding the HNSW index on the first stale hit is synchronous and may
+  add ~1s latency to that query. Subsequent queries use the rebuilt index.
+- Preview snippets for import-only chunks show module paths rather than
+  declarations (these chunks are also penalized as import preludes).
+- `mergeTinyFragments` in the chunker may combine borderline fragments past
+  `MaxChars` in adversarial inputs.
+- `vectos gain` measures snippet bytes vs full-file bytes; this overestimates
+  MCP savings since MCP payloads contain metadata, not chunk content.
+
+---
+
 ## v1.0.0 — 2026-05-18
 
 First stable release. The CLI and MCP tool interfaces are now considered stable.
