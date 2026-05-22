@@ -31,7 +31,6 @@ type SQLiteStorage struct {
 	viEfConstruction  int
 	viEfSearch        int
 	rebuildMu         sync.Mutex // serializes vector index rebuilds
-	rebuildInProgress bool       // set under rebuildMu during build
 }
 
 const maxGetAllEmbeddingsBytes = 128 << 20
