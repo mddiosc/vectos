@@ -7,7 +7,7 @@ import (
 
 func TestExtractChunkPreview_BasicTruncation(t *testing.T) {
 	content := strings.Repeat("word ", 100) // 500 chars
-	preview := ExtractChunkPreview(content, 180)
+	preview := ExtractChunkPreview(CodeChunk{Content: content}, 180)
 	if len(preview) > 180 {
 		t.Fatalf("preview exceeds maxBytes: got %d bytes", len(preview))
 	}
@@ -18,7 +18,7 @@ func TestExtractChunkPreview_BasicTruncation(t *testing.T) {
 
 func TestExtractChunkPreview_ShortContentUnchanged(t *testing.T) {
 	content := "func main() { fmt.Println(\"hello\") }"
-	preview := ExtractChunkPreview(content, 180)
+	preview := ExtractChunkPreview(CodeChunk{Content: content}, 180)
 	if preview != content {
 		t.Fatalf("short content should pass through unchanged, got %q", preview)
 	}
@@ -26,7 +26,7 @@ func TestExtractChunkPreview_ShortContentUnchanged(t *testing.T) {
 
 func TestExtractChunkPreview_CollapsesWhitespace(t *testing.T) {
 	content := "func main() {\n\tfmt.Println(\"hello\")\n\tfmt.Println(\"world\")\n}"
-	preview := ExtractChunkPreview(content, 180)
+	preview := ExtractChunkPreview(CodeChunk{Content: content}, 180)
 	if strings.Contains(preview, "\n") {
 		t.Fatalf("preview should not contain newlines, got %q", preview)
 	}
@@ -41,7 +41,7 @@ func TestExtractChunkPreview_CollapsesWhitespace(t *testing.T) {
 
 func TestExtractChunkPreview_EmptyContent(t *testing.T) {
 	for _, input := range []string{"", "   ", "\n\n\t  \n"} {
-		preview := ExtractChunkPreview(input, 180)
+		preview := ExtractChunkPreview(CodeChunk{Content: input}, 180)
 		if preview != "" {
 			t.Fatalf("expected empty preview for whitespace-only input %q, got %q", input, preview)
 		}
@@ -51,7 +51,7 @@ func TestExtractChunkPreview_EmptyContent(t *testing.T) {
 func TestExtractChunkPreview_TruncatesAtWordBoundary(t *testing.T) {
 	// Build content where a word boundary exists near the cut point.
 	content := "func handleRequest(ctx context.Context, req *http.Request) (*http.Response, error) { return doSomethingVeryLongAndComplicated(ctx, req) }"
-	preview := ExtractChunkPreview(content, 80)
+	preview := ExtractChunkPreview(CodeChunk{Content: content}, 80)
 	if len(preview) > 80 {
 		t.Fatalf("preview exceeds maxBytes: got %d", len(preview))
 	}
@@ -128,7 +128,7 @@ func TestExtractChunkPreview_UTF8MultibyteSafe(t *testing.T) {
 	// Content with multi-byte characters (Spanish, emoji, Japanese).
 	// Each ñ = 2 bytes, each emoji = 4 bytes, each kanji = 3 bytes.
 	content := "función principal() { // コメント 🚀 return resultado }"
-	preview := ExtractChunkPreview(content, 30)
+	preview := ExtractChunkPreview(CodeChunk{Content: content}, 30)
 	if len(preview) > 30 {
 		t.Fatalf("preview exceeds maxBytes: got %d bytes", len(preview))
 	}
@@ -148,13 +148,13 @@ func TestExtractChunkPreview_UTF8ExactBoundary(t *testing.T) {
 	// "a" repeated 176 times = 176 bytes, then "ñ" (2 bytes) = 178 bytes total.
 	// maxBytes=178 should include the ñ without truncation.
 	content := strings.Repeat("a", 176) + "ñ"
-	preview := ExtractChunkPreview(content, 178)
+	preview := ExtractChunkPreview(CodeChunk{Content: content}, 178)
 	if preview != content {
 		t.Fatalf("expected content to pass through at exact boundary, got len=%d", len(preview))
 	}
 
 	// maxBytes=177 should truncate before the ñ (not split it).
-	preview2 := ExtractChunkPreview(content, 177)
+	preview2 := ExtractChunkPreview(CodeChunk{Content: content}, 177)
 	if len(preview2) > 177 {
 		t.Fatalf("preview exceeds maxBytes: got %d bytes", len(preview2))
 	}
@@ -168,7 +168,7 @@ func TestExtractChunkPreview_UTF8ExactBoundary(t *testing.T) {
 
 func TestExtractChunkPreview_ZeroMaxBytes(t *testing.T) {
 	content := "func main() { fmt.Println(\"hello\") }"
-	preview := ExtractChunkPreview(content, 0)
+	preview := ExtractChunkPreview(CodeChunk{Content: content}, 0)
 	if preview != content {
 		t.Fatalf("maxBytes=0 should not truncate, got %q", preview)
 	}
@@ -177,12 +177,12 @@ func TestExtractChunkPreview_ZeroMaxBytes(t *testing.T) {
 func TestExtractChunkPreview_VerySmallMaxBytes(t *testing.T) {
 	content := "func main() {}"
 	// maxBytes=3 means only room for "..."
-	preview := ExtractChunkPreview(content, 3)
+	preview := ExtractChunkPreview(CodeChunk{Content: content}, 3)
 	if preview != "..." {
 		t.Fatalf("maxBytes=3 should return just ellipsis, got %q", preview)
 	}
 	// maxBytes=4 should fit at least 1 char + "..."
-	preview2 := ExtractChunkPreview(content, 4)
+	preview2 := ExtractChunkPreview(CodeChunk{Content: content}, 4)
 	if len(preview2) > 4 {
 		t.Fatalf("preview exceeds maxBytes=4: got %d bytes", len(preview2))
 	}
@@ -224,5 +224,30 @@ func TestCollapseFileResultsMultipleFilesEachGetPreview(t *testing.T) {
 		if r.Preview == "" {
 			t.Fatalf("expected preview for %s, got empty", r.FilePath)
 		}
+	}
+}
+
+func TestExtractChunkPreviewPrefersStoredSnippet(t *testing.T) {
+	stored := "func main() { fmt.Println(\"hello\") }"
+	longContent := strings.Repeat("word ", 500) // much longer than 180 bytes
+
+	// With stored PreviewSnippet, it should be used directly (no truncation needed).
+	chunk := CodeChunk{
+		Content:        longContent,
+		PreviewSnippet: stored,
+	}
+	preview := ExtractChunkPreview(chunk, 180)
+	if preview != stored {
+		t.Fatalf("expected stored snippet %q, got %q", stored, preview)
+	}
+
+	// Without stored snippet, fall back to content extraction (which truncates).
+	chunk2 := CodeChunk{Content: longContent}
+	preview2 := ExtractChunkPreview(chunk2, 180)
+	if len(preview2) > 180 {
+		t.Fatalf("fallback preview should be truncated to 180 bytes, got %d", len(preview2))
+	}
+	if !strings.HasSuffix(preview2, "...") {
+		t.Fatal("fallback preview should end with '...'")
 	}
 }

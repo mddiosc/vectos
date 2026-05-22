@@ -425,15 +425,16 @@ func indexPathsIntoStore(store *storage.SQLiteStorage, chunker *indexer.SimpleCh
 			continue // skip chunks that couldn't be embedded
 		}
 		if _, err := store.SaveChunk(storage.CodeChunk{
-			FilePath:  p.path,
-			Content:   pendingChunks[i].Content,
-			StartLine: pendingChunks[i].StartLine,
-			EndLine:   pendingChunks[i].EndLine,
-			Language:  p.language,
-			Category:  content.ClassifyCategory(p.language),
-			Vector:    pendingChunks[i].Vector,
-			Signature: pendingChunks[i].Signature,
-			Purpose:   pendingChunks[i].Purpose,
+			FilePath:       p.path,
+			Content:        pendingChunks[i].Content,
+			StartLine:      pendingChunks[i].StartLine,
+			EndLine:        pendingChunks[i].EndLine,
+			Language:       p.language,
+			Category:       content.ClassifyCategory(p.language),
+			Vector:         pendingChunks[i].Vector,
+			Signature:      pendingChunks[i].Signature,
+			Purpose:        pendingChunks[i].Purpose,
+			PreviewSnippet: pendingChunks[i].PreviewSnippet,
 		}); err != nil {
 			log.Printf("warning: failed to save chunk for %s: %v", p.path, err)
 			continue

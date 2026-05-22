@@ -6,7 +6,7 @@ import (
 	"vectos/internal/indexer"
 )
 
-const currentChunkerVersion = 2
+const currentChunkerVersion = 3 // bumped for preview_snippet column in code_chunks
 
 func indexChunkerConfig(batchSize int) indexer.ChunkConfig {
 	return indexer.ChunkConfig{

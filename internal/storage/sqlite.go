@@ -207,6 +207,10 @@ func (s *SQLiteStorage) migrate() error {
 	if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 		return fmt.Errorf("failed to add index_fingerprint column: %w", err)
 	}
+	_, err = s.db.Exec(`ALTER TABLE code_chunks ADD COLUMN preview_snippet TEXT DEFAULT ''`)
+	if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		return fmt.Errorf("failed to add preview_snippet column: %w", err)
+	}
 
 	return nil
 }
@@ -278,8 +282,8 @@ func (s *SQLiteStorage) SaveChunk(chunk CodeChunk) (int64, error) {
 	}
 
 	query := `
-	INSERT INTO code_chunks (file_path, content, start_line, end_line, language, category, created_at, embedding, signature, purpose)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO code_chunks (file_path, content, start_line, end_line, language, category, created_at, embedding, signature, purpose, preview_snippet)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	res, err := s.db.Exec(query,
 		chunk.FilePath,
@@ -292,6 +296,7 @@ func (s *SQLiteStorage) SaveChunk(chunk CodeChunk) (int64, error) {
 		vectorBlob,
 		chunk.Signature,
 		chunk.Purpose,
+		chunk.PreviewSnippet,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("failed to save chunk: %w", err)
@@ -439,7 +444,7 @@ func escapeLikeTerm(s string) string {
 
 // SearchText performs a simple text search (fallback/keyword search).
 func (s *SQLiteStorage) SearchText(query string) ([]CodeChunk, error) {
-	sqlQuery := `SELECT id, file_path, content, start_line, end_line, language, category, created_at, signature, purpose
+	sqlQuery := `SELECT id, file_path, content, start_line, end_line, language, category, created_at, signature, purpose, COALESCE(preview_snippet, '')
 	             FROM code_chunks
 	             WHERE content LIKE ?`
 
@@ -455,7 +460,7 @@ func (s *SQLiteStorage) SearchText(query string) ([]CodeChunk, error) {
 		var category sql.NullString
 		var signature sql.NullString
 		var purpose sql.NullString
-		err := rows.Scan(&c.ID, &c.FilePath, &c.Content, &c.StartLine, &c.EndLine, &c.Language, &category, &c.CreatedAt, &signature, &purpose)
+		err := rows.Scan(&c.ID, &c.FilePath, &c.Content, &c.StartLine, &c.EndLine, &c.Language, &category, &c.CreatedAt, &signature, &purpose, &c.PreviewSnippet)
 		if err != nil {
 			return nil, err
 		}
@@ -492,7 +497,7 @@ func (s *SQLiteStorage) SearchTextRanked(query string, limit int) ([]CodeChunk, 
 	}
 	args = append(args, limit*5)
 
-	sqlQuery := fmt.Sprintf(`SELECT id, file_path, content, start_line, end_line, language, category, created_at, signature, purpose
+	sqlQuery := fmt.Sprintf(`SELECT id, file_path, content, start_line, end_line, language, category, created_at, signature, purpose, COALESCE(preview_snippet, '')
 	             FROM code_chunks
 	             WHERE %s
 	             LIMIT ?`, strings.Join(clauses, " OR "))
@@ -509,7 +514,7 @@ func (s *SQLiteStorage) SearchTextRanked(query string, limit int) ([]CodeChunk, 
 		var category sql.NullString
 		var signature sql.NullString
 		var purpose sql.NullString
-		err := rows.Scan(&c.ID, &c.FilePath, &c.Content, &c.StartLine, &c.EndLine, &c.Language, &category, &c.CreatedAt, &signature, &purpose)
+		err := rows.Scan(&c.ID, &c.FilePath, &c.Content, &c.StartLine, &c.EndLine, &c.Language, &category, &c.CreatedAt, &signature, &purpose, &c.PreviewSnippet)
 		if err != nil {
 			return nil, err
 		}
@@ -855,7 +860,7 @@ func (s *SQLiteStorage) searchViaIndex(idx *vectorindex.HNSW, queryVector []floa
 
 // searchLinearScan performs a full-table cosine similarity scan (legacy path).
 func (s *SQLiteStorage) searchLinearScan(queryVector []float32, limit int, includeDocs bool) ([]CodeChunk, error) {
-	sqlQuery := `SELECT id, file_path, content, start_line, end_line, language, category, created_at, embedding, signature, purpose FROM code_chunks WHERE embedding IS NOT NULL AND length(embedding) > 0`
+	sqlQuery := `SELECT id, file_path, content, start_line, end_line, language, category, created_at, embedding, signature, purpose, COALESCE(preview_snippet, '') FROM code_chunks WHERE embedding IS NOT NULL AND length(embedding) > 0`
 	if !includeDocs {
 		sqlQuery += ` AND (category IS NULL OR category NOT IN ('docs', 'dependency_metadata'))`
 	}
@@ -872,7 +877,7 @@ func (s *SQLiteStorage) searchLinearScan(queryVector []float32, limit int, inclu
 		var signature sql.NullString
 		var purpose sql.NullString
 		var embeddingBlob []byte
-		if err := rows.Scan(&c.ID, &c.FilePath, &c.Content, &c.StartLine, &c.EndLine, &c.Language, &category, &c.CreatedAt, &embeddingBlob, &signature, &purpose); err != nil {
+		if err := rows.Scan(&c.ID, &c.FilePath, &c.Content, &c.StartLine, &c.EndLine, &c.Language, &category, &c.CreatedAt, &embeddingBlob, &signature, &purpose, &c.PreviewSnippet); err != nil {
 			return nil, err
 		}
 		c.Category = categoryOrDefault(category, c.Language)
@@ -1163,7 +1168,7 @@ func (s *SQLiteStorage) GetChunksByIDs(ids []int) ([]CodeChunk, error) {
 	}
 
 	query := fmt.Sprintf(
-		`SELECT id, file_path, content, start_line, end_line, language, category, created_at, signature, purpose
+		`SELECT id, file_path, content, start_line, end_line, language, category, created_at, signature, purpose, COALESCE(preview_snippet, '')
 		 FROM code_chunks WHERE id IN (%s)`,
 		strings.Join(placeholders, ","),
 	)
@@ -1180,7 +1185,7 @@ func (s *SQLiteStorage) GetChunksByIDs(ids []int) ([]CodeChunk, error) {
 		var category sql.NullString
 		var signature sql.NullString
 		var purpose sql.NullString
-		if err := rows.Scan(&c.ID, &c.FilePath, &c.Content, &c.StartLine, &c.EndLine, &c.Language, &category, &c.CreatedAt, &signature, &purpose); err != nil {
+		if err := rows.Scan(&c.ID, &c.FilePath, &c.Content, &c.StartLine, &c.EndLine, &c.Language, &category, &c.CreatedAt, &signature, &purpose, &c.PreviewSnippet); err != nil {
 			return nil, err
 		}
 		c.Category = categoryOrDefault(category, c.Language)

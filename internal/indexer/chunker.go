@@ -68,13 +68,14 @@ type ChunkConfig struct {
 
 // ChunkResult contains the content of a chunk and its position.
 type ChunkResult struct {
-	Content      string
-	StartLine    int
-	EndLine      int
-	Vector       []float32
-	Signature    string
-	Purpose      string
-	SemanticText string // the text sent to the embedder; set by buildChunkImpl
+	Content        string
+	StartLine      int
+	EndLine        int
+	Vector         []float32
+	Signature      string
+	Purpose        string
+	SemanticText   string // the text sent to the embedder; set by buildChunkImpl
+	PreviewSnippet string // compact single-line preview computed during indexing
 }
 
 // SimpleChunker es una implementación básica de segmentación de archivos.
@@ -784,6 +785,7 @@ func (s *SimpleChunker) buildChunkImpl(filePath, language string, chunkLines []s
 	signature := extractSignature(language, chunkContent)
 	purpose := inferPurpose(language, chunkContent)
 	semanticContent := buildSemanticContent(filePath, language, chunkContent)
+	preview := buildPreviewSnippet(chunkContent, language)
 
 	var vector []float32
 	if embed && s.embedClient != nil {
@@ -795,14 +797,31 @@ func (s *SimpleChunker) buildChunkImpl(filePath, language string, chunkLines []s
 	}
 
 	return ChunkResult{
-		Content:      chunkContent,
-		StartLine:    startLine,
-		EndLine:      endLine,
-		Vector:       vector,
-		Signature:    signature,
-		Purpose:      purpose,
-		SemanticText: semanticContent,
+		Content:        chunkContent,
+		StartLine:      startLine,
+		EndLine:        endLine,
+		Vector:         vector,
+		Signature:      signature,
+		Purpose:        purpose,
+		SemanticText:   semanticContent,
+		PreviewSnippet: preview,
 	}
+}
+
+// buildPreviewSnippet produces a compact, single-line preview from chunk content.
+// It picks the most informative line: the signature/declaration line, excluding
+// imports/package/comment-only lines. Falls back to the first non-empty line.
+func buildPreviewSnippet(content, language string) string {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return ""
+	}
+	// For single-line chunks, return the trimmed content directly.
+	if !strings.Contains(trimmed, "\n") {
+		return trimmed
+	}
+	// Collapse to a single line.
+	return strings.Join(strings.Fields(trimmed), " ")
 }
 
 // EmbedProgressFunc is called after each batch with (chunksEmbedded, totalChunks, batchDuration).
