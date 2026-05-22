@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	_ "github.com/mattn/go-sqlite3"
 	"vectos/internal/vectorindex"
 )
@@ -27,10 +29,10 @@ type SQLiteStorage struct {
 
 	// HNSW build parameters for lazy/auto-rebuild when the vector index
 	// goes stale (e.g. after incremental chunk updates change the content hash).
-	viM               int
-	viEfConstruction  int
-	viEfSearch        int
-	rebuildMu         sync.Mutex // serializes vector index rebuilds
+	viM              int
+	viEfConstruction int
+	viEfSearch       int
+	rebuildGroup     singleflight.Group // deduplicates concurrent rebuild calls
 }
 
 const maxGetAllEmbeddingsBytes = 128 << 20
@@ -773,7 +775,6 @@ func (s *SQLiteStorage) SearchSemantic(queryVector []float32, limit int, include
 	idx := s.vectIdx
 	s.vectIdxMu.RUnlock()
 
-	rebuilt := false
 	if idx == nil {
 		// Try loading the index from disk. If the content hash does not match
 		// (chunks changed since the index was built), LoadVectorIndex will
@@ -782,8 +783,6 @@ func (s *SQLiteStorage) SearchSemantic(queryVector []float32, limit int, include
 		if _, _, _, _, err := s.LoadVectorIndex(); err != nil {
 			if rebuildErr := s.RebuildVectorIndex(); rebuildErr != nil {
 				log.Printf("vectorindex: auto-rebuild failed: %v — falling back to linear scan", rebuildErr)
-			} else {
-				rebuilt = true
 			}
 		}
 		s.vectIdxMu.RLock()
@@ -792,9 +791,8 @@ func (s *SQLiteStorage) SearchSemantic(queryVector []float32, limit int, include
 	}
 
 	// For small indexes (< 1000 chunks), linear scan is faster and more accurate
-	// than HNSW approximate search — unless we just rebuilt the index, in which
-	// case the user is likely to issue multiple queries and HNSW is preferred.
-	if idx != nil && (rebuilt || s.chunkCount() >= 1000) && idx.Dimension() == len(queryVector) {
+	// than HNSW approximate search.
+	if idx != nil && s.chunkCount() >= 1000 && idx.Dimension() == len(queryVector) {
 		return s.searchViaIndex(idx, queryVector, limit, includeDocs)
 	}
 
@@ -1034,11 +1032,9 @@ func (s *SQLiteStorage) VectorIndexPath() string {
 // SearchSemantic so that the storage can rebuild the index on its own
 // if it becomes stale. Pass zero values to use internal defaults.
 func (s *SQLiteStorage) SetVectorIndexParams(m, efConstruction, efSearch int) {
-	s.rebuildMu.Lock()
 	s.viM = m
 	s.viEfConstruction = efConstruction
 	s.viEfSearch = efSearch
-	s.rebuildMu.Unlock()
 }
 
 // RebuildVectorIndex reads all stored embeddings, constructs a new HNSW
@@ -1046,9 +1042,15 @@ func (s *SQLiteStorage) SetVectorIndexParams(m, efConstruction, efSearch int) {
 // and sets the in-memory index on this storage. It is safe to call after
 // chunk content changes as it only uses data already in the database.
 // If no embeddings exist the method is a no-op.
+// Concurrent callers are deduplicated via singleflight.
 func (s *SQLiteStorage) RebuildVectorIndex() error {
-	s.rebuildMu.Lock()
-	defer s.rebuildMu.Unlock()
+	_, err, _ := s.rebuildGroup.Do("rebuild", func() (any, error) {
+		return nil, s.rebuildVectorIndexLocked()
+	})
+	return err
+}
+
+func (s *SQLiteStorage) rebuildVectorIndexLocked() error {
 
 	// Determine dominant dimension — same logic as buildVectorIndex in commands_index.go.
 	dimCounts := make(map[int]int)

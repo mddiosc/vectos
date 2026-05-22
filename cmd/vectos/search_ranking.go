@@ -10,35 +10,35 @@ import (
 
 var tokenPattern = regexp.MustCompile(`[a-z0-9]+`)
 
+var testSuffixes = []string{
+	"_test.go", "_test.ts", "_test.tsx", "_test.js", "_test.jsx", "_test.py",
+	".spec.ts", ".spec.tsx", ".spec.js", ".spec.jsx",
+}
+
+var testDirs = []string{
+	"/test/", "/tests/", "/e2e/", "/__tests__/", "/cypress/",
+}
+
 // --- Structural penalty helpers (used by search_fusion.go) ---
 
 func isTestFilePath(path string) bool {
 	base := filepath.Base(path)
-	return strings.HasSuffix(base, "_test.go") ||
-		strings.HasSuffix(base, "_test.ts") ||
-		strings.HasSuffix(base, "_test.tsx") ||
-		strings.HasSuffix(base, "_test.js") ||
-		strings.HasSuffix(base, "_test.jsx") ||
-		strings.HasSuffix(base, "_test.py") ||
-		strings.HasSuffix(base, ".spec.ts") ||
-		strings.HasSuffix(base, ".spec.tsx") ||
-		strings.HasSuffix(base, ".spec.js") ||
-		strings.HasSuffix(base, ".spec.jsx") ||
-		strings.Contains(path, ".test.") ||
-		strings.Contains(path, "/test/") ||
-		strings.Contains(path, "\\test\\") ||
-		strings.Contains(path, "/e2e/") ||
-		strings.Contains(path, "\\e2e\\") ||
-		strings.HasPrefix(path, "e2e/") ||
-		strings.HasPrefix(path, "e2e\\") ||
-		strings.Contains(path, "/__tests__/") ||
-		strings.Contains(path, "\\__tests__\\") ||
-		strings.Contains(path, "/tests/") ||
-		strings.Contains(path, "\\tests\\") ||
-		strings.Contains(path, "/cypress/") ||
-		strings.Contains(path, "\\cypress\\") ||
-		strings.HasPrefix(path, "cypress/") ||
-		strings.HasPrefix(path, "cypress\\")
+	norm := filepath.ToSlash(path)
+
+	for _, s := range testSuffixes {
+		if strings.HasSuffix(base, s) {
+			return true
+		}
+	}
+	if strings.Contains(base, ".test.") {
+		return true
+	}
+	for _, d := range testDirs {
+		if strings.Contains(norm, d) || strings.HasPrefix(norm, d[1:]) {
+			return true
+		}
+	}
+	return false
 }
 
 func isBuildArtifactPath(path string) bool {
