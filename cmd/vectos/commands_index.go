@@ -12,7 +12,6 @@ import (
 	"vectos/internal/embeddings"
 	"vectos/internal/indexer"
 	"vectos/internal/storage"
-	"vectos/internal/vectorindex"
 	"vectos/internal/workspace"
 )
 
@@ -150,106 +149,22 @@ func runIndex(projectBaseDir string, embedConfig config.EmbeddingConfig, filePat
 	fmt.Printf("Done: %d files, %d chunks indexed (project: %s) — total wall time: %v\n", indexedFiles, count, scope.Name, time.Since(totalStart))
 }
 
-func buildVectorIndex(store *storage.SQLiteStorage, chunker *indexer.SimpleChunker, viCfg config.VectorIndexConfig) {
-	if store == nil || chunker == nil {
+func buildVectorIndex(store *storage.SQLiteStorage, _ *indexer.SimpleChunker, viCfg config.VectorIndexConfig) {
+	if store == nil {
 		return
 	}
+	store.SetVectorIndexParams(viCfg.HNSW_M, viCfg.HNSW_EfConstruction, viCfg.HNSW_EfSearch)
 
-	// Try to load existing vector index — if it's still valid (hash matches),
-	// skip the expensive rebuild entirely.
+	// Quick skip: the in-memory index is already loaded and valid.
 	if idx, _, _, _, err := store.LoadVectorIndex(); err == nil && idx != nil {
 		fmt.Printf("Vector index up to date: %d vectors, %d layers (skipped rebuild)\n", idx.Len(), idx.MaxLevel()+1)
 		return
 	}
 
 	fmt.Println("Building vector index...")
-	dimCounts := make(map[int]int)
-	err := store.ForEachEmbedding(func(_ int, vector []float32) error {
-		dimCounts[len(vector)]++
-		return nil
-	})
-	if err != nil {
-		log.Printf("warning: vector index build skipped: %v", err)
+	if err := store.RebuildVectorIndex(); err != nil {
+		log.Printf("warning: vector index build failed: %v", err)
 		return
 	}
-	if len(dimCounts) == 0 {
-		log.Println("vector index build skipped: no embeddings found")
-		return
-	}
-
-	// Determine the dominant embedding dimension (majority vote) to handle
-	// mixed-dimension embeddings that can occur after model changes.
-	var dimension, maxCount int
-	for dim, count := range dimCounts {
-		if count > maxCount {
-			dimension = dim
-			maxCount = count
-		}
-	}
-
-	if dimension == 0 {
-		log.Println("vector index build skipped: empty embeddings")
-		return
-	}
-
-	// Filter to only vectors matching the dominant dimension.
-	if maxCount == 0 {
-		log.Println("vector index build skipped: no valid embeddings after filtering")
-		return
-	}
-
-	m := viCfg.HNSW_M
-	if m <= 0 {
-		m = 16
-	}
-	efCons := viCfg.HNSW_EfConstruction
-	if efCons <= 0 {
-		efCons = 200
-	}
-	efSearch := viCfg.HNSW_EfSearch
-	if efSearch <= 0 {
-		efSearch = 200
-	}
-	idx := vectorindex.NewHNSW(dimension, vectorindex.Config{M: m, EfConstruction: efCons, EfSearch: efSearch})
-	total := maxCount
-	buildStart := time.Now()
-	inserted := 0
-	skipped := 0
-	err = store.ForEachEmbedding(func(id int, vector []float32) error {
-		if len(vector) != dimension {
-			skipped++
-			return nil
-		}
-		if err := idx.Insert(id, vector); err != nil {
-			return err
-		}
-		inserted++
-		if inserted%100 == 0 || inserted == total {
-			fmt.Printf("Building vector index: %d/%d vectors\n", inserted, total)
-		}
-		return nil
-	})
-	if err != nil {
-		log.Printf("warning: vector index build skipped: %v", err)
-		return
-	}
-	if skipped > 0 {
-		log.Printf("warning: skipped %d embeddings with mismatched dimension (expected %d); run 'vectos index .' to rebuild a consistent index", skipped, dimension)
-	}
-	buildElapsed := time.Since(buildStart)
-	fmt.Printf("Vector index insertion: %d vectors in %v\n", inserted, buildElapsed)
-
-	contentHash, err := store.ChunkTableContentHash()
-	if err != nil {
-		log.Printf("warning: vector index hash unavailable: %v", err)
-		return
-	}
-
-	if err := idx.Save(store.VectorIndexPath(), contentHash, "none", nil); err != nil {
-		log.Printf("warning: failed to save vector index: %v", err)
-		return
-	}
-
-	store.SetVectorIndex(idx)
-	fmt.Printf("Vector index built: %d vectors, %d layers\n", idx.Len(), idx.MaxLevel()+1)
+	fmt.Println("Vector index built.")
 }
