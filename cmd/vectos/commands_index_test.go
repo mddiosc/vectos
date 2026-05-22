@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"vectos/internal/config"
-	"vectos/internal/indexer"
 	"vectos/internal/storage"
 	"vectos/internal/workspace"
 )
@@ -34,7 +33,6 @@ func TestResolveAndPrintScopeFormatsNxLibs(t *testing.T) {
 
 func TestBuildVectorIndexRebuildsAfterFileDeletion(t *testing.T) {
 	store := newIndexMetadataTestStore(t)
-	chunker := indexer.NewSimpleChunker(indexer.ChunkConfig{MaxLines: 32, MinLines: 1}, nil)
 
 	seedChunk := func(path, content string, vector []float32) {
 		t.Helper()
@@ -53,7 +51,7 @@ func TestBuildVectorIndexRebuildsAfterFileDeletion(t *testing.T) {
 	seedChunk("keep.go", "keep-token", []float32{1, 0, 0, 0})
 	seedChunk("delete.go", "delete-token", []float32{0, 1, 0, 0})
 
-	buildVectorIndex(store, chunker, config.VectorIndexConfig{})
+	buildVectorIndex(store, config.VectorIndexConfig{})
 	initialIndex, initialHash, _, _, err := store.LoadVectorIndex()
 	if err != nil {
 		t.Fatalf("LoadVectorIndex initial: %v", err)
@@ -66,7 +64,7 @@ func TestBuildVectorIndexRebuildsAfterFileDeletion(t *testing.T) {
 		t.Fatalf("RemoveDeletedFile: %v", err)
 	}
 
-	buildVectorIndex(store, chunker, config.VectorIndexConfig{})
+	buildVectorIndex(store, config.VectorIndexConfig{})
 	rebuiltIndex, rebuiltHash, _, _, err := store.LoadVectorIndex()
 	if err != nil {
 		t.Fatalf("LoadVectorIndex rebuilt: %v", err)
