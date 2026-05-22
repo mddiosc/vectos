@@ -85,7 +85,7 @@ func applyFusionPenalties(results []storage.CodeChunk) []storage.CodeChunk {
 		pathLower := strings.ToLower(results[i].FilePath)
 
 		if isTestFilePath(pathLower) {
-			results[i].Score *= 0.3 // keep positive but strongly penalized
+			results[i].Score *= 0.05 // test files are noise for most queries
 		}
 		if isImportPrelude(results[i]) {
 			results[i].Score *= 0.4

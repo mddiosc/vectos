@@ -91,8 +91,8 @@ func TestApplyFusionPenalties_TestFile(t *testing.T) {
 	if penalized[0].Score != 0.0320 {
 		t.Fatalf("expected source file score unchanged (0.0320), got %.4f", penalized[0].Score)
 	}
-	if penalized[1].Score >= 0.0328*0.4 {
-		t.Fatalf("expected test file score penalized < 40%% of original, got %.4f", penalized[1].Score)
+	if penalized[1].Score >= 0.0328*0.08 {
+		t.Fatalf("expected test file score penalized < 8%% of original, got %.4f", penalized[1].Score)
 	}
 }
 
