@@ -106,6 +106,7 @@ func textSearchFallback(store *storage.SQLiteStorage, query string, limit int, m
 }
 
 func executeSearchDocs(store *storage.SQLiteStorage, embedConfig config.EmbeddingConfig, query string, limit int) (searchRun, error) {
+	store.SetVectorIndexParams(embedConfig.VectorIndex.HNSW_M, embedConfig.VectorIndex.HNSW_EfConstruction, embedConfig.VectorIndex.HNSW_EfSearch)
 	run := searchRun{Mode: "text"}
 
 	embedClient, _, err := embeddings.ResolveEmbedder(embedConfig)
