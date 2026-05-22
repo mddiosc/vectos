@@ -68,6 +68,7 @@ func setupIndexing(projectBaseDir string, scope workspace.Scope, embedConfig con
 	if err != nil {
 		log.Fatalf("error opening database: %v", err)
 	}
+	store.SetVectorIndexParams(embedConfig.VectorIndex.HNSW_M, embedConfig.VectorIndex.HNSW_EfConstruction, embedConfig.VectorIndex.HNSW_EfSearch)
 
 	chunkerConfig := indexChunkerConfig(embedConfig.Embedded.BatchSize)
 	metadata, err := syncIndexMetadata(store, providerInfo, currentIndexFingerprint(chunkerConfig))

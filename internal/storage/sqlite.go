@@ -24,6 +24,14 @@ type SQLiteStorage struct {
 	dbPath    string
 	vectIdx   *vectorindex.HNSW
 	vectIdxMu sync.RWMutex
+
+	// HNSW build parameters for lazy/auto-rebuild when the vector index
+	// goes stale (e.g. after incremental chunk updates change the content hash).
+	viM               int
+	viEfConstruction  int
+	viEfSearch        int
+	rebuildMu         sync.Mutex // serializes vector index rebuilds
+	rebuildInProgress bool       // set under rebuildMu during build
 }
 
 const maxGetAllEmbeddingsBytes = 128 << 20
@@ -766,9 +774,28 @@ func (s *SQLiteStorage) SearchSemantic(queryVector []float32, limit int, include
 	idx := s.vectIdx
 	s.vectIdxMu.RUnlock()
 
+	rebuilt := false
+	if idx == nil {
+		// Try loading the index from disk. If the content hash does not match
+		// (chunks changed since the index was built), LoadVectorIndex will
+		// clean up the stale index but return an error. In that case, attempt
+		// an automatic rebuild from the embeddings already stored in the DB.
+		if _, _, _, _, err := s.LoadVectorIndex(); err != nil {
+			if rebuildErr := s.RebuildVectorIndex(); rebuildErr != nil {
+				log.Printf("vectorindex: auto-rebuild failed: %v — falling back to linear scan", rebuildErr)
+			} else {
+				rebuilt = true
+			}
+		}
+		s.vectIdxMu.RLock()
+		idx = s.vectIdx
+		s.vectIdxMu.RUnlock()
+	}
+
 	// For small indexes (< 1000 chunks), linear scan is faster and more accurate
-	// than HNSW approximate search.
-	if idx != nil && s.chunkCount() >= 1000 && idx.Dimension() == len(queryVector) {
+	// than HNSW approximate search — unless we just rebuilt the index, in which
+	// case the user is likely to issue multiple queries and HNSW is preferred.
+	if idx != nil && (rebuilt || s.chunkCount() >= 1000) && idx.Dimension() == len(queryVector) {
 		return s.searchViaIndex(idx, queryVector, limit, includeDocs)
 	}
 
@@ -1001,6 +1028,89 @@ func (s *SQLiteStorage) HasVectorIndex() bool {
 // the SQLite database.
 func (s *SQLiteStorage) VectorIndexPath() string {
 	return s.dbPath + ".vectorindex"
+}
+
+// SetVectorIndexParams configures HNSW build parameters for auto-rebuild.
+// Callers should invoke this after opening storage and before using
+// SearchSemantic so that the storage can rebuild the index on its own
+// if it becomes stale. Pass zero values to use internal defaults.
+func (s *SQLiteStorage) SetVectorIndexParams(m, efConstruction, efSearch int) {
+	s.rebuildMu.Lock()
+	s.viM = m
+	s.viEfConstruction = efConstruction
+	s.viEfSearch = efSearch
+	s.rebuildMu.Unlock()
+}
+
+// RebuildVectorIndex reads all stored embeddings, constructs a new HNSW
+// index, persists it to disk alongside the current chunk-table content hash,
+// and sets the in-memory index on this storage. It is safe to call after
+// chunk content changes as it only uses data already in the database.
+// If no embeddings exist the method is a no-op.
+func (s *SQLiteStorage) RebuildVectorIndex() error {
+	s.rebuildMu.Lock()
+	defer s.rebuildMu.Unlock()
+
+	// Determine dominant dimension — same logic as buildVectorIndex in commands_index.go.
+	dimCounts := make(map[int]int)
+	if err := s.ForEachEmbedding(func(_ int, vector []float32) error {
+		dimCounts[len(vector)]++
+		return nil
+	}); err != nil {
+		return fmt.Errorf("vectorindex: count dimensions: %w", err)
+	}
+	if len(dimCounts) == 0 {
+		return nil // no embeddings, nothing to build
+	}
+	var dimension, maxCount int
+	for dim, c := range dimCounts {
+		if c > maxCount {
+			dimension = dim
+			maxCount = c
+		}
+	}
+	if dimension == 0 || maxCount == 0 {
+		return nil
+	}
+
+	m := s.viM
+	if m <= 0 { m = 16 }
+	efCons := s.viEfConstruction
+	if efCons <= 0 { efCons = 200 }
+	efSearch := s.viEfSearch
+	if efSearch <= 0 { efSearch = 200 }
+
+	idx := vectorindex.NewHNSW(dimension, vectorindex.Config{M: m, EfConstruction: efCons, EfSearch: efSearch})
+	inserted := 0
+	if err := s.ForEachEmbedding(func(id int, vector []float32) error {
+		if len(vector) != dimension {
+			return nil
+		}
+		if err := idx.Insert(id, vector); err != nil {
+			return err
+		}
+		inserted++
+		return nil
+	}); err != nil {
+		return fmt.Errorf("vectorindex: build: %w", err)
+	}
+
+	if inserted == 0 {
+		return nil
+	}
+
+	// Persist the rebuilt index with the current content hash.
+	contentHash, err := s.ChunkTableContentHash()
+	if err != nil {
+		return fmt.Errorf("vectorindex: content hash for rebuild: %w", err)
+	}
+	if err := idx.Save(s.VectorIndexPath(), contentHash, "none", nil); err != nil {
+		return fmt.Errorf("vectorindex: save rebuilt index: %w", err)
+	}
+
+	log.Printf("vectorindex: auto-rebuilt (%d vectors, %d-d, M=%d)", inserted, dimension, m)
+	s.SetVectorIndex(idx)
+	return nil
 }
 
 // LoadVectorIndex attempts to load the HNSW index from disk and sets it
