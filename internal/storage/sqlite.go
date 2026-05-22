@@ -207,9 +207,8 @@ func (s *SQLiteStorage) migrate() error {
 	if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 		return fmt.Errorf("failed to add index_fingerprint column: %w", err)
 	}
-	_, err = s.db.Exec(`ALTER TABLE code_chunks ADD COLUMN preview_snippet TEXT DEFAULT ''`)
-	if err != nil && !strings.Contains(err.Error(), "duplicate column name") {
-		return fmt.Errorf("failed to add preview_snippet column: %w", err)
+	if err := s.addColumnIfMissing("code_chunks", "preview_snippet", "TEXT DEFAULT ''"); err != nil {
+		return err
 	}
 
 	return nil
@@ -1116,6 +1115,26 @@ func (s *SQLiteStorage) rebuildVectorIndexLocked() error {
 
 	log.Printf("vectorindex: auto-rebuilt (%d vectors, %d-d, M=%d)", inserted, dimension, m)
 	s.SetVectorIndex(idx)
+	return nil
+}
+
+// addColumnIfMissing checks whether a column exists via pragma_table_info and
+// adds it only when absent. Avoids brittle string-matching on ALTER TABLE errors.
+func (s *SQLiteStorage) addColumnIfMissing(table, column, colDef string) error {
+	var exists bool
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) > 0 FROM pragma_table_info(?) WHERE name = ?`,
+		table, column,
+	).Scan(&exists); err != nil {
+		return fmt.Errorf("check column %s.%s: %w", table, column, err)
+	}
+	if exists {
+		return nil
+	}
+	_, err := s.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, colDef))
+	if err != nil {
+		return fmt.Errorf("add column %s.%s: %w", table, column, err)
+	}
 	return nil
 }
 

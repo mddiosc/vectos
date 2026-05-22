@@ -824,42 +824,36 @@ func buildPreviewSnippet(content, language string) string {
 		return strings.TrimSpace(lines[0])
 	}
 
-	// Find the best representative line.
-	best := bestPreviewLine(lines, language)
+	// Find the best representative line and its index.
+	best, bestIdx := bestPreviewLine(lines, language)
 	if best == "" {
 		// Fallback: first non-empty line.
-		for _, l := range lines {
+		for i, l := range lines {
 			if s := strings.TrimSpace(l); s != "" && !strings.HasPrefix(s, "#") && !strings.HasPrefix(s, "//") {
 				best = s
+				bestIdx = i
 				break
 			}
 		}
 	}
 	if best == "" {
-		return strings.Join(strings.Fields(trimmed), " ")
+		return collapseNonComment(trimmed) // fallback: collapse, skipping comments
 	}
 
-	// If the best line is short, try to append a second meaningful line
-	// that comes AFTER the best line in the chunk.
-	const targetChars = 280
+	const previewTargetBytes = 200 // matches MCP maxPreviewBytes (180) + headroom
+
+	// If the best line is short, append a second meaningful line that comes
+	// AFTER it in the chunk.
 	best = collapseLine(best)
-	if len(best) < targetChars {
-		pastBest := false
-		for _, l := range lines {
-			cl := strings.TrimSpace(l)
+	if len(best) < previewTargetBytes {
+		for i := bestIdx + 1; i < len(lines); i++ {
+			cl := strings.TrimSpace(lines[i])
 			if cl == "" || strings.HasPrefix(cl, "//") || strings.HasPrefix(cl, "#") {
 				continue
 			}
 			collapsed := collapseLine(cl)
-			if collapsed == best {
-				pastBest = true
-				continue
-			}
-			if !pastBest {
-				continue
-			}
 			candidate := best + " " + collapsed
-			if len(candidate) > targetChars+100 {
+			if len(candidate) > previewTargetBytes+80 {
 				break // second line too large, keep just the best line
 			}
 			best = candidate
@@ -871,29 +865,28 @@ func buildPreviewSnippet(content, language string) string {
 }
 
 // bestPreviewLine returns the most informative line from a chunk for preview
-// purposes: the declaration/signature line, skipping imports and package statements.
-func bestPreviewLine(lines []string, language string) string {
+// purposes (the declaration/signature line), and its line index.
+func bestPreviewLine(lines []string, language string) (string, int) {
 	// Go: prefer func/type/var, skip package/import.
 	if language == "go" {
-		for _, l := range lines {
+		for i, l := range lines {
 			t := strings.TrimSpace(l)
 			if strings.HasPrefix(t, "func ") || strings.HasPrefix(t, "type ") || strings.HasPrefix(t, "var ") {
-				return t
+				return t, i
 			}
 		}
-		// For preludes with no declarations, return the first non-import line.
-		for _, l := range lines {
+		for i, l := range lines {
 			t := strings.TrimSpace(l)
 			if !strings.HasPrefix(t, "package ") && !strings.HasPrefix(t, "import ") && !strings.HasPrefix(t, "import (") && t != "" {
-				return t
+				return t, i
 			}
 		}
-		return ""
+		return "", -1
 	}
 
 	// Brace-structured (TSX/JSX/TS/JS): prefer export/function/hooks/return.
 	if isBraceStructuredLanguage(language) {
-		for _, l := range lines {
+		for i, l := range lines {
 			t := strings.TrimSpace(l)
 			if strings.HasPrefix(t, "export default function ") ||
 				strings.HasPrefix(t, "export function ") ||
@@ -901,11 +894,10 @@ func bestPreviewLine(lines []string, language string) string {
 				strings.HasPrefix(t, "function ") ||
 				strings.HasPrefix(t, "async function ") ||
 				strings.HasPrefix(t, "class ") {
-				return t
+				return t, i
 			}
 		}
-		// Hooks and return statements.
-		for _, l := range lines {
+		for i, l := range lines {
 			t := strings.TrimSpace(l)
 			if strings.HasPrefix(t, "useEffect(") ||
 				strings.HasPrefix(t, "useState(") ||
@@ -913,48 +905,69 @@ func bestPreviewLine(lines []string, language string) string {
 				strings.HasPrefix(t, "useMemo(") ||
 				strings.HasPrefix(t, "return (") ||
 				strings.HasPrefix(t, "return <") {
-				return t
+				return t, i
 			}
 		}
-		// Skip import lines.
-		for _, l := range lines {
+		for i, l := range lines {
 			t := strings.TrimSpace(l)
 			if !strings.HasPrefix(t, "import ") && !strings.HasPrefix(t, "import {") && !strings.HasPrefix(t, "import type") && t != "" && !strings.HasPrefix(t, "//") {
-				return t
+				return t, i
 			}
 		}
-		return ""
+		return "", -1
 	}
 
-	// Indent-structured (Python/Shell/Java): prefer def/class, or first meaningful line.
-	for _, l := range lines {
+	// Indent-structured (Python/Shell/Java): prefer def/class.
+	for i, l := range lines {
 		t := strings.TrimSpace(l)
 		if strings.HasPrefix(t, "def ") || strings.HasPrefix(t, "class ") ||
 			strings.HasPrefix(t, "public ") || strings.HasPrefix(t, "private ") || strings.HasPrefix(t, "protected ") {
-			return t
+			return t, i
 		}
 	}
 	// Shell: function name patterns.
 	if language == "shell" {
-		for _, l := range lines {
+		for i, l := range lines {
 			t := strings.TrimSpace(l)
 			if strings.HasPrefix(t, "function ") || strings.Contains(t, "() {") {
-				return t
+				return t, i
 			}
 		}
 	}
 	// First non-empty non-comment line.
-	for _, l := range lines {
+	for i, l := range lines {
 		t := strings.TrimSpace(l)
 		if t != "" && !strings.HasPrefix(t, "#") && !strings.HasPrefix(t, "//") && !strings.HasPrefix(t, "import ") && !strings.HasPrefix(t, "from ") {
-			return t
+			return t, i
 		}
 	}
-	return ""
+	return "", -1
 }
 
 func collapseLine(s string) string {
 	return strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
+}
+
+// collapseNonComment joins non-comment lines into a single line, filtering
+// out lines that start with // or #. Used as the last-resort fallback.
+func collapseNonComment(trimmed string) string {
+	// For single-line, return as-is if not a comment.
+	if !strings.Contains(trimmed, "\n") {
+		return strings.TrimSpace(trimmed)
+	}
+	lines := strings.Split(trimmed, "\n")
+	var parts []string
+	for _, l := range lines {
+		s := strings.TrimSpace(l)
+		if s == "" || strings.HasPrefix(s, "//") || strings.HasPrefix(s, "#") {
+			continue
+		}
+		parts = append(parts, s)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(strings.Fields(strings.Join(parts, " ")), " ")
 }
 
 // EmbedProgressFunc is called after each batch with (chunksEmbedded, totalChunks, batchDuration).

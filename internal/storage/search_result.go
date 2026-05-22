@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
@@ -165,6 +166,8 @@ func ExtractChunkPreview(chunk CodeChunk, maxBytes int) string {
 
 // truncateRuneSafe truncates a string to maxBytes without splitting multi-byte
 // UTF-8 characters, appending "..." when truncated.
+// Uses for-range over string (iterates runes) and utf8.RuneLen to avoid
+// allocating intermediate []rune and per-rune string conversions.
 func truncateRuneSafe(s string, maxBytes int) string {
 	if maxBytes <= 0 || len(s) <= maxBytes {
 		return s
@@ -174,21 +177,21 @@ func truncateRuneSafe(s string, maxBytes int) string {
 	if budget <= 0 {
 		return ellipsis
 	}
-	runes := []rune(s)
+
 	byteLen := 0
-	cutRune := 0
-	for i, r := range runes {
-		runeBytes := len(string(r))
+	var lastValid int
+	for i, r := range s {
+		runeBytes := utf8.RuneLen(r)
 		if byteLen+runeBytes > budget {
 			break
 		}
 		byteLen += runeBytes
-		cutRune = i + 1
+		lastValid = i + runeBytes // byte offset after this rune
 	}
-	if cutRune == 0 {
+	if lastValid == 0 {
 		return ellipsis
 	}
-	return string(runes[:cutRune]) + ellipsis
+	return s[:lastValid] + ellipsis
 }
 
 func extractPreviewFromContent(content string, maxBytes int) string {
