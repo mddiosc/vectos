@@ -937,12 +937,22 @@ func TestBuildPreviewSnippet(t *testing.T) {
 		{
 			content:  "export function Navbar() {\n  return <nav>...</nav>\n}",
 			language: "tsx",
-			want:     "export function Navbar() { return <nav>...</nav> }",
+			want:     "export function Navbar() { return <nav>...</nav>",
 		},
 		{
 			content:  "def authenticate(token):\n    if not token:\n        raise ValueError\n    return True",
 			language: "python",
-			want:     "def authenticate(token): if not token: raise ValueError return True",
+			want:     "def authenticate(token): if not token:",
+		},
+		{
+			content:  "package main\n\nimport (\n\t\"fmt\"\n)\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n",
+			language: "go",
+			want:     "func main() { fmt.Println(\"hello\")",
+		},
+		{
+			content:  "package main\n\nimport (\n\t\"fmt\"\n\t\"net/http\"\n)\n",
+			language: "go",
+			want:     "\"fmt\" \"net/http\"",
 		},
 	}
 	for _, tt := range tests {

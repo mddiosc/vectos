@@ -808,20 +808,153 @@ func (s *SimpleChunker) buildChunkImpl(filePath, language string, chunkLines []s
 	}
 }
 
-// buildPreviewSnippet produces a compact, single-line preview from chunk content.
-// It picks the most informative line: the signature/declaration line, excluding
-// imports/package/comment-only lines. Falls back to the first non-empty line.
+// buildPreviewSnippet produces a compact single-line preview from chunk content.
+// It extracts the most informative line (function/method/class declaration) rather
+// than collapsing the entire chunk, so agents see what the chunk contains at a glance.
+// Falls back to the first non-empty, non-import line.
 func buildPreviewSnippet(content, language string) string {
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {
 		return ""
 	}
-	// For single-line chunks, return the trimmed content directly.
-	if !strings.Contains(trimmed, "\n") {
-		return trimmed
+	lines := strings.Split(trimmed, "\n")
+
+	// For single-line chunks, return directly.
+	if len(lines) == 1 {
+		return strings.TrimSpace(lines[0])
 	}
-	// Collapse to a single line.
-	return strings.Join(strings.Fields(trimmed), " ")
+
+	// Find the best representative line.
+	best := bestPreviewLine(lines, language)
+	if best == "" {
+		// Fallback: first non-empty line.
+		for _, l := range lines {
+			if s := strings.TrimSpace(l); s != "" && !strings.HasPrefix(s, "#") && !strings.HasPrefix(s, "//") {
+				best = s
+				break
+			}
+		}
+	}
+	if best == "" {
+		return strings.Join(strings.Fields(trimmed), " ")
+	}
+
+	// If the best line is short, try to append a second meaningful line
+	// that comes AFTER the best line in the chunk.
+	const targetChars = 280
+	best = collapseLine(best)
+	if len(best) < targetChars {
+		pastBest := false
+		for _, l := range lines {
+			cl := strings.TrimSpace(l)
+			if cl == "" || strings.HasPrefix(cl, "//") || strings.HasPrefix(cl, "#") {
+				continue
+			}
+			collapsed := collapseLine(cl)
+			if collapsed == best {
+				pastBest = true
+				continue
+			}
+			if !pastBest {
+				continue
+			}
+			candidate := best + " " + collapsed
+			if len(candidate) > targetChars+100 {
+				break // second line too large, keep just the best line
+			}
+			best = candidate
+			break
+		}
+	}
+
+	return strings.TrimSpace(best)
+}
+
+// bestPreviewLine returns the most informative line from a chunk for preview
+// purposes: the declaration/signature line, skipping imports and package statements.
+func bestPreviewLine(lines []string, language string) string {
+	// Go: prefer func/type/var, skip package/import.
+	if language == "go" {
+		for _, l := range lines {
+			t := strings.TrimSpace(l)
+			if strings.HasPrefix(t, "func ") || strings.HasPrefix(t, "type ") || strings.HasPrefix(t, "var ") {
+				return t
+			}
+		}
+		// For preludes with no declarations, return the first non-import line.
+		for _, l := range lines {
+			t := strings.TrimSpace(l)
+			if !strings.HasPrefix(t, "package ") && !strings.HasPrefix(t, "import ") && !strings.HasPrefix(t, "import (") && t != "" {
+				return t
+			}
+		}
+		return ""
+	}
+
+	// Brace-structured (TSX/JSX/TS/JS): prefer export/function/hooks/return.
+	if isBraceStructuredLanguage(language) {
+		for _, l := range lines {
+			t := strings.TrimSpace(l)
+			if strings.HasPrefix(t, "export default function ") ||
+				strings.HasPrefix(t, "export function ") ||
+				strings.HasPrefix(t, "export const ") ||
+				strings.HasPrefix(t, "function ") ||
+				strings.HasPrefix(t, "async function ") ||
+				strings.HasPrefix(t, "class ") {
+				return t
+			}
+		}
+		// Hooks and return statements.
+		for _, l := range lines {
+			t := strings.TrimSpace(l)
+			if strings.HasPrefix(t, "useEffect(") ||
+				strings.HasPrefix(t, "useState(") ||
+				strings.HasPrefix(t, "useCallback(") ||
+				strings.HasPrefix(t, "useMemo(") ||
+				strings.HasPrefix(t, "return (") ||
+				strings.HasPrefix(t, "return <") {
+				return t
+			}
+		}
+		// Skip import lines.
+		for _, l := range lines {
+			t := strings.TrimSpace(l)
+			if !strings.HasPrefix(t, "import ") && !strings.HasPrefix(t, "import {") && !strings.HasPrefix(t, "import type") && t != "" && !strings.HasPrefix(t, "//") {
+				return t
+			}
+		}
+		return ""
+	}
+
+	// Indent-structured (Python/Shell/Java): prefer def/class, or first meaningful line.
+	for _, l := range lines {
+		t := strings.TrimSpace(l)
+		if strings.HasPrefix(t, "def ") || strings.HasPrefix(t, "class ") ||
+			strings.HasPrefix(t, "public ") || strings.HasPrefix(t, "private ") || strings.HasPrefix(t, "protected ") {
+			return t
+		}
+	}
+	// Shell: function name patterns.
+	if language == "shell" {
+		for _, l := range lines {
+			t := strings.TrimSpace(l)
+			if strings.HasPrefix(t, "function ") || strings.Contains(t, "() {") {
+				return t
+			}
+		}
+	}
+	// First non-empty non-comment line.
+	for _, l := range lines {
+		t := strings.TrimSpace(l)
+		if t != "" && !strings.HasPrefix(t, "#") && !strings.HasPrefix(t, "//") && !strings.HasPrefix(t, "import ") && !strings.HasPrefix(t, "from ") {
+			return t
+		}
+	}
+	return ""
+}
+
+func collapseLine(s string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(s)), " ")
 }
 
 // EmbedProgressFunc is called after each batch with (chunksEmbedded, totalChunks, batchDuration).
