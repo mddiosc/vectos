@@ -18,7 +18,7 @@ func TestFuseResults_BasicFusion(t *testing.T) {
 		{ID: 1, FilePath: "/tmp/project/src/main.go", Content: "func main()", Score: 3.0},
 	}
 
-	fused := fuseResults(vectorResults, keywordResults, 60.0, 10)
+	fused := fuseResults(vectorResults, keywordResults, rrfConstant, 10)
 	if len(fused) == 0 {
 		t.Fatal("expected fused results")
 	}
@@ -39,15 +39,15 @@ func TestFuseResults_ChunkInBothLists(t *testing.T) {
 		{ID: 10, FilePath: "/tmp/a.go", Content: "x", Score: 4.0},
 	}
 
-	fused := fuseResults(vectorResults, keywordResults, 60.0, 10)
+	fused := fuseResults(vectorResults, keywordResults, rrfConstant, 10)
 	if len(fused) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(fused))
 	}
 	if fused[0].ID != 10 {
 		t.Fatalf("expected chunk 10, got %d", fused[0].ID)
 	}
-	// RRF score should be 1/(60+1) + 1/(60+1) ≈ 0.0328
-	expectedRRF := 1.0/61.0 + 1.0/61.0
+	// RRF score = 1/(k+1) + 1/(k+1) where k = rrfConstant (40).
+	expectedRRF := 1.0/float64(rrfConstant+1) + 1.0/float64(rrfConstant+1)
 	if fused[0].Score < expectedRRF-0.001 || fused[0].Score > expectedRRF+0.001 {
 		t.Fatalf("expected RRF score ~%.4f, got %.4f", expectedRRF, fused[0].Score)
 	}
@@ -58,7 +58,7 @@ func TestFuseResults_EmptyKeywordList(t *testing.T) {
 		{ID: 1, FilePath: "/tmp/a.go", Content: "x", Score: 0.8},
 	}
 
-	fused := fuseResults(vectorResults, nil, 60.0, 10)
+	fused := fuseResults(vectorResults, nil, rrfConstant, 10)
 	if len(fused) != 1 {
 		t.Fatalf("expected 1 result for vector-only, got %d", len(fused))
 	}
@@ -68,7 +68,7 @@ func TestFuseResults_EmptyKeywordList(t *testing.T) {
 }
 
 func TestFuseResults_BothEmpty(t *testing.T) {
-	fused := fuseResults(nil, nil, 60.0, 10)
+	fused := fuseResults(nil, nil, rrfConstant, 10)
 	if len(fused) != 0 {
 		t.Fatalf("expected 0 results for both empty, got %d", len(fused))
 	}
@@ -83,13 +83,16 @@ func TestApplyFusionPenalties_TestFile(t *testing.T) {
 	}
 
 	penalized := applyFusionPenalties(results)
-	// Test file should be penalized (-0.08)
-	if penalized[0].Score >= 0.0328-0.07 {
-		t.Fatalf("expected test file score penalized, got %.4f", penalized[0].Score)
+	// After multiplicative penalty (×0.3) and re-sort, the source file
+	// should rank first, the test file second.
+	if penalized[0].ID != 2 {
+		t.Fatalf("expected source file (id=2) to rank first after penalty+sort, got id=%d", penalized[0].ID)
 	}
-	// Source file should NOT be penalized
-	if penalized[1].Score != 0.0320 {
-		t.Fatalf("expected source file score unchanged (0.0320), got %.4f", penalized[1].Score)
+	if penalized[0].Score != 0.0320 {
+		t.Fatalf("expected source file score unchanged (0.0320), got %.4f", penalized[0].Score)
+	}
+	if penalized[1].Score >= 0.0328*0.4 {
+		t.Fatalf("expected test file score penalized < 40%% of original, got %.4f", penalized[1].Score)
 	}
 }
 
@@ -111,13 +114,16 @@ func TestApplyFusionPenalties_HelpText(t *testing.T) {
 	}
 
 	penalized := applyFusionPenalties(results)
-	// Help text file should be penalized (score reduced by 0.10)
-	if penalized[0].Score >= 0.0 {
-		t.Fatalf("expected help text score to be penalized below 0, got %.4f", penalized[0].Score)
+	// After multiplicative penalty (×0.5) and re-sort, the source file
+	// (0.04) should rank above the penalized help text (0.05×0.5=0.025).
+	if penalized[0].ID != 2 {
+		t.Fatalf("expected source file (id=2) to rank first after help text penalty+sort, got id=%d", penalized[0].ID)
 	}
-	// Source file should NOT be penalized
-	if penalized[1].Score != 0.04 {
-		t.Fatalf("expected source file score unchanged (0.04), got %.4f", penalized[1].Score)
+	if penalized[0].Score != 0.04 {
+		t.Fatalf("expected source file score unchanged (0.04), got %.4f", penalized[0].Score)
+	}
+	if penalized[1].Score >= 0.05*0.6 {
+		t.Fatalf("expected help text score penalized < 60%% of original, got %.4f", penalized[1].Score)
 	}
 }
 
@@ -266,6 +272,44 @@ def main():
 			"empty",
 			"",
 			false,
+		},
+		{
+			"go var named use (not Rust)",
+			`use := config.EnvVar("DB_URL")
+use2 := config.EnvVar("API_KEY")`,
+			false,
+		},
+		{
+			"python from typing import with def in name",
+			`from sys_defs import X
+from defaults import Y`,
+			true,
+		},
+		{
+			"go const in prelude still prelude",
+			`package main
+
+import "fmt"
+
+const maxRetries = 3`,
+			true,
+		},
+		{
+			"go return nil in prelude still prelude",
+			`package main
+
+import "fmt"
+
+return nil`,
+			true,
+		},
+		{
+			"block comment in import block",
+			`import (
+	/* database driver */
+	"database/sql"
+)`,
+			true,
 		},
 	}
 

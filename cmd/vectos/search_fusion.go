@@ -85,18 +85,23 @@ func applyFusionPenalties(results []storage.CodeChunk) []storage.CodeChunk {
 		pathLower := strings.ToLower(results[i].FilePath)
 
 		if isTestFilePath(pathLower) {
-			results[i].Score -= 0.15
+			results[i].Score *= 0.3 // keep positive but strongly penalized
 		}
 		if isImportPrelude(results[i]) {
-			results[i].Score -= 0.12
+			results[i].Score *= 0.4
 		}
 		if isBuildArtifactPath(pathLower) {
-			results[i].Score -= 0.25
+			results[i].Score *= 0.2
 		}
 		if looksLikeHelpText(results[i]) {
-			results[i].Score -= 0.10
+			results[i].Score *= 0.5
 		}
 	}
+	// Re-sort after penalties — a penalized top hit may now rank below an
+	// unpenalized one that was originally second.
+	sort.SliceStable(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
 	return results
 }
 

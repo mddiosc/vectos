@@ -77,7 +77,8 @@ func isImportPrelude(c storage.CodeChunk) bool {
 	hasImport := false
 	for _, l := range lines {
 		t := strings.TrimSpace(l)
-		if t == "" {
+		if t == "" || strings.HasPrefix(t, "//") || strings.HasPrefix(t, "#") ||
+			strings.HasPrefix(t, "/*") || strings.HasPrefix(t, "*") {
 			continue
 		}
 		// Check for import/package lines.
@@ -86,9 +87,14 @@ func isImportPrelude(c storage.CodeChunk) bool {
 			strings.HasPrefix(t, "import {") ||
 			strings.HasPrefix(t, "import type") ||
 			strings.HasPrefix(t, "package ") ||
-			strings.HasPrefix(t, "from ") && !strings.Contains(t, "def ") ||
-			strings.HasPrefix(t, "require(") ||
-			strings.HasPrefix(t, "use ") {
+			strings.HasPrefix(t, "from ") ||
+			strings.HasPrefix(t, "require(") {
+			hasImport = true
+			continue
+		}
+		// Rust/PHP use statements (must end with ; to avoid false positives
+		// on Go variables named "use").
+		if strings.HasPrefix(t, "use ") && strings.HasSuffix(strings.TrimRight(t, " "), ";") {
 			hasImport = true
 			continue
 		}
@@ -96,7 +102,6 @@ func isImportPrelude(c storage.CodeChunk) bool {
 		if strings.HasPrefix(t, "func ") ||
 			strings.HasPrefix(t, "type ") ||
 			strings.HasPrefix(t, "var ") ||
-			strings.HasPrefix(t, "const ") ||
 			strings.HasPrefix(t, "class ") ||
 			strings.HasPrefix(t, "def ") ||
 			strings.HasPrefix(t, "export ") ||
@@ -110,12 +115,23 @@ func isImportPrelude(c storage.CodeChunk) bool {
 			strings.HasPrefix(t, "useEffect") ||
 			strings.HasPrefix(t, "useState") ||
 			strings.HasPrefix(t, "useCallback") ||
-			strings.HasPrefix(t, "return ") ||
+			strings.HasPrefix(t, "useMemo") ||
+			strings.HasPrefix(t, "useRef") ||
+			strings.HasPrefix(t, "useContext") ||
+			strings.HasPrefix(t, "useReducer") ||
+			isHookLike(t) ||
+			strings.HasPrefix(t, "return <") ||
 			strings.HasPrefix(t, "return(") {
 			return false
 		}
 	}
 	return hasImport
+}
+
+var hookPattern = regexp.MustCompile(`^use[A-Z]\w+`)
+
+func isHookLike(line string) bool {
+	return hookPattern.MatchString(line)
 }
 
 // --- Token utilities (used by search_fusion.go tests and benchmarks) ---
