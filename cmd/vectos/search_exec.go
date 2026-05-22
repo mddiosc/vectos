@@ -15,6 +15,9 @@ type searchRun struct {
 }
 
 func executeSearch(store *storage.SQLiteStorage, embedConfig config.EmbeddingConfig, query string, limit int) (searchRun, error) {
+	// Ensure the store can auto-rebuild its vector index if it becomes stale.
+	store.SetVectorIndexParams(embedConfig.VectorIndex.HNSW_M, embedConfig.VectorIndex.HNSW_EfConstruction, embedConfig.VectorIndex.HNSW_EfSearch)
+
 	embedClient, providerInfo, err := embeddings.ResolveEmbedder(embedConfig)
 	if err != nil {
 		return textSearchFallback(store, query, limit, "text", "")

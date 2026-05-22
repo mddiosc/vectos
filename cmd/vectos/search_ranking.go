@@ -10,11 +10,35 @@ import (
 
 var tokenPattern = regexp.MustCompile(`[a-z0-9]+`)
 
+var testSuffixes = []string{
+	"_test.go", "_test.ts", "_test.tsx", "_test.js", "_test.jsx", "_test.py",
+	".spec.ts", ".spec.tsx", ".spec.js", ".spec.jsx",
+}
+
+var testDirs = []string{
+	"/test/", "/tests/", "/e2e/", "/__tests__/", "/cypress/",
+}
+
 // --- Structural penalty helpers (used by search_fusion.go) ---
 
 func isTestFilePath(path string) bool {
 	base := filepath.Base(path)
-	return strings.HasSuffix(base, "_test.go") || strings.Contains(path, ".test.") || strings.Contains(path, "/test/") || strings.Contains(path, "\\test\\")
+	norm := filepath.ToSlash(path)
+
+	for _, s := range testSuffixes {
+		if strings.HasSuffix(base, s) {
+			return true
+		}
+	}
+	if strings.Contains(base, ".test.") {
+		return true
+	}
+	for _, d := range testDirs {
+		if strings.Contains(norm, d) || strings.HasPrefix(norm, d[1:]) {
+			return true
+		}
+	}
+	return false
 }
 
 func isBuildArtifactPath(path string) bool {

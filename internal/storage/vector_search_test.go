@@ -3,6 +3,7 @@ package storage
 import (
 	"fmt"
 	"math/rand/v2"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -431,5 +432,155 @@ func TestGetAllEmbeddings_MixedDimensions(t *testing.T) {
 
 	if idx.Len() != 8 {
 		t.Fatalf("expected 8 vectors in index, got %d", idx.Len())
+	}
+}
+
+func TestRebuildVectorIndexFromStoredEmbeddings(t *testing.T) {
+	store, cleanup := newTestSQLiteStorage(t)
+	defer cleanup()
+
+	const dim = 128
+	// Insert chunks with embeddings so RebuildVectorIndex has data to work with.
+	for i := 0; i < 50; i++ {
+		v := randomVector(dim)
+		if _, err := store.SaveChunk(CodeChunk{
+			FilePath:  fmt.Sprintf("r-%d.go", i),
+			Content:   fmt.Sprintf("rebuild %d", i),
+			StartLine: 1,
+			EndLine:   1,
+			Language:  "go",
+			Vector:    v,
+		}); err != nil {
+			t.Fatalf("SaveChunk: %v", err)
+		}
+	}
+
+	// Delete any stale vector index file from a previous test.
+	// RebuildVectorIndex should create it from scratch.
+	_ = os.Remove(store.VectorIndexPath())
+
+	store.SetVectorIndexParams(16, 200, 200)
+	if err := store.RebuildVectorIndex(); err != nil {
+		t.Fatalf("RebuildVectorIndex: %v", err)
+	}
+
+	if !store.HasVectorIndex() {
+		t.Fatal("expected vector index to be loaded after rebuild")
+	}
+
+	// Verify the index file was persisted.
+	if _, err := os.Stat(store.VectorIndexPath()); err != nil {
+		t.Fatalf("vector index file not persisted: %v", err)
+	}
+
+	// Searching with the index should return results.
+	results, err := store.SearchSemantic(randomVector(dim), 3, true)
+	if err != nil {
+		t.Fatalf("SearchSemantic after rebuild: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected search results after rebuild")
+	}
+}
+
+func TestSearchSemanticAutoRebuildsOnMissingIndex(t *testing.T) {
+	store, cleanup := newTestSQLiteStorage(t)
+	defer cleanup()
+
+	const dim = 128
+	for i := 0; i < 50; i++ {
+		v := randomVector(dim)
+		if _, err := store.SaveChunk(CodeChunk{
+			FilePath:  fmt.Sprintf("a-%d.go", i),
+			Content:   fmt.Sprintf("auto %d", i),
+			StartLine: 1,
+			EndLine:   1,
+			Language:  "go",
+			Vector:    v,
+		}); err != nil {
+			t.Fatalf("SaveChunk: %v", err)
+		}
+	}
+
+	// Remove any existing vector index — simulate the "index never built" case.
+	_ = os.Remove(store.VectorIndexPath())
+
+	// Configure HNSW params so auto-rebuild can proceed with explicit dimensions.
+	store.SetVectorIndexParams(16, 200, 200)
+
+	query := randomVector(dim)
+	results, err := store.SearchSemantic(query, 3, true)
+	if err != nil {
+		t.Fatalf("SearchSemantic: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected search results after auto-rebuild")
+	}
+
+	// The index should now be loaded (auto-rebuilt by the first search).
+	if !store.HasVectorIndex() {
+		t.Fatal("expected vector index to be loaded after auto-rebuild")
+	}
+
+	// Subsequent searches should use the index without rebuilding.
+	results2, err := store.SearchSemantic(query, 3, true)
+	if err != nil {
+		t.Fatalf("second SearchSemantic: %v", err)
+	}
+	if len(results2) == 0 {
+		t.Fatal("expected results on second search")
+	}
+}
+
+func TestSearchSemanticAutoRebuildsOnStaleIndex(t *testing.T) {
+	store, cleanup := newTestSQLiteStorage(t)
+	defer cleanup()
+
+	const dim = 128
+	for i := 0; i < 50; i++ {
+		v := randomVector(dim)
+		if _, err := store.SaveChunk(CodeChunk{
+			FilePath:  fmt.Sprintf("s-%d.go", i),
+			Content:   fmt.Sprintf("stale %d", i),
+			StartLine: 1,
+			EndLine:   1,
+			Language:  "go",
+			Vector:    v,
+		}); err != nil {
+			t.Fatalf("SaveChunk: %v", err)
+		}
+	}
+
+	// Build and save a valid index.
+	store.SetVectorIndexParams(16, 200, 200)
+	if err := store.RebuildVectorIndex(); err != nil {
+		t.Fatalf("RebuildVectorIndex: %v", err)
+	}
+
+	// Now mutate the chunk table (add a new chunk) so the content hash diverges.
+	if _, err := store.SaveChunk(CodeChunk{
+		FilePath:  "s-extra.go",
+		Content:   "extra chunk to break hash",
+		StartLine: 1,
+		EndLine:   1,
+		Language:  "go",
+		Vector:    randomVector(dim),
+	}); err != nil {
+		t.Fatalf("SaveChunk(extra): %v", err)
+	}
+
+	// The index is now stale (content hash changed). The first search should
+	// detect the staleness and trigger a rebuild.
+	query := randomVector(dim)
+	results, err := store.SearchSemantic(query, 3, true)
+	if err != nil {
+		t.Fatalf("SearchSemantic on stale index: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected search results after stale-index rebuild")
+	}
+
+	if !store.HasVectorIndex() {
+		t.Fatal("expected vector index to be reloaded after stale detection")
 	}
 }
