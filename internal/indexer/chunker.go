@@ -121,6 +121,12 @@ func (s *SimpleChunker) chunkFileImpl(filePath string, language string, embed bo
 
 	normalized := strings.ReplaceAll(string(content), "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+
+	// Tree-sitter AST-based chunking for supported languages.
+	if supportsTreeSitter(language) {
+		return s.chunkASTFileImpl(filePath, language, []byte(normalized), embed)
+	}
+
 	lines := strings.Split(normalized, "\n")
 	if len(lines) > 0 && lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]

@@ -6,7 +6,7 @@ import (
 	"vectos/internal/indexer"
 )
 
-const currentChunkerVersion = 3 // bumped for preview_snippet column in code_chunks
+const currentChunkerVersion = 4 // tree-sitter AST chunking for TSX/TS/JS/Go/Python/Java/Shell
 
 func indexChunkerConfig(batchSize int) indexer.ChunkConfig {
 	return indexer.ChunkConfig{
