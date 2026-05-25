@@ -25,7 +25,7 @@ func loadTreeSitterLanguage(language string) *ts.Language {
 	case "javascript":
 		return grammars.JavascriptLanguage()
 	case "jsx":
-		return grammars.JavascriptLanguage() // JSX is handled by the JS grammar
+		return grammars.JavascriptLanguage()
 	case "go":
 		return grammars.GoLanguage()
 	case "python":
@@ -39,16 +39,14 @@ func loadTreeSitterLanguage(language string) *ts.Language {
 	}
 }
 
-// supportsTreeSitter reports whether a language has a tree-sitter grammar
-// and should use AST-based chunking instead of heuristic.
+// supportsTreeSitter reports whether a language has a tree-sitter grammar.
 func supportsTreeSitter(language string) bool {
 	return loadTreeSitterLanguage(language) != nil
 }
 
 // astChunkBoundaries returns chunk boundaries from the AST root node.
-// Named top-level nodes (function declarations, class declarations,
-// export statements, etc.) become chunk boundaries. Import statements
-// are grouped together as a prelude.
+// Top-level named declarations become chunk boundaries. Import statements
+// are grouped into prelude chunks (resetting between non-contiguous blocks).
 func astChunkBoundaries(root *ts.Node, lang *ts.Language, maxBytes uint32) []astChunkBoundary {
 	if maxBytes == 0 {
 		maxBytes = 2500
@@ -59,9 +57,7 @@ func astChunkBoundaries(root *ts.Node, lang *ts.Language, maxBytes uint32) []ast
 	}
 
 	var boundaries []astChunkBoundary
-
-	// Collect top-level named children, grouping adjacent imports.
-	importStart := uint32(0)
+	importStart := ^uint32(0) // sentinel: no pending import block
 	inImports := false
 
 	for i := 0; i < childCount; i++ {
@@ -70,13 +66,19 @@ func astChunkBoundaries(root *ts.Node, lang *ts.Language, maxBytes uint32) []ast
 		start := child.StartByte()
 		end := child.EndByte()
 
-		isImport := typ == "import_statement"
+		isImport := typ == "import_statement" ||
+			typ == "import_declaration" ||
+			typ == "future_import_statement"
 		isDeclaration := typ == "function_declaration" ||
 			typ == "export_statement" ||
 			typ == "class_declaration" ||
+			typ == "method_declaration" ||
 			typ == "method_definition" ||
 			typ == "interface_declaration" ||
 			typ == "type_alias_declaration" ||
+			typ == "type_declaration" ||
+			typ == "var_declaration" ||
+			typ == "const_declaration" ||
 			typ == "enum_declaration"
 
 		if isImport {
@@ -87,20 +89,18 @@ func astChunkBoundaries(root *ts.Node, lang *ts.Language, maxBytes uint32) []ast
 			continue
 		}
 
-		// Flush pending import block.
+		// Flush pending import block (resets importStart for next group).
 		if inImports {
 			boundaries = append(boundaries, astChunkBoundary{startByte: importStart, endByte: start})
+			importStart = ^uint32(0)
 			inImports = false
 		}
 
 		if isDeclaration {
-			// Split oversized declarations into sub-chunks at their named children.
 			boundaries = append(boundaries, splitDeclarationNode(child, lang, maxBytes)...)
 		} else {
-			// Non-declaration top-level node (e.g. expression_statement with hook call).
 			if end-start > maxBytes {
-				subBoundaries := splitOversizedNode(child, lang, maxBytes, start)
-				boundaries = append(boundaries, subBoundaries...)
+				boundaries = append(boundaries, splitOversizedNode(child, lang, maxBytes, start)...)
 			} else {
 				boundaries = append(boundaries, astChunkBoundary{startByte: start, endByte: end})
 			}
@@ -116,8 +116,9 @@ func astChunkBoundaries(root *ts.Node, lang *ts.Language, maxBytes uint32) []ast
 }
 
 // splitDeclarationNode splits a function/class/export declaration at its
-// named children when the declaration exceeds maxBytes. Returns one or more
-// boundaries.
+// named children when the declaration exceeds maxBytes. The first chunk
+// always includes the signature (identifier + params) plus the first body
+// statement so subsequent chunks retain meaningful context.
 func splitDeclarationNode(node *ts.Node, lang *ts.Language, maxBytes uint32) []astChunkBoundary {
 	start := node.StartByte()
 	end := node.EndByte()
@@ -127,23 +128,25 @@ func splitDeclarationNode(node *ts.Node, lang *ts.Language, maxBytes uint32) []a
 		return []astChunkBoundary{{startByte: start, endByte: end}}
 	}
 
-	// The first named child is the identifier/signature.
-	// Subsequent children are the body items (statements, JSX elements, hooks).
 	var boundaries []astChunkBoundary
+	// segStart initially covers the entire node; we'll re-anchor after
+	// the first body child is consumed with the signature.
 	segStart := start
+	consumedSignature := false
 
 	for i := 0; i < childCount; i++ {
 		child := node.NamedChild(i)
 		childEnd := child.EndByte()
 
-		if i == 0 {
-			// Always keep the signature with the first chunk.
-			continue
+		if !consumedSignature {
+			// Include the signature (i==0) PLUS the first body statement (i==1).
+			if i <= 1 {
+				consumedSignature = true
+				continue
+			}
 		}
 
-		// Check if current segment would exceed maxBytes if we included this child.
-		if childEnd-segStart > maxBytes && childEnd-segStart > 0 {
-			// Emit current segment and start a new one.
+		if childEnd-segStart > maxBytes && childEnd > segStart {
 			if child.StartByte() > segStart {
 				boundaries = append(boundaries, astChunkBoundary{startByte: segStart, endByte: child.StartByte()})
 			}
@@ -151,7 +154,6 @@ func splitDeclarationNode(node *ts.Node, lang *ts.Language, maxBytes uint32) []a
 		}
 	}
 
-	// Emit the final segment (or the whole node if no splits happened).
 	if segStart < end {
 		if len(boundaries) == 0 {
 			return []astChunkBoundary{{startByte: start, endByte: end}}
@@ -163,8 +165,7 @@ func splitDeclarationNode(node *ts.Node, lang *ts.Language, maxBytes uint32) []a
 }
 
 // splitOversizedNode splits a generic oversized top-level node at its named
-// children boundaries. Used for non-declaration nodes (e.g. expression_statements
-// containing large hook callbacks).
+// children boundaries.
 func splitOversizedNode(node *ts.Node, lang *ts.Language, maxBytes uint32, nodeStart uint32) []astChunkBoundary {
 	childCount := node.NamedChildCount()
 	if childCount <= 1 {
@@ -232,9 +233,14 @@ func (s *SimpleChunker) chunkASTFileImpl(filePath, language string, source []byt
 		chunkLines := extractLines(lines, startLine-1, endLine)
 
 		chunk := s.buildChunkImpl(filePath, language, chunkLines, startLine, endLine, embed)
-		chunk.Content = chunkContent // use exact byte-range content
+		chunk.Content = chunkContent
 		chunks = append(chunks, chunk)
 	}
+
+	// AST chunk boundaries are semantically meaningful (function/class/export
+	// declarations) — small chunks at these boundaries are correct and should
+	// not be merged. The heuristic mergeTinyFragments only applies to line-chunked
+	// content where boundaries are arbitrary.
 
 	return chunks, nil
 }
