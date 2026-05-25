@@ -1087,8 +1087,10 @@ func (s *SQLiteStorage) rebuildVectorIndexLocked() error {
 
 	idx := vectorindex.NewHNSW(dimension, vectorindex.Config{M: m, EfConstruction: efCons, EfSearch: efSearch})
 	inserted := 0
+	skipped := 0
 	if err := s.ForEachEmbedding(func(id int, vector []float32) error {
 		if len(vector) != dimension {
+			skipped++
 			return nil
 		}
 		if err := idx.Insert(id, vector); err != nil {
@@ -1098,6 +1100,10 @@ func (s *SQLiteStorage) rebuildVectorIndexLocked() error {
 		return nil
 	}); err != nil {
 		return fmt.Errorf("vectorindex: build: %w", err)
+	}
+
+	if skipped > 0 {
+		log.Printf("vectorindex: skipped %d embeddings with mismatched dimension (expected %d); run 'vectos index .' to rebuild a consistent index", skipped, dimension)
 	}
 
 	if inserted == 0 {
