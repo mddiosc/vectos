@@ -17,6 +17,52 @@ Format per release:
 
 ---
 
+## v1.2.0 — 2026-05-25
+
+Tree-sitter AST-based chunking replaces heuristic brace/indent parsing.
+
+### Added
+
+- **Tree-sitter AST chunking** — replaces heuristic (brace counting, regex) chunking
+  for TSX, TypeScript, JavaScript, JSX, Go, Python, Java, and Shell with a real
+  parser. Uses [`gotreesitter`](https://github.com/odvcencio/gotreesitter), a
+  pure-Go tree-sitter runtime — no CGo, no C toolchain, cross-compiles everywhere.
+- AST boundaries become chunk boundaries: function declarations, class declarations,
+  export statements, method definitions, type/var/const declarations.
+- Import statements are grouped into prelude chunks, correctly separating adjacent
+  and non-contiguous import blocks.
+- Oversized declarations are split at named child boundaries (body statements,
+  JSX elements, hook calls).
+- Languages without tree-sitter grammars fall back to existing heuristic chunking.
+
+### Changed
+
+- **3.3× more granular chunks** on real projects — mywebsite-2 went from 798
+  chunks (heuristic) to 2,634 chunks (tree-sitter), with average chunk size
+  dropping from 657 to 195 chars.
+- `currentChunkerVersion` bumped 3→4 — triggers automatic full reindex on
+  existing projects.
+
+### Fixed
+
+- Contact form queries now return `ContactForm.tsx` as the #1 result (was e2e
+  test file before ranking penalties were tuned).
+- Import prelude boundaries correctly reset between non-contiguous import blocks.
+- `splitDeclarationNode` now includes the function signature + first body
+  statement in the first chunk, preserving context.
+- `go.mod` correctly lists `gotreesitter` as a direct dependency (was `// indirect`).
+
+### Known Limitations
+
+- Very large declarations (>5K chars) with flat structure may still produce
+  oversized chunks when named children are few and large.
+- Some language node types (e.g. Go `var_declaration`, Python decorators) may
+  not yet be recognized as top-level chunk boundaries.
+- Tree-sitter parse errors on malformed source fall through to the existing
+  heuristic chunker.
+
+---
+
 ## v1.1.0 — 2026-05-23
 
 Search quality, HNSW resilience, preview snippets, and token savings tracking.
