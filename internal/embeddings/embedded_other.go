@@ -6,8 +6,9 @@ import (
 	ort "github.com/yalue/onnxruntime_go"
 )
 
-// appendAccelerationProviders is a no-op on non-darwin platforms.
-// Future: add CUDA, DirectML, or OpenVINO here when needed.
+// appendAccelerationProviders configures platform-specific hardware acceleration
+// for non-darwin platforms. Currently supports CUDA when VECTOS_CUDA=1.
+// The CUDA provider requires a CUDA-capable ONNX Runtime build.
 func (e *EmbeddedEmbedder) appendAccelerationProviders(opts *ort.SessionOptions) error {
-	return nil
+	return e.appendCUDAProvider(opts)
 }
