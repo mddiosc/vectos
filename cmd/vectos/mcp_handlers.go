@@ -268,76 +268,11 @@ func resolveIndexPaths(scope workspace.Scope, input indexProjectInput) (paths, s
 	return paths, skippedPaths, nil
 }
 
+// indexPaths delegates to the shared indexPathsIntoStore which uses file-hash
+// caching to skip unchanged files (consistent with CLI and /reindex paths).
 func indexPaths(store *storage.SQLiteStorage, embedClient embeddings.Embedder, paths []string, batchSize int) (indexedFiles, count int, err error) {
 	chunker := indexer.NewSimpleChunker(indexChunkerConfig(batchSize), embedClient)
-
-	// Phase 1: chunk every file raw.
-	var pending []struct {
-		chunk indexer.ChunkResult
-		path  string
-		lang  string
-		hash  string
-	}
-	for _, path := range paths {
-		hash, err := computeFileHash(path)
-		if err != nil {
-			return 0, 0, err
-		}
-		language, err := detectLanguage(path)
-		if err != nil {
-			return 0, 0, err
-		}
-		chunks, err := chunker.ChunkFileRaw(path, language)
-		if err != nil {
-			return 0, 0, err
-		}
-		if err := store.RemoveDeletedFile(path); err != nil {
-			return 0, 0, err
-		}
-		for _, c := range chunks {
-			pending = append(pending, struct {
-				chunk indexer.ChunkResult
-				path  string
-				lang  string
-				hash  string
-			}{chunk: c, path: path, lang: language, hash: hash})
-		}
-		indexedFiles++
-	}
-
-	// Phase 2: batch-embed.
-	allChunks := make([]indexer.ChunkResult, len(pending))
-	for i, p := range pending {
-		allChunks[i] = p.chunk
-	}
-	if err := chunker.BatchEmbedChunks(allChunks, 0); err != nil {
-		return 0, 0, err
-	}
-
-	// Phase 3: save.
-	for i, p := range pending {
-		if allChunks[i].Vector == nil {
-			continue
-		}
-		if _, err := store.SaveChunk(storage.CodeChunk{
-			FilePath:       p.path,
-			Content:        allChunks[i].Content,
-			StartLine:      allChunks[i].StartLine,
-			EndLine:        allChunks[i].EndLine,
-			Language:       p.lang,
-			Category:       classifyCategory(p.lang),
-			Vector:         allChunks[i].Vector,
-			Signature:      allChunks[i].Signature,
-			Purpose:        allChunks[i].Purpose,
-			PreviewSnippet: allChunks[i].PreviewSnippet,
-		}); err != nil {
-			return 0, 0, err
-		}
-		if err := store.UpsertIndexedFile(p.path, p.hash); err != nil {
-			return 0, 0, err
-		}
-		count++
-	}
+	indexedFiles, count = indexPathsIntoStore(store, chunker, paths, nil)
 	return indexedFiles, count, nil
 }
 
