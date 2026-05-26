@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -72,7 +71,7 @@ func LoadIndexConfig(globalConfigPath, projectDir string) IndexConfig {
 					} `json:"code"`
 				} `json:"index"`
 			}
-			if err := json.Unmarshal(content, &globalCfg); err != nil {
+			if err := parseJSONC(content, &globalCfg); err != nil {
 				log.Printf("warning: invalid JSON in %s: %v", globalConfigPath, err)
 			} else {
 				cfg.Docs.Exclude = append(cfg.Docs.Exclude, globalCfg.Index.Docs.Exclude...)
@@ -85,7 +84,7 @@ func LoadIndexConfig(globalConfigPath, projectDir string) IndexConfig {
 	projectConfigPath := filepath.Join(projectDir, "vectos.config.json")
 	if content, err := os.ReadFile(projectConfigPath); err == nil {
 		var pc projectConfigDisk
-		if err := json.Unmarshal(content, &pc); err != nil {
+		if err := parseJSONC(content, &pc); err != nil {
 			log.Printf("warning: invalid JSON in %s: %v", projectConfigPath, err)
 		} else {
 			cfg.Docs.Exclude = append(cfg.Docs.Exclude, pc.Index.Docs.Exclude...)

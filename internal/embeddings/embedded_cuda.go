@@ -7,14 +7,19 @@ import (
 )
 
 // appendCUDAProvider adds the CUDA execution provider to the ONNX session
-// options when VECTOS_CUDA=1. This requires a CUDA-capable ONNX Runtime build
-// (onnxruntime-gpu) and compatible NVIDIA drivers/CUDA toolkit installed.
-// If the CUDA provider is not available in the current ONNX Runtime build,
-// the function returns nil silently and ONNX falls back to CPU.
+// options. The embedder's accelCfg.CUDA field controls this (default: false).
+// Set VECTOS_CUDA=1 to override and enable CUDA regardless of config.
 //
-// Set VECTOS_CUDA=1 to enable. Future: VECTOS_CUDA_DEVICE for multi-GPU setups.
+// Requires a CUDA-capable ONNX Runtime build (onnxruntime-gpu) and compatible
+// NVIDIA drivers/CUDA toolkit installed. If the CUDA provider is not available
+// in the current ONNX Runtime build, the function returns nil silently.
 func (e *EmbeddedEmbedder) appendCUDAProvider(opts *ort.SessionOptions) error {
-	if os.Getenv("VECTOS_CUDA") != "1" {
+	// Env var overrides config: VECTOS_CUDA=1 enables CUDA regardless of config.
+	cudaEnabled := e.accelCfg.CUDA
+	if os.Getenv("VECTOS_CUDA") == "1" {
+		cudaEnabled = true
+	}
+	if !cudaEnabled {
 		return nil
 	}
 

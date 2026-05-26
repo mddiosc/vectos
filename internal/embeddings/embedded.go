@@ -100,7 +100,8 @@ type EmbeddedEmbedder struct {
 	outputInfo      []ort.InputOutputInfo
 	sequenceLen     int
 	embeddingSize   int
-	targetDimension int // Matryoshka truncation target; 0 = no truncation
+	targetDimension int                    // Matryoshka truncation target; 0 = no truncation
+	accelCfg        config.AccelerationConfig // hardware acceleration config
 	mu              sync.Mutex
 }
 
@@ -152,6 +153,7 @@ func NewEmbeddedEmbedderWithStatus(cfg config.EmbeddedProviderConfig) (*Embedded
 		status:          status,
 		sequenceLen:     defaultSequenceLength,
 		targetDimension: cfg.Dimensions,
+		accelCfg:        cfg.Acceleration,
 	}
 
 	if err := embedder.ensureModelReady(); err != nil {

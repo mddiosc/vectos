@@ -17,6 +17,7 @@ type cliFlags struct {
 	setupCmd            *flag.FlagSet
 	serveCmd            *flag.FlagSet
 	doctorCmd           *flag.FlagSet
+	configCmd           *flag.FlagSet
 	indexProject        *string
 	indexChanged        *string
 	indexDocs           *bool
@@ -37,6 +38,7 @@ type cliFlags struct {
 	watchEnabled        *bool
 	watchDebounce       *time.Duration
 	watchIgnore         *string
+	configInit          *bool
 }
 
 func newCLIFlags() cliFlags {
@@ -49,6 +51,7 @@ func newCLIFlags() cliFlags {
 	setupCmd := flag.NewFlagSet("setup", flag.ExitOnError)
 	serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
 	doctorCmd := flag.NewFlagSet("doctor", flag.ExitOnError)
+	configCmd := flag.NewFlagSet("config", flag.ExitOnError)
 
 	servePortDefault := 7438
 	if envPort := os.Getenv("VECTOS_PORT"); envPort != "" {
@@ -67,6 +70,7 @@ func newCLIFlags() cliFlags {
 		setupCmd:            setupCmd,
 		serveCmd:            serveCmd,
 		doctorCmd:           doctorCmd,
+		configCmd:           configCmd,
 		indexProject:        indexCmd.String("project", "", "Nx project name to index with internal workspace dependencies when inside an Nx workspace"),
 		indexChanged:        indexCmd.String("changed", "", "Comma-separated changed file paths to refresh incrementally"),
 		indexDocs:           indexCmd.Bool("docs", false, "Index only documentation files into a separate docs database"),
@@ -87,6 +91,7 @@ func newCLIFlags() cliFlags {
 		watchEnabled:        serveCmd.Bool("watch", true, "enable automatic reindex on file changes"),
 		watchDebounce:       serveCmd.Duration("watch-debounce", 500*time.Millisecond, "debounce delay for file change events"),
 		watchIgnore:         serveCmd.String("watch-ignore", ".git,node_modules,*.lock", "comma-separated glob patterns to ignore"),
+		configInit:          configCmd.Bool("init", false, "Start interactive setup wizard for ~/.vectos/config.jsonc"),
 	}
 }
 
