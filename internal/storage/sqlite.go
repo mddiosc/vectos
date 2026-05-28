@@ -248,6 +248,38 @@ func (s *SQLiteStorage) DeleteIndexedFile(path string) error {
 	return nil
 }
 
+// GetIndexedFileTimestamp returns the indexed_at time for a file, or zero time if not found.
+func (s *SQLiteStorage) GetIndexedFileTimestamp(path string) (time.Time, error) {
+	row := s.db.QueryRow(`SELECT indexed_at FROM indexed_files WHERE path = ?`, path)
+	var ts time.Time
+	if err := row.Scan(&ts); err != nil {
+		if err == sql.ErrNoRows {
+			return time.Time{}, nil
+		}
+		return time.Time{}, fmt.Errorf("failed to get indexed file timestamp: %w", err)
+	}
+	return ts, nil
+}
+
+// SampleIndexedFiles returns up to n random file paths from the indexed_files table.
+func (s *SQLiteStorage) SampleIndexedFiles(n int) ([]string, error) {
+	rows, err := s.db.Query(`SELECT path FROM indexed_files ORDER BY RANDOM() LIMIT ?`, n)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sample indexed files: %w", err)
+	}
+	defer rows.Close()
+
+	var paths []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		paths = append(paths, path)
+	}
+	return paths, rows.Err()
+}
+
 // HasFileChanged compares the current file hash against the stored hash.
 func (s *SQLiteStorage) HasFileChanged(path string, currentHash string) (bool, error) {
 	storedHash, err := s.GetIndexedFileHash(path)

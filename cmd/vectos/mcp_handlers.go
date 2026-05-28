@@ -26,6 +26,9 @@ func makeSearchCodeHandler(projectBaseDir string, embedConfig config.EmbeddingCo
 func runSearchCode(projectBaseDir string, embedConfig config.EmbeddingConfig, input searchCodeInput) (*mcpSDK.CallToolResult, any, error) {
 	scope, pm, err := resolveScopeAndProjectManager(projectBaseDir, input)
 	if err != nil {
+		if isNxRootAmbiguousError(err) {
+			return mcpTextResult(buildMCPNxRootAmbiguousPayload(projectBaseDir, input.Path))
+		}
 		return nil, nil, err
 	}
 
@@ -116,6 +119,9 @@ func makeSearchDocsHandler(projectBaseDir string, embedConfig config.EmbeddingCo
 func runSearchDocs(projectBaseDir string, embedConfig config.EmbeddingConfig, input searchDocsInput) (*mcpSDK.CallToolResult, any, error) {
 	scope, err := resolveToolScopeWithMemory(projectBaseDir, input.Path, input.Project)
 	if err != nil {
+		if isNxRootAmbiguousError(err) {
+			return mcpTextResult(buildMCPNxRootAmbiguousPayload(projectBaseDir, input.Path))
+		}
 		return nil, nil, err
 	}
 
@@ -154,6 +160,35 @@ func mcpDocsIndexMissingResult(scope *workspace.Scope, query string) (*mcpSDK.Ca
 	payload.Guidance = "IDX_DOCS_MISSING"
 	payload.NextAction = "Use index_project with docs: true to index documentation files first."
 	return mcpTextResult(payload)
+}
+
+func isNxRootAmbiguousError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "path is the Nx workspace root") && strings.Contains(err.Error(), "please specify a project name")
+}
+
+func buildMCPNxRootAmbiguousPayload(projectBaseDir string, path string) mcpSearchPayload {
+	startPath := strings.TrimSpace(path)
+	if startPath == "" {
+		if wd, err := os.Getwd(); err == nil {
+			startPath = wd
+		}
+	}
+	workspaceRoot, _ := workspace.DetectNxWorkspaceRoot(startPath)
+	var names []string
+	if workspaceRoot != "" {
+		names, _ = workspace.DiscoverNxProjectNames(workspaceRoot)
+	}
+	var nextAction string
+	if len(names) > 0 {
+		nextAction = fmt.Sprintf("Call list_projects to see available projects, then specify one via the project parameter. Available: %s", strings.Join(names, ", "))
+	} else {
+		nextAction = "Call list_projects to see available Nx projects, then specify one via the project parameter."
+	}
+	return mcpSearchPayload{
+		Guidance:   "NX_ROOT_AMBIGUOUS",
+		Project:    "",
+		NextAction: nextAction,
+	}
 }
 
 // --- index_project ---
