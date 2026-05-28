@@ -52,6 +52,8 @@ func runCLI(app appContext, args []string) {
 		runDoctorCommand(app, commandArgs)
 	case "version":
 		runVersionCommand(commandArgs)
+	case "config":
+		runConfigCommand(app, commandArgs)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", command)
 		fmt.Fprintln(os.Stderr, "Run 'vectos help' for a list of available commands.")

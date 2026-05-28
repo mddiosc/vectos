@@ -27,14 +27,6 @@ func resolveChangedPath(scope workspace.Scope, changed string) (string, error) {
 	return content.ResolveChangedPath(scope, changed)
 }
 
-// detectLanguage determines the programming/markup language for a given file path.
-var detectLanguage = content.DetectLanguage
-
-// classifyCategory maps a language to its content category.
-func classifyCategory(language string) string {
-	return content.ClassifyCategory(language)
-}
-
 func openStorageForScope(pm *storage.ProjectManager, scope *workspace.Scope, docsOnly bool) (*storage.SQLiteStorage, error) {
 	if scope == nil || strings.TrimSpace(scope.Name) == "" {
 		wd, err := os.Getwd()

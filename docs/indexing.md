@@ -313,21 +313,35 @@ When the Nx graph is unavailable, Vectos falls back to the selected project's `P
 
 ## Reindex Behavior
 
+### Incremental Indexing with File Hashes
+
+Vectos uses per-file content hashing (SHA-256) to avoid re-chunking and re-embedding unchanged files. Each indexed file is stored in the `indexed_files` table with its content hash and timestamp. On subsequent reindex operations:
+
+- Files whose content hash matches the stored hash are **skipped** (no re-chunk, no re-embed).
+- Files whose content hash differs (or are new) are chunked and embedded.
+- Files that were previously indexed but no longer exist on disk are removed from the index.
+
+This applies to all indexing paths: CLI (`vectos index`), HTTP (`/reindex`), and MCP (`index_project`).
+
+### Full Rebuild Triggers
+
 Vectos stores index metadata with each project database:
 
 - provider name
 - model name
 - embedding dimensions
+- chunker version (via `index_fingerprint`)
 
-If any of those values differ from the currently active embedding provider, Vectos reports that a reindex is required.
+If any of those values differ from the currently active configuration, Vectos invalidates the entire index and rebuilds from scratch. This is a safety measure to prevent mixing embeddings from incompatible providers or models.
 
-Typical cases that require reindexing:
+Typical cases that require a full reindex:
 
 - switching from `remote` to `embedded`
 - switching from `embedded` to `remote`
 - changing the embedded model
 - changing the remote model to one with different dimensions
 - changing the Matryoshka `dimensions` setting (e.g., 512 → 256)
+- upgrading Vectos when the chunker format changes
 - rebuilding the index with a different embedding space
 
 See also: [Development](development.md)
