@@ -17,3 +17,4 @@ vectorindex.test
 .playwright-mcp/
 .agents/
 skills-lock.json
+.atl
