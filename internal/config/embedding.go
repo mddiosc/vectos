@@ -65,13 +65,6 @@ type EmbeddingConfig struct {
 	VectorIndex     VectorIndexConfig      `json:"vector_index"`
 }
 
-// AccelerationConfig controls hardware acceleration providers for ONNX inference.
-// Env vars take precedence: VECTOS_COREML=0 and VECTOS_CUDA=1 override these settings.
-type AccelerationConfig struct {
-	CoreML bool `json:"coreml"` // Apple Neural Engine / GPU on macOS (default: true on darwin)
-	CUDA   bool `json:"cuda"`   // NVIDIA GPU — requires CUDA-capable ONNX Runtime build (default: false)
-}
-
 type EmbeddedProviderConfig struct {
 	Enabled      bool              `json:"enabled"`
 	ModelName    string            `json:"model_name"`
@@ -81,7 +74,6 @@ type EmbeddedProviderConfig struct {
 	TimeoutS     int               `json:"timeout_seconds,omitempty"`
 	BatchSize    int               `json:"batch_size,omitempty"`
 	Dimensions   int               `json:"dimensions,omitempty"`
-	Acceleration AccelerationConfig `json:"acceleration,omitempty"`
 }
 
 // DefaultEmbeddedBatchSize is the number of texts to embed in a single
@@ -151,20 +143,14 @@ type embeddingConfigDisk struct {
 }
 
 type embeddedProviderConfigDisk struct {
-	Enabled      *bool                `json:"enabled"`
-	ModelName    *string              `json:"model_name"`
-	ModelDir     *string              `json:"model_dir"`
-	AutoDownload *bool                `json:"auto_download,omitempty"`
-	AssetBaseURL *string              `json:"asset_base_url,omitempty"`
-	TimeoutS     *int                 `json:"timeout_seconds,omitempty"`
-	BatchSize    *int                 `json:"batch_size,omitempty"`
-	Dimensions   *int                 `json:"dimensions,omitempty"`
-	Acceleration *accelerationConfigDisk `json:"acceleration,omitempty"`
-}
-
-type accelerationConfigDisk struct {
-	CoreML *bool `json:"coreml"`
-	CUDA   *bool `json:"cuda"`
+	Enabled      *bool   `json:"enabled"`
+	ModelName    *string `json:"model_name"`
+	ModelDir     *string `json:"model_dir"`
+	AutoDownload *bool   `json:"auto_download,omitempty"`
+	AssetBaseURL *string `json:"asset_base_url,omitempty"`
+	TimeoutS     *int    `json:"timeout_seconds,omitempty"`
+	BatchSize    *int    `json:"batch_size,omitempty"`
+	Dimensions   *int    `json:"dimensions,omitempty"`
 }
 
 type remoteProviderConfigDisk struct {
@@ -222,10 +208,6 @@ func DefaultEmbeddingConfig(homeDir string) EmbeddingConfig {
 			// 0 = auto-detect based on available RAM (see AdaptiveBatchSize)
 			BatchSize:  0,
 			Dimensions: DefaultEmbeddedDimensionsForModel(DefaultEmbeddedModel),
-			Acceleration: AccelerationConfig{
-				CoreML: true,
-				CUDA:   false,
-			},
 		},
 		Remote: RemoteProviderConfig{
 			Enabled:  false,
@@ -305,19 +287,7 @@ func mergeEmbeddedConfig(dst *EmbeddedProviderConfig, src embeddedProviderConfig
 	if src.TimeoutS != nil && *src.TimeoutS > 0 {
 		dst.TimeoutS = *src.TimeoutS
 	}
-	if src.Acceleration != nil {
-		mergeAccelerationConfig(&dst.Acceleration, *src.Acceleration)
-	}
 	return nil
-}
-
-func mergeAccelerationConfig(dst *AccelerationConfig, src accelerationConfigDisk) {
-	if src.CoreML != nil {
-		dst.CoreML = *src.CoreML
-	}
-	if src.CUDA != nil {
-		dst.CUDA = *src.CUDA
-	}
 }
 
 func mergeRemoteConfig(dst *RemoteProviderConfig, src remoteProviderConfigDisk) {

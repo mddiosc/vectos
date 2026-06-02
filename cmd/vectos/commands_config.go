@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -127,25 +126,6 @@ func runConfigInit(defaults config.EmbeddingConfig) {
 		fmt.Printf("  → Batch size: %d\n\n", cfg.Embedded.BatchSize)
 	}
 
-	// ── Hardware acceleration ──
-	fmt.Println("  Hardware acceleration")
-	switch runtime.GOOS {
-	case "darwin":
-		fmt.Printf("    CoreML (Apple Neural Engine / GPU) [%s]: ", boolLabel(cfg.Embedded.Acceleration.CoreML))
-		coreML := readBool(reader, cfg.Embedded.Acceleration.CoreML)
-		cfg.Embedded.Acceleration.CoreML = coreML
-		fmt.Printf("  → CoreML: %s\n\n", boolLabel(coreML))
-	default:
-		fmt.Printf("    CUDA (NVIDIA GPU) [%s]: ", boolLabel(cfg.Embedded.Acceleration.CUDA))
-		cuda := readBool(reader, cfg.Embedded.Acceleration.CUDA)
-		cfg.Embedded.Acceleration.CUDA = cuda
-		if cuda {
-			fmt.Println("    ⚠ Requires a CUDA-capable ONNX Runtime build (not included by default).")
-			fmt.Println("    Set ONNX_RUNTIME_LIBRARY_PATH if using a custom build.")
-		}
-		fmt.Printf("  → CUDA: %s\n\n", boolLabel(cuda))
-	}
-
 	// ── Vector index (advanced) ──
 	fmt.Println("  Vector index (advanced — press Enter for defaults)")
 	fmt.Printf("    HNSW M (connections per node) [%d]: ", cfg.VectorIndex.HNSW_M)
@@ -188,8 +168,6 @@ func runConfigInit(defaults config.EmbeddingConfig) {
 	} else {
 		fmt.Println("  Batch size:      auto")
 	}
-	fmt.Printf("  CoreML:          %s\n", boolLabel(cfg.Embedded.Acceleration.CoreML))
-	fmt.Printf("  CUDA:            %s\n", boolLabel(cfg.Embedded.Acceleration.CUDA))
 	fmt.Printf("  Vector index:    %s (M=%d)\n", cfg.VectorIndex.IndexType, cfg.VectorIndex.HNSW_M)
 	fmt.Println()
 
@@ -310,18 +288,7 @@ func writeConfigJSONC(path string, cfg config.EmbeddingConfig) error {
       "dimensions": %d,
 `, cfg.Embedded.Dimensions)
 	}
-	fmt.Fprint(f, `      // Hardware acceleration providers.
-      // coreml: Apple Neural Engine / GPU on macOS (requires Apple Silicon).
-      // cuda:   NVIDIA GPU acceleration (requires CUDA-enabled ONNX Runtime build).
-      // Env vars override these: VECTOS_COREML=0 / VECTOS_CUDA=1.
-      "acceleration": {
-`)
-	fmt.Fprintf(f, `        "coreml": %v,
-`, cfg.Embedded.Acceleration.CoreML)
-	fmt.Fprintf(f, `        "cuda": %v
-`, cfg.Embedded.Acceleration.CUDA)
-	fmt.Fprint(f, `      }
-    },
+	fmt.Fprint(f, `    },
     "vector_index": {
       // HNSW (Hierarchical Navigable Small World) vector index parameters.
       // Higher M = better recall at cost of memory.

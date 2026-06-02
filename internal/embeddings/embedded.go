@@ -100,8 +100,7 @@ type EmbeddedEmbedder struct {
 	outputInfo      []ort.InputOutputInfo
 	sequenceLen     int
 	embeddingSize   int
-	targetDimension int                    // Matryoshka truncation target; 0 = no truncation
-	accelCfg        config.AccelerationConfig // hardware acceleration config
+	targetDimension int // Matryoshka truncation target; 0 = no truncation
 	mu              sync.Mutex
 }
 
@@ -153,7 +152,6 @@ func NewEmbeddedEmbedderWithStatus(cfg config.EmbeddedProviderConfig) (*Embedded
 		status:          status,
 		sequenceLen:     defaultSequenceLength,
 		targetDimension: cfg.Dimensions,
-		accelCfg:        cfg.Acceleration,
 	}
 
 	if err := embedder.ensureModelReady(); err != nil {
@@ -498,24 +496,7 @@ func (e *EmbeddedEmbedder) createONNXSession() error {
 		e.status.Dimensions = e.embeddingSize
 	}
 
-	opts, err := ort.NewSessionOptions()
-	if err != nil {
-		e.status.Message = fmt.Sprintf("failed to create session options: %v", err)
-		return err
-	}
-	defer opts.Destroy()
-
-	// ORT_ENABLE_ALL = 99 — full graph optimizations (constant fusion, node
-	// elimination, etc). The Go wrapper only exports DisableAll, but the
-	// underlying C enum is an int that accepts any GraphOptimizationLevel value.
-	opts.SetGraphOptimizationLevel(ort.GraphOptimizationLevel(99))
-	opts.SetIntraOpNumThreads(runtime.NumCPU())
-
-	// Append platform-specific acceleration providers (CoreML on darwin, etc).
-	// Failure is non-fatal — ONNX falls back to CPU automatically.
-	_ = e.appendAccelerationProviders(opts)
-
-	session, err := ort.NewDynamicAdvancedSession(modelPath, e.inputNames, e.outputNames, opts)
+	session, err := ort.NewDynamicAdvancedSession(modelPath, e.inputNames, e.outputNames, nil)
 	if err != nil {
 		e.status.Message = fmt.Sprintf("failed to create embedded ONNX session: %v", err)
 		return err
