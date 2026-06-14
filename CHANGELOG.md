@@ -17,6 +17,28 @@ Format per release:
 
 ---
 
+## v1.3.0 — 2026-06-14
+
+### Added
+
+- **Index staleness detection** — MCP tools now sample file mtimes and report
+  `IDX_STALE` guidance when the index is out of date, so agents know to
+  reindex before searching.
+- **MCP hash cache** — file content hashes are persisted in SQLite so
+  unchanged files are skipped on incremental reindex, significantly reducing
+  indexing time on large projects.
+- **JSONC config format** — `~/.vectos/config.jsonc` supports inline
+  documentation comments explaining every setting.
+- **`vectos config` command** — interactive wizard to create or update the
+  configuration file without hand-editing JSON.
+
+### Fixed
+
+- Removed orphaned `readBool` and `boolLabel` helper functions that were left
+  behind after a previous refactor, causing staticcheck CI failures.
+
+---
+
 ## v1.2.0 — 2026-05-25
 
 Tree-sitter AST-based chunking replaces heuristic brace/indent parsing.
