@@ -197,20 +197,6 @@ func readLine(r *bufio.Reader) string {
 	return strings.TrimSpace(text)
 }
 
-func readBool(r *bufio.Reader, def bool) bool {
-	text := strings.ToLower(readLine(r))
-	if text == "" {
-		return def
-	}
-	switch text {
-	case "true", "yes", "y", "1", "on":
-		return true
-	case "false", "no", "n", "0", "off":
-		return false
-	}
-	return def
-}
-
 func askConfirm(def bool) bool {
 	text := strings.ToLower(readLine(bufio.NewReader(os.Stdin)))
 	if text == "" {
@@ -223,13 +209,6 @@ func askConfirm(def bool) bool {
 		return false
 	}
 	return def
-}
-
-func boolLabel(v bool) string {
-	if v {
-		return "enabled"
-	}
-	return "disabled"
 }
 
 func assetBaseURLForModel(modelName string) string {
