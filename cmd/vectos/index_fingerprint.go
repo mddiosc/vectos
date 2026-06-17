@@ -6,7 +6,7 @@ import (
 	"vectos/internal/indexer"
 )
 
-const currentChunkerVersion = 4 // tree-sitter AST chunking for TSX/TS/JS/Go/Python/Java/Shell
+const currentChunkerVersion = 5 // v5: jina-v3 query embeddings now use task_id=0 (was 1) — forces reindex so query/passage adapters match
 
 func indexChunkerConfig(batchSize int) indexer.ChunkConfig {
 	return indexer.ChunkConfig{

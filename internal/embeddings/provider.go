@@ -2,28 +2,30 @@ package embeddings
 
 import "fmt"
 
-// Embedder define el contrato para cualquier proveedor de embeddings.
-// Esto permite que el sistema sea agnóstico al origen de los vectores (local o remoto).
+// Embedder defines the contract for any embedding provider.
+// The interface distinguishes between query and passage embeddings so that
+// models supporting task-specific adapters (e.g. jina-embeddings-v3) can
+// route to the correct adapter at inference time.
 type Embedder interface {
-	// GetEmbedding convierte un texto en un vector de floats.
-	GetEmbedding(text string) ([]float32, error)
-
-	// GetEmbeddings convierte múltiples textos en vectores de floats en una
-	// sola llamada. Los vectores se devuelven en el mismo orden que los textos
-	// de entrada.
-	GetEmbeddings(texts []string) ([][]float32, error)
+	// EmbedQuery embeds a single search query (task_id=0 for jina-v3).
+	EmbedQuery(text string) ([]float32, error)
+	// EmbedQueries embeds multiple search queries in one call.
+	EmbedQueries(texts []string) ([][]float32, error)
+	// EmbedPassage embeds a single passage/document for indexing (task_id=1 for jina-v3).
+	EmbedPassage(text string) ([]float32, error)
+	// EmbedPassages embeds multiple passages/documents in one call.
+	EmbedPassages(texts []string) ([][]float32, error)
 }
 
-// GetEmbeddingsDefault implementa GetEmbeddings llamando a GetEmbedding en un
-// bucle. Es útil para backward compatibility o para embedders que no tienen
-// una implementación nativa de batch.
-func GetEmbeddingsDefault(e Embedder, texts []string) ([][]float32, error) {
+// EmbedPassagesDefault implements EmbedPassages by calling EmbedPassage in a
+// loop. Useful for embedders that lack a native batch implementation.
+func EmbedPassagesDefault(e Embedder, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return nil, nil
 	}
 	results := make([][]float32, len(texts))
 	for i, text := range texts {
-		vec, err := e.GetEmbedding(text)
+		vec, err := e.EmbedPassage(text)
 		if err != nil {
 			return nil, fmt.Errorf("batch embedding text %d: %w", i, err)
 		}

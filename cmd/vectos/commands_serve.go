@@ -132,7 +132,7 @@ func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port in
 	reindexFn := func(req server.ReindexRequest) server.ReindexResponse {
 		return reindexProject(cache, chunker, providerInfo, currentIndexFingerprint(chunkerConfig), req, embedConfig.VectorIndex, projectBaseDir)
 	}
-	embedFn := func(text string) ([]float32, error) { return embedClient.GetEmbedding(text) }
+	embedFn := func(text string) ([]float32, error) { return embedClient.EmbedQuery(text) }
 	srv := server.NewServer(port, reindexFn, embedFn, activeStore)
 	srv.SetReady(false)
 	srv.AddCloser(cache)

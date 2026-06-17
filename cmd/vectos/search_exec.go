@@ -59,7 +59,7 @@ func mustTextSearchFallback(store *storage.SQLiteStorage, query string, limit in
 // Returns (result, true) on success, or (empty, false) with no error when a
 // text-only fallback should be used.
 func trySemanticSearch(embedClient embeddings.Embedder, store *storage.SQLiteStorage, query string, limit int) (searchRun, bool, error) {
-	queryVector, err := embedClient.GetEmbedding(query)
+	queryVector, err := embedClient.EmbedQuery(query)
 	if err != nil {
 		return searchRun{}, false, nil
 	}
@@ -138,7 +138,7 @@ func executeSearchDocs(store *storage.SQLiteStorage, embedConfig config.Embeddin
 		return run, nil
 	}
 
-	queryVector, err := embedClient.GetEmbedding(query)
+	queryVector, err := embedClient.EmbedQuery(query)
 	if err == nil {
 		vectorResults, _ := store.SearchSemantic(queryVector, rrfVectorLimit, true)
 		keywordResults, _ := store.SearchTextRanked(query, rrfKeywordLimit)

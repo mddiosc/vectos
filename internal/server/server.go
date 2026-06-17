@@ -40,7 +40,7 @@ type ReindexResponse struct {
 // ReindexFunc is a function that performs a reindex operation.
 type ReindexFunc func(ReindexRequest) ReindexResponse
 
-// EmbedFunc converts text into an embedding vector.
+// EmbedFunc converts a text query into an embedding vector.
 type EmbedFunc func(text string) ([]float32, error)
 
 // Server is an HTTP server that exposes health and reindex endpoints.

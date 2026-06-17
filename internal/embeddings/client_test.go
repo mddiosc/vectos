@@ -21,7 +21,7 @@ func TestRemoteEmbedderTimeoutErrorIsActionable(t *testing.T) {
 	r := NewRemoteEmbedder(ts.URL, "test-model")
 	r.httpClient.Timeout = 10 * time.Millisecond
 
-	_, err := r.GetEmbedding("hello")
+	_, err := r.EmbedQuery("hello")
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
@@ -42,7 +42,7 @@ func TestRemoteEmbedderRateLimitErrorIsActionable(t *testing.T) {
 	defer ts.Close()
 
 	r := NewRemoteEmbedder(ts.URL, "test-model")
-	_, err := r.GetEmbedding("hello")
+	_, err := r.EmbedQuery("hello")
 	if err == nil {
 		t.Fatal("expected rate-limit error")
 	}
@@ -58,7 +58,7 @@ func TestRemoteEmbedderUnauthorizedErrorIsActionable(t *testing.T) {
 	defer ts.Close()
 
 	r := NewRemoteEmbedder(ts.URL, "test-model")
-	_, err := r.GetEmbedding("hello")
+	_, err := r.EmbedQuery("hello")
 	if err == nil {
 		t.Fatal("expected unauthorized error")
 	}
@@ -75,7 +75,7 @@ func TestRemoteEmbedderInvalidJSONErrorIsActionable(t *testing.T) {
 	defer ts.Close()
 
 	r := NewRemoteEmbedder(ts.URL, "test-model")
-	_, err := r.GetEmbedding("hello")
+	_, err := r.EmbedQuery("hello")
 	if err == nil {
 		t.Fatal("expected decode error")
 	}

@@ -99,7 +99,7 @@ func InspectRemoteProvider(cfg config.RemoteProviderConfig) ProviderInfo {
 }
 
 func (r *RemoteEmbedder) detectDimensions() (int, error) {
-	vector, err := r.GetEmbedding("vectos healthcheck")
+	vector, err := r.EmbedPassage("vectos healthcheck")
 	if err != nil {
 		return 0, fmt.Errorf("remote provider probe failed: %w", err)
 	}
@@ -109,8 +109,8 @@ func (r *RemoteEmbedder) detectDimensions() (int, error) {
 	return len(vector), nil
 }
 
-// GetEmbedding implementa la interfaz Embedder llamando al servidor remoto.
-func (r *RemoteEmbedder) GetEmbedding(text string) ([]float32, error) {
+// EmbedQuery embeds a single search query via the remote API.
+func (r *RemoteEmbedder) EmbedQuery(text string) ([]float32, error) {
 	vecs, err := r.embed([]string{text})
 	if err != nil {
 		return nil, err
@@ -118,9 +118,22 @@ func (r *RemoteEmbedder) GetEmbedding(text string) ([]float32, error) {
 	return vecs[0], nil
 }
 
-// GetEmbeddings implementa la interfaz Embedder enviando todos los textos en
-// una sola petición POST con todos los "input" entries.
-func (r *RemoteEmbedder) GetEmbeddings(texts []string) ([][]float32, error) {
+// EmbedPassage embeds a single passage for indexing via the remote API.
+func (r *RemoteEmbedder) EmbedPassage(text string) ([]float32, error) {
+	vecs, err := r.embed([]string{text})
+	if err != nil {
+		return nil, err
+	}
+	return vecs[0], nil
+}
+
+// EmbedQueries embeds multiple search queries in one remote API call.
+func (r *RemoteEmbedder) EmbedQueries(texts []string) ([][]float32, error) {
+	return r.embed(texts)
+}
+
+// EmbedPassages embeds multiple passages in one remote API call.
+func (r *RemoteEmbedder) EmbedPassages(texts []string) ([][]float32, error) {
 	return r.embed(texts)
 }
 

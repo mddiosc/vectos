@@ -3,6 +3,7 @@ package embeddings
 import (
 	"archive/tar"
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -55,6 +56,11 @@ var embeddedModelAssets = map[string][]embeddedAssetSpec{
 		{LocalName: "model.onnx", RemotePath: "onnx/model.onnx"},
 		{LocalName: "model.onnx_data", RemotePath: "onnx/model.onnx_data"},
 	},
+	config.GraniteEmbeddedModel: {
+		{LocalName: "config.json", RemotePath: "config.json"},
+		{LocalName: "tokenizer.json", RemotePath: "tokenizer.json"},
+		{LocalName: "model.onnx", RemotePath: "onnx/model.onnx"},
+	},
 }
 
 var runtimeArchiveSpecs = map[string]runtimeArchiveSpec{
@@ -101,6 +107,7 @@ type EmbeddedEmbedder struct {
 	sequenceLen     int
 	embeddingSize   int
 	targetDimension int // Matryoshka truncation target; 0 = no truncation
+	pooling         string // "mean" (default) or "cls"
 	mu              sync.Mutex
 }
 
@@ -152,6 +159,7 @@ func NewEmbeddedEmbedderWithStatus(cfg config.EmbeddedProviderConfig) (*Embedded
 		status:          status,
 		sequenceLen:     defaultSequenceLength,
 		targetDimension: cfg.Dimensions,
+		pooling:         poolingForModel(status.Model),
 	}
 
 	if err := embedder.ensureModelReady(); err != nil {
@@ -167,18 +175,38 @@ func NewEmbeddedEmbedderWithStatus(cfg config.EmbeddedProviderConfig) (*Embedded
 	return embedder, embedder.status, nil
 }
 
-func (e *EmbeddedEmbedder) GetEmbedding(text string) ([]float32, error) {
-	vecs, err := e.GetEmbeddings([]string{text})
+// EmbedQuery embeds a single search query using task_id=0 (retrieval.query).
+func (e *EmbeddedEmbedder) EmbedQuery(text string) ([]float32, error) {
+	vecs, err := e.embed([]string{text}, 0)
 	if err != nil {
 		return nil, err
 	}
 	return vecs[0], nil
 }
 
-// GetEmbeddings tokeniza todos los textos, los agrupa en un solo batch con
-// padding al máximo sequence length del batch, ejecuta una sola inferencia
-// ONNX con shape [N, max_seq_len], y extrae y normaliza cada vector de salida.
-func (e *EmbeddedEmbedder) GetEmbeddings(texts []string) ([][]float32, error) {
+// EmbedQueries embeds multiple search queries using task_id=0 (retrieval.query).
+func (e *EmbeddedEmbedder) EmbedQueries(texts []string) ([][]float32, error) {
+	return e.embed(texts, 0)
+}
+
+// EmbedPassage embeds a single passage for indexing using task_id=1 (retrieval.passage).
+func (e *EmbeddedEmbedder) EmbedPassage(text string) ([]float32, error) {
+	vecs, err := e.embed([]string{text}, 1)
+	if err != nil {
+		return nil, err
+	}
+	return vecs[0], nil
+}
+
+// EmbedPassages embeds multiple passages for indexing using task_id=1 (retrieval.passage).
+func (e *EmbeddedEmbedder) EmbedPassages(texts []string) ([][]float32, error) {
+	return e.embed(texts, 1)
+}
+
+// embed tokenizes all texts, batches them with padding, runs ONNX inference
+// with the given taskID, and extracts + normalizes each output vector.
+// taskID: 0 = retrieval.query, 1 = retrieval.passage (jina-embeddings-v3).
+func (e *EmbeddedEmbedder) embed(texts []string, taskID int64) ([][]float32, error) {
 	if !e.status.Ready {
 		return nil, fmt.Errorf("embedded model %q is not ready in %s", e.modelName, e.modelDir)
 	}
@@ -227,7 +255,7 @@ func (e *EmbeddedEmbedder) GetEmbeddings(texts []string) ([][]float32, error) {
 		maskRefs[i] = flatMask[offset : offset+maxLen]
 	}
 
-	outputTensor, err := e.runBatchedInference(flatIDs, flatMask, batchSize, maxLen)
+	outputTensor, err := e.runBatchedInference(flatIDs, flatMask, batchSize, maxLen, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +278,12 @@ func (e *EmbeddedEmbedder) GetEmbeddings(texts []string) ([][]float32, error) {
 	stride := outSeqLen * hiddenSize
 	for i := 0; i < batchSize; i++ {
 		seqData := data[i*stride : (i+1)*stride]
-		embedding := meanPoolAndNormalize(seqData, maskRefs[i], outSeqLen, hiddenSize)
+		var embedding []float32
+		if e.pooling == "cls" {
+			embedding = clsPoolAndNormalize(seqData, hiddenSize)
+		} else {
+			embedding = meanPoolAndNormalize(seqData, maskRefs[i], outSeqLen, hiddenSize)
+		}
 		if len(embedding) == 0 {
 			return nil, fmt.Errorf("embedded pooling produced empty vector for text %d", i)
 		}
@@ -304,7 +337,8 @@ func (e *EmbeddedEmbedder) tokenizeRaw(text string) ([]int64, []int64, []int64, 
 // runBatchedInference executes an ONNX inference with batched inputs of shape
 // [batchSize, seqLen]. It builds input tensors dynamically based on the model's
 // actual input names, supporting both legacy token_type_ids and scalar task_id.
-func (e *EmbeddedEmbedder) runBatchedInference(inputIDs, attentionMask []int64, batchSize, seqLen int) (*ort.Tensor[float32], error) {
+// taskID selects the jina-embeddings-v3 adapter: 0 = retrieval.query, 1 = retrieval.passage.
+func (e *EmbeddedEmbedder) runBatchedInference(inputIDs, attentionMask []int64, batchSize, seqLen int, taskID int64) (*ort.Tensor[float32], error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -337,9 +371,10 @@ func (e *EmbeddedEmbedder) runBatchedInference(inputIDs, attentionMask []int64, 
 			defer tensor.Destroy()
 		case "task_id":
 			// Jina-embeddings-v3 style scalar task_id.
-			// 1 = retrieval passage (used for indexing content).
-			taskID := []int64{1}
-			tensor, err := ort.NewTensor(ort.NewShape(1), taskID)
+			// 0 = retrieval.query (used for search queries).
+			// 1 = retrieval.passage (used for indexing content).
+			taskIDValue := []int64{taskID}
+			tensor, err := ort.NewTensor(ort.NewShape(1), taskIDValue)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create %s tensor: %w", name, err)
 			}
@@ -435,6 +470,12 @@ func (e *EmbeddedEmbedder) downloadAndValidateAssets() error {
 			return err
 		}
 		missing = missingEmbeddedAssets(e.modelName, e.modelDir)
+
+		// Patch granite tokenizer: strip PCRE lookahead unsupported by Go's regexp.
+		if err := e.patchTokenizerPostDownload(); err != nil {
+			e.status.Message = fmt.Sprintf("tokenizer patch failed: %v", err)
+			return err
+		}
 	}
 
 	if len(missing) > 0 {
@@ -553,6 +594,42 @@ func detectEmbeddingSize(outputs []ort.InputOutputInfo) int {
 		}
 	}
 	return DefaultEmbeddedDimensions
+}
+
+func poolingForModel(modelName string) string {
+	switch modelName {
+	case config.GraniteEmbeddedModel:
+		return "cls"
+	default:
+		return "mean"
+	}
+}
+
+// clsPoolAndNormalize takes the first token's hidden state (CLS token at position 0)
+// and L2-normalizes it to unit length. Used by models like granite-embedding.
+func clsPoolAndNormalize(data []float32, hiddenSize int) []float32 {
+	if len(data) < hiddenSize || hiddenSize <= 0 {
+		return nil
+	}
+
+	pooled := make([]float32, hiddenSize)
+	copy(pooled, data[:hiddenSize])
+
+	var norm float64
+	for _, v := range pooled {
+		norm += float64(v * v)
+	}
+
+	if norm == 0 {
+		return pooled
+	}
+
+	denominator := float32(math.Sqrt(norm))
+	for i := range pooled {
+		pooled[i] /= denominator
+	}
+
+	return pooled
 }
 
 func meanPoolAndNormalize(data []float32, attentionMask []int64, seqLen, hiddenSize int) []float32 {
@@ -761,6 +838,95 @@ func (e *EmbeddedEmbedder) downloadMissingAssets(missing []string) error {
 		if err := e.downloadAsset(spec); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// patchTokenizerPostDownload fixes the granite tokenizer.json after download.
+// The pre-tokenizer regex uses PCRE negative lookahead (\s+(?!\S)), which
+// Go's regexp package does not support. We replace it with the semantically
+// equivalent \s+, since the pattern "\s+(?!\S)|\s+" is logically just "\s+".
+func (e *EmbeddedEmbedder) patchTokenizerPostDownload() error {
+	if e.modelName != config.GraniteEmbeddedModel {
+		return nil
+	}
+
+	tokenizerPath := filepath.Join(e.modelDir, "tokenizer.json")
+	data, err := os.ReadFile(tokenizerPath)
+	if err != nil {
+		return fmt.Errorf("patchTokenizer: %w", err)
+	}
+
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(data, &root); err != nil {
+		return fmt.Errorf("patchTokenizer: %w", err)
+	}
+
+	// Navigate: pre_tokenizer -> pretokenizers -> [0] -> pattern -> Regex
+	ptRaw, ok := root["pre_tokenizer"]
+	if !ok {
+		return nil // no pre_tokenizer to fix
+	}
+	var preTokenizer map[string]json.RawMessage
+	if err := json.Unmarshal(ptRaw, &preTokenizer); err != nil {
+		return nil
+	}
+	ptsRaw, ok := preTokenizer["pretokenizers"]
+	if !ok {
+		return nil
+	}
+	var pts []map[string]json.RawMessage
+	if err := json.Unmarshal(ptsRaw, &pts); err != nil || len(pts) == 0 {
+		return nil
+	}
+	patternRaw, ok := pts[0]["pattern"]
+	if !ok {
+		return nil
+	}
+	var patternObj map[string]string
+	if err := json.Unmarshal(patternRaw, &patternObj); err != nil {
+		return nil
+	}
+	regex, ok := patternObj["Regex"]
+	if !ok || !strings.Contains(regex, "(?!") {
+		return nil // no lookahead to fix
+	}
+
+	// Replace \s+(?!\S)|\s+ with \s+
+	fixed := strings.Replace(regex, `\s+(?!\S)|\s+`, `\s+`, 1)
+	// Known pattern did not match but a lookaround remains: upstream changed the
+	// regex. Patching silently would leave a tokenizer that Go's regexp rejects
+	// at load time, surfacing as a confusing runtime error. Fail loudly here.
+	if strings.Contains(fixed, "(?!") || strings.Contains(fixed, "(?<") {
+		return fmt.Errorf("patchTokenizer: granite tokenizer regex contains unsupported lookaround Go's regexp cannot compile, known pattern did not match: %q", regex)
+	}
+
+	// Write back the embedded Regex field
+	patternObj["Regex"] = fixed
+	newPattern, err := json.Marshal(patternObj)
+	if err != nil {
+		return fmt.Errorf("patchTokenizer: marshal pattern: %w", err)
+	}
+	pts[0]["pattern"] = newPattern
+	newPTs, err := json.Marshal(pts)
+	if err != nil {
+		return fmt.Errorf("patchTokenizer: marshal pretokenizers: %w", err)
+	}
+	preTokenizer["pretokenizers"] = newPTs
+	newPT, err := json.Marshal(preTokenizer)
+	if err != nil {
+		return fmt.Errorf("patchTokenizer: marshal pre_tokenizer: %w", err)
+	}
+	root["pre_tokenizer"] = newPT
+
+	out, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return fmt.Errorf("patchTokenizer: marshal: %w", err)
+	}
+
+	if err := os.WriteFile(tokenizerPath, out, 0644); err != nil {
+		return fmt.Errorf("patchTokenizer: write: %w", err)
 	}
 
 	return nil
