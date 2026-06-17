@@ -17,6 +17,41 @@ Format per release:
 
 ---
 
+## v1.4.0 — 2026-06-18
+
+### Added
+
+- **Granite-embedding-97m-multilingual-r2 as default embedded model** — Apache 2.0
+  licensed, 384-dimensional, 11× faster than jina-v3 (32 vs 2.8 chunks/s). A
+  ~14-minute initial index on a large project now takes ~1m 20s.
+- **`EmbedQuery` / `EmbedPassage` interface** — the `Embedder` now exposes
+  separate single and batch methods for query and passage embeddings, making
+  asymmetric embedding models first-class citizens.
+- **Auto-patch of Granite tokenizer** — PCRE lookaheads incompatible with Go's
+  `regexp` engine are automatically removed from the downloaded tokenizer JSON;
+  the patch now errors loudly if any lookaround survives, instead of shipping a
+  broken tokenizer silently.
+- **Dynamic `AssetBaseURL`** — `DefaultEmbeddingConfig` derives the asset base
+  URL from the selected model rather than hardcoding the Jina CDN URL.
+
+### Changed
+
+- **Default `MatryoshkaDimensions` raised 512 → 1024** for jina-v3 users.
+- **Chunker fingerprint bumped v4 → v5** — existing indexes on jina-v3 must
+  reindex because query embeddings now use the corrected `task_id=0`; the
+  reindex is triggered automatically on next `vectos index`.
+- Granite-embedding-97m is **not** listed as a Matryoshka model — only the 311M
+  variant supports MRL; the 97M variant uses its native 384-dimensional output.
+
+### Fixed
+
+- **Jina-v3 `task_id` bug** — query embeddings were passing `task_id=1`
+  (passages) instead of `task_id=0` (queries), degrading search quality for all
+  jina-v3 users. Corrected to `task_id=0` for queries and `task_id=1` for
+  passages.
+
+---
+
 ## v1.3.0 — 2026-06-14
 
 ### Added
