@@ -24,10 +24,12 @@ const (
 // MatryoshkaDimensions lists the valid output dimensions supported by
 // Matryoshka Representation Learning (MRL) models like jina-embeddings-v3.
 // Truncating to any of these sizes preserves embedding quality proportionally.
-var MatryoshkaDimensions = []int{32, 64, 128, 256, 384, 512, 768, 1024}
+var MatryoshkaDimensions = []int{32, 64, 128, 256, 512, 768, 1024}
 
 // SupportedMatryoshkaModels lists embedded models with native MRL support.
-var SupportedMatryoshkaModels = []string{"jina-embeddings-v3", GraniteEmbeddedModel}
+// granite-embedding-97m-multilingual-r2 is NOT MRL (only the 311M variant is);
+// it uses its native 384d directly via DefaultEmbeddedDimensionsForModel returning 0.
+var SupportedMatryoshkaModels = []string{"jina-embeddings-v3"}
 
 // SupportedEmbeddedModels lists the model names accepted in embedded model_name config.
 var SupportedEmbeddedModels = []string{"jina-embeddings-v3", "bge-small-en-v1.5", GraniteEmbeddedModel}

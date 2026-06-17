@@ -139,7 +139,7 @@ func TestIsValidMatryoshkaDimension(t *testing.T) {
 		{0, false},
 		{1, false},
 		{100, false},
-		{384, true}, // granite native dim, also a valid Matryoshka size
+		{384, false}, // granite native dim, NOT a Matryoshka truncation point (jina-v3 supports 32/64/128/256/512/768/1024)
 		{2048, false},
 		{-1, false},
 	}
@@ -175,13 +175,28 @@ func TestMergeEmbeddedConfig_DimensionsValidation(t *testing.T) {
 }
 
 func TestMergeEmbeddedConfig_ResetsDimensionsForNonMatryoshkaModel(t *testing.T) {
-	dst := EmbeddedProviderConfig{ModelName: DefaultEmbeddedModel, Dimensions: DefaultMatryoshkaDimensions}
+	// Start from a MRL model (jina) with a Matryoshka dimension, switch to a
+	// non-MRL model (bge) — dimensions must reset to 0 (native).
+	dst := EmbeddedProviderConfig{ModelName: "jina-embeddings-v3", Dimensions: 1024}
 	bge := "bge-small-en-v1.5"
 	if err := mergeEmbeddedConfig(&dst, embeddedProviderConfigDisk{ModelName: &bge}); err != nil {
 		t.Fatalf("mergeEmbeddedConfig returned error: %v", err)
 	}
 	if dst.Dimensions != 0 {
 		t.Fatalf("expected dimensions to reset for non-Matryoshka model, got %d", dst.Dimensions)
+	}
+}
+
+func TestMergeEmbeddedConfig_ResetsDimensionsWhenSwitchingToGranite(t *testing.T) {
+	// granite-97m is not MRL: switching from jina (MRL, 1024d) to granite must
+	// reset dimensions to 0 so the embedder uses granite's native 384d.
+	dst := EmbeddedProviderConfig{ModelName: "jina-embeddings-v3", Dimensions: 1024}
+	granite := GraniteEmbeddedModel
+	if err := mergeEmbeddedConfig(&dst, embeddedProviderConfigDisk{ModelName: &granite}); err != nil {
+		t.Fatalf("mergeEmbeddedConfig returned error: %v", err)
+	}
+	if dst.Dimensions != 0 {
+		t.Fatalf("expected dimensions to reset for granite (non-MRL), got %d", dst.Dimensions)
 	}
 }
 
