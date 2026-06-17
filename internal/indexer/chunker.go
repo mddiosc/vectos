@@ -796,7 +796,7 @@ func (s *SimpleChunker) buildChunkImpl(filePath, language string, chunkLines []s
 	var vector []float32
 	if embed && s.embedClient != nil {
 		var err error
-		vector, err = s.embedClient.GetEmbedding(semanticContent)
+		vector, err = s.embedClient.EmbedPassage(semanticContent)
 		if err != nil {
 			fmt.Printf("⚠️ Warning: failed to generate embedding for chunk in %s: %v\n", filePath, err)
 		}
@@ -980,7 +980,7 @@ func collapseNonComment(trimmed string) string {
 type EmbedProgressFunc func(done, total int, batchDur time.Duration)
 
 // BatchEmbedChunks fills in the Vector field of every chunk in the slice by
-// calling the embedder's GetEmbeddings in batches of at most batchSize.
+// calling the embedder's EmbedPassages in batches of at most batchSize.
 // Chunks that already have a non-nil Vector are skipped.
 func (s *SimpleChunker) BatchEmbedChunks(chunks []ChunkResult, batchSize int) error {
 	return s.BatchEmbedChunksWithProgress(chunks, batchSize, nil)
@@ -1017,7 +1017,7 @@ func (s *SimpleChunker) BatchEmbedChunksWithProgress(chunks []ChunkResult, batch
 		}
 		batch := semanticTexts[start:end]
 		batchStart := time.Now()
-		vecs, err := s.embedClient.GetEmbeddings(batch)
+		vecs, err := s.embedClient.EmbedPassages(batch)
 		if err != nil {
 			return fmt.Errorf("batch embedding failed at offset %d: %w", start, err)
 		}

@@ -10,11 +10,23 @@ import (
 
 type fakeEmbedder struct{}
 
-func (f fakeEmbedder) GetEmbedding(text string) ([]float32, error) {
+func (f fakeEmbedder) EmbedQuery(text string) ([]float32, error) {
 	return []float32{1, 2, 3}, nil
 }
 
-func (f fakeEmbedder) GetEmbeddings(texts []string) ([][]float32, error) {
+func (f fakeEmbedder) EmbedQueries(texts []string) ([][]float32, error) {
+	vecs := make([][]float32, len(texts))
+	for i := range texts {
+		vecs[i] = []float32{1, 2, 3}
+	}
+	return vecs, nil
+}
+
+func (f fakeEmbedder) EmbedPassage(text string) ([]float32, error) {
+	return []float32{1, 2, 3}, nil
+}
+
+func (f fakeEmbedder) EmbedPassages(texts []string) ([][]float32, error) {
 	vecs := make([][]float32, len(texts))
 	for i := range texts {
 		vecs[i] = []float32{1, 2, 3}

@@ -243,6 +243,85 @@ func TestTruncateAndNormalize_DoesNotMutateOriginal(t *testing.T) {
 	}
 }
 
+func TestEmbeddedModelAssets_GraniteEntry(t *testing.T) {
+	assets, ok := embeddedModelAssets[config.GraniteEmbeddedModel]
+	if !ok {
+		t.Fatal("granite-embedding-97m-multilingual-r2 not found in embeddedModelAssets")
+	}
+	if len(assets) != 3 {
+		t.Fatalf("expected 3 granite assets, got %d", len(assets))
+	}
+	assetNames := make(map[string]string)
+	for _, a := range assets {
+		assetNames[a.LocalName] = a.RemotePath
+	}
+	if assetNames["model.onnx"] != "onnx/model.onnx" {
+		t.Errorf("model.onnx RemotePath = %q, want onnx/model.onnx", assetNames["model.onnx"])
+	}
+	if assetNames["tokenizer.json"] != "tokenizer.json" {
+		t.Errorf("tokenizer.json RemotePath = %q, want tokenizer.json", assetNames["tokenizer.json"])
+	}
+	if assetNames["config.json"] != "config.json" {
+		t.Errorf("config.json RemotePath = %q, want config.json", assetNames["config.json"])
+	}
+}
+
+func TestPoolingForModel(t *testing.T) {
+	if got := poolingForModel(config.GraniteEmbeddedModel); got != "cls" {
+		t.Errorf("poolingForModel(granite) = %q, want cls", got)
+	}
+	if got := poolingForModel("jina-embeddings-v3"); got != "mean" {
+		t.Errorf("poolingForModel(jina) = %q, want mean", got)
+	}
+	if got := poolingForModel("bge-small-en-v1.5"); got != "mean" {
+		t.Errorf("poolingForModel(bge) = %q, want mean", got)
+	}
+}
+
+func TestClsPoolAndNormalize(t *testing.T) {
+	// 2 tokens, 4 hidden dims: [[1,2,3,4], [5,6,7,8]]
+	data := []float32{1, 2, 3, 4, 5, 6, 7, 8}
+	result := clsPoolAndNormalize(data, 4)
+	if len(result) != 4 {
+		t.Fatalf("expected 4 dims, got %d", len(result))
+	}
+	// CLS takes first token: [1,2,3,4], L2 norm = sqrt(1+4+9+16) = sqrt(30)
+	// normalized: [1/sqrt30, 2/sqrt30, 3/sqrt30, 4/sqrt30]
+	norm := l2norm(result)
+	if math.Abs(norm-1.0) > 1e-5 {
+		t.Errorf("result norm = %f, want ~1.0", norm)
+	}
+	// Verify values are proportional to [1,2,3,4]
+	if result[0] <= 0 || result[1] <= 0 {
+		t.Error("expected positive values from CLS pooling of positive input")
+	}
+	ratio := float64(result[1]) / float64(result[0])
+	if math.Abs(ratio-2.0) > 1e-5 {
+		t.Errorf("ratio result[1]/result[0] = %f, want 2.0", ratio)
+	}
+}
+
+func TestClsPoolAndNormalize_ZeroVector(t *testing.T) {
+	data := make([]float32, 8)
+	result := clsPoolAndNormalize(data, 4)
+	if len(result) != 4 {
+		t.Fatalf("expected 4 dims, got %d", len(result))
+	}
+	for i, v := range result {
+		if v != 0 {
+			t.Errorf("zero input result[%d] = %f, want 0", i, v)
+		}
+	}
+}
+
+func TestClsPoolAndNormalize_InsufficientData(t *testing.T) {
+	data := []float32{1, 2}
+	result := clsPoolAndNormalize(data, 4)
+	if result != nil {
+		t.Errorf("expected nil for insufficient data, got %v", result)
+	}
+}
+
 func TestNewEmbeddedEmbedderWithStatusRejectsDimensionsForNonMatryoshkaModel(t *testing.T) {
 	_, _, err := NewEmbeddedEmbedderWithStatus(config.EmbeddedProviderConfig{
 		Enabled:    true,

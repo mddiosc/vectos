@@ -39,9 +39,9 @@ func TestValidateAssetBaseURL(t *testing.T) {
 	}
 }
 
-func TestDefaultEmbeddedModel_IsJinaV3(t *testing.T) {
-	if DefaultEmbeddedModel != "jina-embeddings-v3" {
-		t.Errorf("DefaultEmbeddedModel = %q, want jina-embeddings-v3", DefaultEmbeddedModel)
+func TestDefaultEmbeddedModel_IsGranite(t *testing.T) {
+	if DefaultEmbeddedModel != GraniteEmbeddedModel {
+		t.Errorf("DefaultEmbeddedModel = %q, want %q", DefaultEmbeddedModel, GraniteEmbeddedModel)
 	}
 }
 
@@ -52,9 +52,10 @@ func TestDefaultEmbeddedAssetBaseURL_IsJinaHuggingFace(t *testing.T) {
 	}
 }
 
-func TestSupportedEmbeddedModels_IncludesBoth(t *testing.T) {
+func TestSupportedEmbeddedModels_IncludesAll(t *testing.T) {
 	foundJina := false
 	foundBGE := false
+	foundGranite := false
 	for _, m := range SupportedEmbeddedModels {
 		if m == "jina-embeddings-v3" {
 			foundJina = true
@@ -62,12 +63,18 @@ func TestSupportedEmbeddedModels_IncludesBoth(t *testing.T) {
 		if m == "bge-small-en-v1.5" {
 			foundBGE = true
 		}
+		if m == GraniteEmbeddedModel {
+			foundGranite = true
+		}
 	}
 	if !foundJina {
 		t.Error("SupportedEmbeddedModels should include jina-embeddings-v3")
 	}
 	if !foundBGE {
 		t.Error("SupportedEmbeddedModels should include bge-small-en-v1.5")
+	}
+	if !foundGranite {
+		t.Error("SupportedEmbeddedModels should include granite-embedding-97m-multilingual-r2")
 	}
 }
 
@@ -79,6 +86,7 @@ func TestIsSupportedEmbeddedModel(t *testing.T) {
 	}{
 		{"jina-v3 supported", "jina-embeddings-v3", true},
 		{"bge-small supported", "bge-small-en-v1.5", true},
+		{"granite supported", GraniteEmbeddedModel, true},
 		{"unknown model rejected", "unknown-model", false},
 		{"empty rejected", "", false},
 	}
@@ -97,8 +105,8 @@ func TestDefaultEmbeddingConfig_UsesDefaultModel(t *testing.T) {
 	if cfg.Embedded.ModelName != DefaultEmbeddedModel {
 		t.Errorf("default config model = %q, want %q", cfg.Embedded.ModelName, DefaultEmbeddedModel)
 	}
-	if cfg.Embedded.AssetBaseURL != DefaultEmbeddedAssetBaseURL {
-		t.Errorf("default config asset_base_url = %q, want %q", cfg.Embedded.AssetBaseURL, DefaultEmbeddedAssetBaseURL)
+	if cfg.Embedded.AssetBaseURL != embeddedAssetBaseURL(DefaultEmbeddedModel) {
+		t.Errorf("default config asset_base_url = %q, want %q", cfg.Embedded.AssetBaseURL, embeddedAssetBaseURL(DefaultEmbeddedModel))
 	}
 	if !cfg.Embedded.Enabled {
 		t.Error("embedded should be enabled by default")
@@ -110,11 +118,9 @@ func TestDefaultEmbeddingConfig_UsesDefaultModel(t *testing.T) {
 
 func TestDefaultEmbeddingConfig_DefaultDimensions(t *testing.T) {
 	cfg := DefaultEmbeddingConfig("/tmp/fake-home")
-	if cfg.Embedded.Dimensions != DefaultMatryoshkaDimensions {
-		t.Errorf("default dimensions = %d, want %d", cfg.Embedded.Dimensions, DefaultMatryoshkaDimensions)
-	}
-	if cfg.Embedded.Dimensions != 512 {
-		t.Errorf("default dimensions = %d, want 512", cfg.Embedded.Dimensions)
+	want := DefaultEmbeddedDimensionsForModel(DefaultEmbeddedModel)
+	if cfg.Embedded.Dimensions != want {
+		t.Errorf("default dimensions = %d, want %d (from DefaultEmbeddedDimensionsForModel)", cfg.Embedded.Dimensions, want)
 	}
 }
 
@@ -133,7 +139,7 @@ func TestIsValidMatryoshkaDimension(t *testing.T) {
 		{0, false},
 		{1, false},
 		{100, false},
-		{384, false}, // BGE-small native dim, not a Matryoshka size
+		{384, true}, // granite native dim, also a valid Matryoshka size
 		{2048, false},
 		{-1, false},
 	}
@@ -194,11 +200,14 @@ func TestValidateEmbeddedDimensions_NonMatryoshkaModel(t *testing.T) {
 }
 
 func TestDefaultEmbeddedDimensionsForModel(t *testing.T) {
-	if got := DefaultEmbeddedDimensionsForModel("jina-embeddings-v3"); got != 512 {
-		t.Fatalf("jina default dimensions = %d, want 512", got)
+	if got := DefaultEmbeddedDimensionsForModel("jina-embeddings-v3"); got != 1024 {
+		t.Fatalf("jina default dimensions = %d, want 1024", got)
 	}
 	if got := DefaultEmbeddedDimensionsForModel("bge-small-en-v1.5"); got != 0 {
 		t.Fatalf("bge default dimensions = %d, want 0", got)
+	}
+	if got := DefaultEmbeddedDimensionsForModel(GraniteEmbeddedModel); got != 0 {
+		t.Fatalf("granite default dimensions = %d, want 0 (native 384)", got)
 	}
 }
 

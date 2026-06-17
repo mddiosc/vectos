@@ -12,23 +12,25 @@ const (
 	ProviderEmbedded = "embedded"
 	ProviderRemote   = "remote"
 
-	DefaultEmbeddedModel        = "jina-embeddings-v3"
+	DefaultEmbeddedModel        = GraniteEmbeddedModel
 	DefaultEmbeddedAssetBaseURL = "https://huggingface.co/jinaai/jina-embeddings-v3/resolve/main"
 	DefaultBGEAssetBaseURL      = "https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main"
+	DefaultGraniteAssetBaseURL  = "https://huggingface.co/ibm-granite/granite-embedding-97m-multilingual-r2/resolve/main"
+	GraniteEmbeddedModel        = "granite-embedding-97m-multilingual-r2"
 	DefaultRemoteModel          = "text-embedding-nomic-embed-text-v1.5"
-	DefaultMatryoshkaDimensions = 512
+	DefaultMatryoshkaDimensions = 1024
 )
 
 // MatryoshkaDimensions lists the valid output dimensions supported by
 // Matryoshka Representation Learning (MRL) models like jina-embeddings-v3.
 // Truncating to any of these sizes preserves embedding quality proportionally.
-var MatryoshkaDimensions = []int{32, 64, 128, 256, 512, 768, 1024}
+var MatryoshkaDimensions = []int{32, 64, 128, 256, 384, 512, 768, 1024}
 
 // SupportedMatryoshkaModels lists embedded models with native MRL support.
-var SupportedMatryoshkaModels = []string{"jina-embeddings-v3"}
+var SupportedMatryoshkaModels = []string{"jina-embeddings-v3", GraniteEmbeddedModel}
 
 // SupportedEmbeddedModels lists the model names accepted in embedded model_name config.
-var SupportedEmbeddedModels = []string{"jina-embeddings-v3", "bge-small-en-v1.5"}
+var SupportedEmbeddedModels = []string{"jina-embeddings-v3", "bge-small-en-v1.5", GraniteEmbeddedModel}
 
 // ValidateAssetBaseURL validates the embedded provider's asset_base_url.
 // Returns nil if the URL is empty; otherwise checks scheme (HTTPS only),
@@ -203,7 +205,7 @@ func DefaultEmbeddingConfig(homeDir string) EmbeddingConfig {
 			ModelName:    DefaultEmbeddedModel,
 			ModelDir:     modelDir,
 			AutoDownload: true,
-			AssetBaseURL: DefaultEmbeddedAssetBaseURL,
+			AssetBaseURL: embeddedAssetBaseURL(DefaultEmbeddedModel),
 			TimeoutS:     60,
 			// 0 = auto-detect based on available RAM (see AdaptiveBatchSize)
 			BatchSize:  0,
@@ -364,6 +366,9 @@ func SupportsMatryoshkaDimensions(modelName string) bool {
 }
 
 func DefaultEmbeddedDimensionsForModel(modelName string) int {
+	if modelName == GraniteEmbeddedModel {
+		return 0 // 384 native, MRL truncation optional
+	}
 	if SupportsMatryoshkaDimensions(modelName) {
 		return DefaultMatryoshkaDimensions
 	}
@@ -390,6 +395,8 @@ func embeddedAssetBaseURL(modelName string) string {
 		return DefaultEmbeddedAssetBaseURL
 	case "bge-small-en-v1.5":
 		return DefaultBGEAssetBaseURL
+	case GraniteEmbeddedModel:
+		return DefaultGraniteAssetBaseURL
 	default:
 		return ""
 	}
