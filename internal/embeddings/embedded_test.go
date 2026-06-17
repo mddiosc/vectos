@@ -3,6 +3,9 @@ package embeddings
 import (
 	"math"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -333,6 +336,82 @@ func TestNewEmbeddedEmbedderWithStatusRejectsDimensionsForNonMatryoshkaModel(t *
 		t.Fatal("expected error for non-Matryoshka dimensions")
 	}
 	if got := err.Error(); got == "" || !strings.Contains(got, "does not support configurable dimensions") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// graniteRealRegex is the exact pre-tokenizer Regex shipped by
+// ibm-granite/granite-embedding-97m-multilingual-r2 (tokenizer.json). It
+// contains the PCRE negative lookahead \s+(?!\S) that Go's regexp rejects, plus
+// (?i:...) inline-flag groups that Go DOES support and must be preserved.
+const graniteRealRegex = `[^\\r\\n\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]*[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|[^\\r\\n\\p{L}\\p{N}]?[\\p{Lu}\\p{Lt}\\p{Lm}\\p{Lo}\\p{M}]+[\\p{Ll}\\p{Lm}\\p{Lo}\\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?|\\p{N}{1,3}| ?[^\\s\\p{L}\\p{N}]+[\\r\\n/]*|\\s*[\\r\\n]+|\\s+(?!\\S)|\\s+`
+
+func writeGraniteTokenizer(t *testing.T, dir, regex string) {
+	t.Helper()
+	tok := `{"pre_tokenizer":{"type":"Sequence","pretokenizers":[{"type":"Split","pattern":{"Regex":"` + regex + `"},"behavior":"Isolated","invert":false}]}}`
+	if err := os.WriteFile(filepath.Join(dir, "tokenizer.json"), []byte(tok), 0644); err != nil {
+		t.Fatalf("write tokenizer: %v", err)
+	}
+}
+
+func readTokenizerRegex(t *testing.T, dir string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, "tokenizer.json"))
+	if err != nil {
+		t.Fatalf("read tokenizer: %v", err)
+	}
+	m := regexp.MustCompile(`"Regex"\s*:\s*"((?:[^"\\]|\\.)*)"`).FindSubmatch(data)
+	if m == nil {
+		t.Fatalf("no Regex field in patched tokenizer: %s", data)
+	}
+	return string(m[1])
+}
+
+// TestPatchTokenizer_RealGraniteRegex runs the patch against the real granite
+// pre-tokenizer regex and asserts the result (a) drops the lookahead and (b)
+// compiles with Go's regexp — the exact failure mode the patch exists to fix.
+func TestPatchTokenizer_RealGraniteRegex(t *testing.T) {
+	dir := t.TempDir()
+	writeGraniteTokenizer(t, dir, graniteRealRegex)
+
+	// Sanity: the original regex must be uncompilable by Go (lookahead present).
+	if _, err := regexp.Compile(strings.ReplaceAll(graniteRealRegex, `\\`, `\`)); err == nil {
+		t.Fatal("expected real granite regex to be rejected by Go regexp before patching")
+	}
+
+	e := &EmbeddedEmbedder{modelName: config.GraniteEmbeddedModel, modelDir: dir}
+	if err := e.patchTokenizerPostDownload(); err != nil {
+		t.Fatalf("patchTokenizerPostDownload failed: %v", err)
+	}
+
+	patched := readTokenizerRegex(t, dir)
+	if strings.Contains(patched, `(?!`) || strings.Contains(patched, `(?<`) {
+		t.Fatalf("patched regex still contains lookaround: %q", patched)
+	}
+	// Unescape JSON \\ -> \ and compile with Go to prove it now loads.
+	goRegex := strings.ReplaceAll(patched, `\\`, `\`)
+	if _, err := regexp.Compile(goRegex); err != nil {
+		t.Fatalf("patched regex does not compile with Go regexp: %v\nregex: %q", err, goRegex)
+	}
+	// (?i:...) inline-flag groups must survive the patch.
+	if !strings.Contains(patched, `(?i:`) {
+		t.Errorf("patch removed supported (?i:) inline-flag groups: %q", patched)
+	}
+}
+
+// TestPatchTokenizer_UnknownLookaheadFailsLoudly covers Fix 2: if upstream ships
+// a different lookahead the known replacement does not match, the patch must
+// error instead of silently leaving an uncompilable tokenizer.
+func TestPatchTokenizer_UnknownLookaheadFailsLoudly(t *testing.T) {
+	dir := t.TempDir()
+	writeGraniteTokenizer(t, dir, `foo(?!bar)baz`)
+
+	e := &EmbeddedEmbedder{modelName: config.GraniteEmbeddedModel, modelDir: dir}
+	err := e.patchTokenizerPostDownload()
+	if err == nil {
+		t.Fatal("expected error for unknown lookahead pattern, got nil")
+	}
+	if !strings.Contains(err.Error(), "lookaround") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

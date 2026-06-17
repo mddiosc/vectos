@@ -895,8 +895,11 @@ func (e *EmbeddedEmbedder) patchTokenizerPostDownload() error {
 
 	// Replace \s+(?!\S)|\s+ with \s+
 	fixed := strings.Replace(regex, `\s+(?!\S)|\s+`, `\s+`, 1)
-	if fixed == regex {
-		return nil
+	// Known pattern did not match but a lookaround remains: upstream changed the
+	// regex. Patching silently would leave a tokenizer that Go's regexp rejects
+	// at load time, surfacing as a confusing runtime error. Fail loudly here.
+	if strings.Contains(fixed, "(?!") || strings.Contains(fixed, "(?<") {
+		return fmt.Errorf("patchTokenizer: granite tokenizer regex contains unsupported lookaround Go's regexp cannot compile, known pattern did not match: %q", regex)
 	}
 
 	// Write back the embedded Regex field
