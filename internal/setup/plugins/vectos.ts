@@ -11,8 +11,12 @@
  *
  * The plugin auto-starts the Vectos server if it's not running.
  *
- * Note: Vectos guidance is injected via AGENTS.md by `vectos setup opencode`,
- * not via this plugin's system prompt hook, to avoid duplication.
+ * It also injects the "Prefer Vectos MCP" guidance into the system prompt of
+ * every agent via the `experimental.chat.system.transform` hook. This is
+ * universal: it works for the orchestrator and for sub-agents spawned by any
+ * plugin (oh-my-opencode-slim, custom agents, or plain opencode), regardless
+ * of the model. AGENTS.md only reaches the main agent; this hook guarantees
+ * sub-agents also receive the Vectos-first instruction.
  *
  * Installed by: vectos setup opencode
  * Removed by:   vectos setup opencode --uninstall
@@ -27,6 +31,47 @@ const VECTOS_URL = `http://127.0.0.1:${VECTOS_PORT}`
 const VECTOS_BIN = process.env.VECTOS_BIN ?? Bun.which("vectos") ?? "vectos"
 const DEBOUNCE_MS = parseInt(process.env.VECTOS_DEBOUNCE_MS ?? "3000")
 const MAX_CHANGED_PATHS = 200 // Safety limit per reindex batch
+const HEALTH_CACHE_MS = 5000
+
+// ─── Guidance ────────────────────────────────────────────────────────────────
+
+/**
+ * Vectos-first guidance injected into every agent's system prompt.
+ *
+ * Kept inline (not read from AGENTS.md) so sub-agents receive it even when
+ * AGENTS.md is not propagated to them. The same text is managed in
+ * internal/setup/guidance_content.go for AGENTS.md injection; keep these two
+ * copies in sync when editing.
+ */
+const VECTOS_GUIDANCE = `## Prefer Vectos MCP
+
+When Vectos MCP tools are available for a project, prefer the Vectos search tools before using \`grep\`, \`find\`, \`glob\`, or broad file reads.
+
+For source code and implementation lookups, use \`vectos_search_code\` when your client prefixes MCP tools with the server name, or \`search_code\` when it does not.
+
+For README files, API docs, ADRs, and other documentation, use \`vectos_search_docs\` or \`search_docs\` instead of mixing docs into broad file searches.
+
+If the project is not yet indexed or results are not useful, run \`vectos_index_project\` or \`index_project\` and retry. When you need documentation retrieval, index docs separately with \`docs: true\`.
+
+Use \`grep\`, \`glob\`, and direct file reads only as a fallback when Vectos has no useful results or when you need exact pattern matching.
+
+If you create, move, or edit files while working, prefer an incremental refresh with \`changed\` paths before retrying search. Use a full reindex only when the affected scope is broad or uncertain.
+
+When delegating to specialist agents that perform code search, explicitly instruct them to use Vectos search tools before \`grep\`/\`glob\`. Sub-agents may not automatically receive tool-preference instructions — the main agent is the enforcement point. If a sub-agent returns without using Vectos, remind it in the next delegation.
+
+## Nx Monorepo — Lib Coverage
+
+When working inside an Nx monorepo, Vectos includes all internal dependency libs in the resolved scope by default. Only projects with Nx type \`"e2e"\` are excluded. Set \`VECTOS_NX_INCLUDE_E2E=1\` to override this exclusion.
+
+Use the \`project\` parameter to scope search and indexing to a specific Nx project:
+
+- \`search_code\` and \`search_docs\`: pass \`project: "<project-name>"\` to scope results to that project and its internal dependencies.
+- \`index_project\`: pass \`project: "<project-name>"\` to index a specific Nx project. Vectos automatically indexes the project and all its internal dependency libs.
+- \`list_projects\`: call this tool to discover available Nx project names in the workspace before searching or indexing.
+
+If the search returns guidance \`IDX_MISSING\`, index the project first with \`index_project\` using the correct \`project\` name.
+
+If you edit a **shared lib**, its changes are reflected in every project that depends on it. If searches in a downstream project still feel stale after refreshing the lib's project index, refresh the downstream project index as well — or perform a full reindex if the blast radius is unclear.`
 
 // ─── HTTP Client ─────────────────────────────────────────────────────────────
 
@@ -73,6 +118,17 @@ export const VectosPlugin: Plugin = async (ctx) => {
   // Accumulated changed file paths, flushed on session.idle or debounce
   const changedFiles = new Set<string>()
   let reindexTimer: ReturnType<typeof setTimeout> | null = null
+  let lastHealthCheck = 0
+  let vectosAvailable = false
+
+  async function isVectosAvailable(): Promise<boolean> {
+    const now = Date.now()
+    if (now - lastHealthCheck < HEALTH_CACHE_MS) return vectosAvailable
+
+    lastHealthCheck = now
+    vectosAvailable = await isVectosRunning()
+    return vectosAvailable
+  }
 
   /**
    * Send accumulated changed paths to the Vectos server for reindexing.
@@ -124,7 +180,7 @@ export const VectosPlugin: Plugin = async (ctx) => {
   }
 
   // Try to start Vectos server if not running
-  const running = await isVectosRunning()
+  const running = await isVectosAvailable()
   if (!running) {
     try {
       Bun.spawn([VECTOS_BIN, "serve"], {
@@ -133,13 +189,24 @@ export const VectosPlugin: Plugin = async (ctx) => {
         stdin: "ignore",
       })
       // Wait and retry health until the server is ready.
-      await waitForVectosReady()
+      vectosAvailable = await waitForVectosReady()
+      lastHealthCheck = Date.now()
     } catch {
       // Binary not found or can't start — plugin will silently no-op
     }
   }
 
   return {
+    // ─── System Prompt Injection ─────────────────────────────────────
+    // Universal: runs for every agent (orchestrator + sub-agents) on
+    // every LLM call. Only injects when Vectos is reachable; the health
+    // check is cached briefly to avoid a localhost request per turn.
+    "experimental.chat.system.transform": async (_input, output) => {
+      if (await isVectosAvailable()) {
+        output.system.push(VECTOS_GUIDANCE)
+      }
+    },
+
     // ─── File Change Events ──────────────────────────────────────────
     // Accumulate changed files silently. No reindex until debounce/idle.
 
