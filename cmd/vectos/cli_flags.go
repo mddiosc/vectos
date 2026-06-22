@@ -38,6 +38,7 @@ type cliFlags struct {
 	watchEnabled        *bool
 	watchDebounce       *time.Duration
 	watchIgnore         *string
+	watchRoot           *string
 	configInit          *bool
 }
 
@@ -91,6 +92,7 @@ func newCLIFlags() cliFlags {
 		watchEnabled:        serveCmd.Bool("watch", true, "enable automatic reindex on file changes"),
 		watchDebounce:       serveCmd.Duration("watch-debounce", 500*time.Millisecond, "debounce delay for file change events"),
 		watchIgnore:         serveCmd.String("watch-ignore", ".git,node_modules,*.lock", "comma-separated glob patterns to ignore"),
+		watchRoot:           serveCmd.String("watch-root", "", "directory to watch for file changes (default: resolved project root)"),
 		configInit:          configCmd.Bool("init", false, "Start interactive setup wizard for ~/.vectos/config.jsonc"),
 	}
 }

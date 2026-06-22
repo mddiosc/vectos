@@ -98,7 +98,7 @@ func configureServeLogging() {
 	log.SetOutput(os.Stderr)
 }
 
-func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port int, watchEnabled bool, watchDebounce time.Duration, watchIgnore string) {
+func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port int, watchEnabled bool, watchDebounce time.Duration, watchIgnore string, watchRoot string) {
 	configureServeLogging()
 
 	pm, err := storage.NewProjectManager(projectBaseDir)
@@ -120,7 +120,14 @@ func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port in
 	providerInfo = provider
 
 	var activeStore *storage.SQLiteStorage
-	if scope, err := workspace.ResolveScope(projectBaseDir, ""); err == nil {
+	// Resolve the initial active store from watchRoot (the real project dir) when available.
+	// Falling back to projectBaseDir would resolve scope "projects" (the DB storage dir itself),
+	// producing a double-nested path like ~/.vectos/projects/projects/projects.db.
+	scopeRoot := watchRoot
+	if scopeRoot == "" {
+		scopeRoot = projectBaseDir
+	}
+	if scope, err := workspace.ResolveScope(scopeRoot, ""); err == nil {
 		if store, err := cache.getOrCreate(scope.Name, false); err == nil {
 			activeStore = store
 			if _, _, _, _, err := store.LoadVectorIndex(); err != nil {
@@ -152,11 +159,17 @@ func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port in
 			ignorePatterns[i] = strings.TrimSpace(ignorePatterns[i])
 		}
 
-		if scope, err := workspace.ResolveScope(projectBaseDir, ""); err == nil {
+		if scope, err := workspace.ResolveScope(scopeRoot, ""); err == nil {
 			if store, err := cache.getOrCreate(scope.Name, false); err == nil {
 				onChange := makeReindexCallback(store, embedClient, embedConfig.Embedded.BatchSize)
 				onDelete := makeDeleteHandler(store)
-				if w, err := watcher.NewWatcher(projectBaseDir, ignorePatterns, watchDebounce, onChange, onDelete); err == nil {
+				// Use explicit watchRoot if provided; fall back to the resolved project root.
+				// projectBaseDir is the DB storage dir (~/.vectos/projects), NOT the project source.
+				watchDir := watchRoot
+				if watchDir == "" {
+					watchDir = scope.PrimaryRoot
+				}
+				if w, err := watcher.NewWatcher(watchDir, ignorePatterns, watchDebounce, onChange, onDelete); err == nil {
 					if err := w.Start(context.Background()); err == nil {
 						srv.AddCloser(watcherCloser{w: w})
 					} else {
@@ -499,5 +512,5 @@ func runServeCommand(app appContext, args []string) {
 		projectBaseDir = *app.flags.serveProjectBaseDir
 	}
 
-	runServe(projectBaseDir, app.embedConfig, port, *app.flags.watchEnabled, *app.flags.watchDebounce, *app.flags.watchIgnore)
+	runServe(projectBaseDir, app.embedConfig, port, *app.flags.watchEnabled, *app.flags.watchDebounce, *app.flags.watchIgnore, *app.flags.watchRoot)
 }

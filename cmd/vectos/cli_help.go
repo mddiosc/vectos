@@ -203,6 +203,7 @@ func printSubcommandHelp(cmd string) {
 		fmt.Println("  --watch              enable automatic reindex on file changes (default: true)")
 		fmt.Println("  --watch-debounce     debounce delay for file change events (default: 500ms)")
 		fmt.Println("  --watch-ignore       comma-separated glob patterns to ignore (default: .git,node_modules,*.lock)")
+		fmt.Println("  --watch-root <dir>   directory to watch for file changes (default: resolved project root)")
 		fmt.Println()
 		fmt.Println(helpHeaderExamples)
 		fmt.Println("  vectos serve")
