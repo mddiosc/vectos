@@ -120,13 +120,7 @@ func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port in
 	providerInfo = provider
 
 	var activeStore *storage.SQLiteStorage
-	// Resolve the initial active store from watchRoot (the real project dir) when available.
-	// Falling back to projectBaseDir would resolve scope "projects" (the DB storage dir itself),
-	// producing a double-nested path like ~/.vectos/projects/projects/projects.db.
-	scopeRoot := watchRoot
-	if scopeRoot == "" {
-		scopeRoot = projectBaseDir
-	}
+	scopeRoot := resolveServeScopeRoot(watchRoot)
 	if scope, err := workspace.ResolveScope(scopeRoot, ""); err == nil {
 		if store, err := cache.getOrCreate(scope.Name, false); err == nil {
 			activeStore = store
@@ -187,6 +181,18 @@ func runServe(projectBaseDir string, embedConfig config.EmbeddingConfig, port in
 	if err := <-serveErr; err != nil {
 		log.Fatalf("server error: %v", err)
 	}
+}
+
+func resolveServeScopeRoot(watchRoot string) string {
+	if watchRoot != "" {
+		return watchRoot
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		log.Printf("warning: failed to resolve current directory: %v", err)
+		return "."
+	}
+	return wd
 }
 
 type watcherCloser struct{ w *watcher.Watcher }
