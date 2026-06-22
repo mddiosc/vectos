@@ -31,6 +31,7 @@ const VECTOS_URL = `http://127.0.0.1:${VECTOS_PORT}`
 const VECTOS_BIN = process.env.VECTOS_BIN ?? Bun.which("vectos") ?? "vectos"
 const DEBOUNCE_MS = parseInt(process.env.VECTOS_DEBOUNCE_MS ?? "3000")
 const MAX_CHANGED_PATHS = 200 // Safety limit per reindex batch
+const HEALTH_CACHE_MS = 5000
 
 // ─── Guidance ────────────────────────────────────────────────────────────────
 
@@ -117,6 +118,17 @@ export const VectosPlugin: Plugin = async (ctx) => {
   // Accumulated changed file paths, flushed on session.idle or debounce
   const changedFiles = new Set<string>()
   let reindexTimer: ReturnType<typeof setTimeout> | null = null
+  let lastHealthCheck = 0
+  let vectosAvailable = false
+
+  async function isVectosAvailable(): Promise<boolean> {
+    const now = Date.now()
+    if (now - lastHealthCheck < HEALTH_CACHE_MS) return vectosAvailable
+
+    lastHealthCheck = now
+    vectosAvailable = await isVectosRunning()
+    return vectosAvailable
+  }
 
   /**
    * Send accumulated changed paths to the Vectos server for reindexing.
@@ -168,7 +180,7 @@ export const VectosPlugin: Plugin = async (ctx) => {
   }
 
   // Try to start Vectos server if not running
-  const running = await isVectosRunning()
+  const running = await isVectosAvailable()
   if (!running) {
     try {
       Bun.spawn([VECTOS_BIN, "serve"], {
@@ -177,7 +189,8 @@ export const VectosPlugin: Plugin = async (ctx) => {
         stdin: "ignore",
       })
       // Wait and retry health until the server is ready.
-      await waitForVectosReady()
+      vectosAvailable = await waitForVectosReady()
+      lastHealthCheck = Date.now()
     } catch {
       // Binary not found or can't start — plugin will silently no-op
     }
@@ -186,10 +199,10 @@ export const VectosPlugin: Plugin = async (ctx) => {
   return {
     // ─── System Prompt Injection ─────────────────────────────────────
     // Universal: runs for every agent (orchestrator + sub-agents) on
-    // every LLM call. Only injects when Vectos is actually running, so
-    // there is zero overhead or noise when Vectos is unavailable.
+    // every LLM call. Only injects when Vectos is reachable; the health
+    // check is cached briefly to avoid a localhost request per turn.
     "experimental.chat.system.transform": async (_input, output) => {
-      if (await isVectosRunning()) {
+      if (await isVectosAvailable()) {
         output.system.push(VECTOS_GUIDANCE)
       }
     },

@@ -1,6 +1,8 @@
 package setup
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -41,4 +43,54 @@ func TestManagedGuidanceUsesProvidedMarkers(t *testing.T) {
 	if !strings.HasSuffix(guidance, "<!-- omega -->") {
 		t.Fatalf("expected custom end marker, got %q", guidance)
 	}
+}
+
+func TestOpenCodePluginGuidanceMatchesManagedGuidance(t *testing.T) {
+	pluginPath := filepath.Join("plugins", "vectos.ts")
+	plugin, err := os.ReadFile(pluginPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", pluginPath, err)
+	}
+
+	got, ok := extractTSBacktickConst(string(plugin), "VECTOS_GUIDANCE")
+	if !ok {
+		t.Fatal("expected VECTOS_GUIDANCE backtick const in plugin")
+	}
+
+	const start = "<!-- start -->"
+	const end = "<!-- end -->"
+	want := managedGuidance(start, end)
+	want = strings.TrimPrefix(want, start+"\n")
+	want = strings.TrimSuffix(want, "\n"+end)
+
+	if got != want {
+		t.Fatalf("VECTOS_GUIDANCE drifted from managedGuidance\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func extractTSBacktickConst(src string, name string) (string, bool) {
+	marker := "const " + name + " = `"
+	start := strings.Index(src, marker)
+	if start < 0 {
+		return "", false
+	}
+
+	var out strings.Builder
+	for i := start + len(marker); i < len(src); i++ {
+		ch := src[i]
+		if ch == '`' {
+			return out.String(), true
+		}
+		if ch == '\\' && i+1 < len(src) {
+			next := src[i+1]
+			if next == '`' || next == '\\' {
+				out.WriteByte(next)
+				i++
+				continue
+			}
+		}
+		out.WriteByte(ch)
+	}
+
+	return "", false
 }
