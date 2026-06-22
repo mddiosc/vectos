@@ -17,6 +17,17 @@ Format per release:
 
 ---
 
+## v1.4.2 — 2026-06-22
+
+### Fixed
+
+- **`vectos serve` started the watcher before detecting a busy port** — the
+  server now binds the TCP listener before logging `listening` and before the
+  file watcher starts, so a stale process on port 7438 fails cleanly without
+  producing misleading watcher/indexing logs.
+
+---
+
 ## v1.4.1 — 2026-06-22
 
 ### Fixed
