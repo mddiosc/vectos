@@ -102,8 +102,16 @@ func (s *Server) ListenAndServe() error {
 		s.shutdown()
 	}()
 
+	ln, err := net.Listen("tcp", s.httpSrv.Addr)
+	if err != nil {
+		if isAddrInUse(err) {
+			return fmt.Errorf("port %d already in use (another vectos instance may be running); use --port to specify a different port or stop the existing process", s.port)
+		}
+		return fmt.Errorf("server error: %w", err)
+	}
+
 	log.Printf("vectos serve listening on 127.0.0.1:%d", s.port)
-	if err := s.httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := s.httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
 		if isAddrInUse(err) {
 			return fmt.Errorf("port %d already in use (another vectos instance may be running); use --port to specify a different port or stop the existing process", s.port)
 		}
