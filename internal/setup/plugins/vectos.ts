@@ -183,7 +183,7 @@ export const VectosPlugin: Plugin = async (ctx) => {
   const running = await isVectosAvailable()
   if (!running) {
     try {
-      Bun.spawn([VECTOS_BIN, "serve"], {
+      Bun.spawn([VECTOS_BIN, "serve", "--watch-root", ctx.directory], {
         stdout: "ignore",
         stderr: "ignore",
         stdin: "ignore",

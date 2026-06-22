@@ -8,6 +8,36 @@ import (
 	"testing"
 )
 
+func TestResolveServeScopeRootUsesExplicitWatchRoot(t *testing.T) {
+	watchRoot := filepath.Join(t.TempDir(), "project")
+	if got := resolveServeScopeRoot(watchRoot); got != watchRoot {
+		t.Fatalf("scope root = %s, want %s", got, watchRoot)
+	}
+}
+
+func TestResolveServeScopeRootDefaultsToWorkingDirectory(t *testing.T) {
+	dir := t.TempDir()
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(originalWD) })
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := filepath.EvalSymlinks(resolveServeScopeRoot(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("scope root = %s, want %s", got, want)
+	}
+}
+
 func TestComputeFileHash(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sample.txt")
