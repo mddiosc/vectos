@@ -17,6 +17,23 @@ Format per release:
 
 ---
 
+## v1.4.1 — 2026-06-22
+
+### Fixed
+
+- **`vectos serve` watched DB storage dir instead of project dir** — the
+  watcher was pointed at `~/.vectos/projects` (where index databases live)
+  instead of the actual project directory. Added `--watch-root` flag; the
+  OpenCode plugin now passes `ctx.directory` when spawning the server, and
+  manual invocations fall back to `scope.PrimaryRoot`. (#51)
+- **Vectos guidance injected into OpenCode sub-agent system prompts** — the
+  setup hook now injects `<!-- vectos-opencode-guidance -->` into the OpenCode
+  config so specialist sub-agents (explorer, fixer, oracle, observer, etc.)
+  also prefer Vectos search over `grep`/`glob`. Includes a 5 s cached health
+  check and a drift test to keep the embedded TypeScript guidance in sync. (#50)
+
+---
+
 ## v1.4.0 — 2026-06-18
 
 ### Added
