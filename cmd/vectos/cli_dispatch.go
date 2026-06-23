@@ -50,6 +50,8 @@ func runCLI(app appContext, args []string) {
 		runSetupCommand(app, commandArgs)
 	case "doctor":
 		runDoctorCommand(app, commandArgs)
+	case "update":
+		runUpdateCommand(app, commandArgs)
 	case "version":
 		runVersionCommand(commandArgs)
 	case "config":
