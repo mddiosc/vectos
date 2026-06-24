@@ -63,10 +63,10 @@ func runSearch(projectBaseDir string, embedConfig config.EmbeddingConfig, query 
 	results := searchRun.Results
 
 	if strings.TrimSpace(searchRun.Warning) != "" {
-		fmt.Printf("Warning: %s\n", searchRun.Warning)
+		fmt.Printf("%s %s\n", yellow("Warning:"), searchRun.Warning)
 	}
 	if len(results) == 0 {
-		fmt.Println("No results found.")
+		fmt.Println(dim("No results found."))
 		return
 	}
 
@@ -110,9 +110,9 @@ func runStatus(projectBaseDir string, projectName string, docsOnly bool) {
 }
 
 func printIndexStats(stats *storage.IndexStats, scope *workspace.Scope, docsOnly bool) {
-	fmt.Println("Vectos status")
+	fmt.Println(bold("Vectos status"))
 	if docsOnly {
-		fmt.Println("Mode: documentation index")
+		fmt.Println(dim("Mode: documentation index"))
 	}
 	if scope != nil {
 		fmt.Printf("Project scope: %s\n", scope.Name)
@@ -141,11 +141,11 @@ func printProviderHealth(embedConfig config.EmbeddingConfig) {
 	if len(providerStatuses) == 0 {
 		return
 	}
-	fmt.Println("Provider health:")
+	fmt.Println(bold("Provider health:"))
 	for _, provider := range providerStatuses {
-		state := "not ready"
+		state := red("not ready")
 		if provider.Ready {
-			state = "ready"
+			state = green("ready")
 		}
 		fmt.Printf("- %s (%s): %s\n", provider.Provider, provider.Model, state)
 		if provider.Message != "" {
@@ -158,7 +158,7 @@ func checkAndPrintReindexStatus(store *storage.SQLiteStorage, embedConfig config
 	if _, providerInfo, err := embeddings.ResolveEmbedder(embedConfig); err == nil {
 		requiresReindex, err := store.RequiresReindex(providerInfo.Provider, providerInfo.Model, providerInfo.Dimensions, currentIndexFingerprint(indexChunkerConfig(embedConfig.Embedded.BatchSize)))
 		if err == nil && requiresReindex {
-			fmt.Println("Reindex required: current embedding provider configuration does not match stored index metadata")
+			fmt.Println(yellow("Reindex required:") + " current embedding provider configuration does not match stored index metadata")
 		}
 	}
 }
