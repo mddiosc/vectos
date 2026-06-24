@@ -17,6 +17,22 @@ Format per release:
 
 ---
 
+## v1.5.0 — 2026-06-24
+
+### Added
+
+- **`vectos update` command** — compares the installed version against the
+  latest GitHub release, prints the release notes and changelog URL, then asks
+  for confirmation before delegating download/checksum/replace to the published
+  `install.sh`. `--yes` skips the prompt. (#52)
+- **Colored terminal output for `search`, `status`, and `update`** — a tiny
+  ANSI color helper (no dependencies) that respects `NO_COLOR` and only emits
+  codes when stdout is a TTY, so pipes, redirection, and CI stay plain. Applied
+  to search results (path/score/metadata), status (provider health, reindex
+  notice), and update (version, changelog). (#53)
+
+---
+
 ## v1.4.2 — 2026-06-22
 
 ### Fixed
