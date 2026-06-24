@@ -15,8 +15,8 @@ const (
 
 func formatSearchResults(query string, results []storage.CodeChunk, searchMode string, full bool) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Search mode: %s\n", searchMode))
-	b.WriteString(fmt.Sprintf("Found %d result(s):\n\n", len(results)))
+	b.WriteString(fmt.Sprintf("%s %s\n", dim("Search mode:"), searchMode))
+	b.WriteString(bold(fmt.Sprintf("Found %d result(s):", len(results))) + "\n\n")
 	previewLimit := adaptivePreviewLimit(query, results)
 
 	for i, r := range results {
@@ -28,13 +28,14 @@ func formatSearchResults(query string, results []storage.CodeChunk, searchMode s
 
 func formatSearchResult(r storage.CodeChunk, searchMode string, full bool, previewLimit int) string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("[%s:%d-%d] [%s/%s]", r.FilePath, r.StartLine, r.EndLine, r.Category, r.Language))
+	location := cyan(bold(fmt.Sprintf("%s:%d-%d", r.FilePath, r.StartLine, r.EndLine)))
+	b.WriteString(fmt.Sprintf("%s %s", location, dim(fmt.Sprintf("[%s/%s]", r.Category, r.Language))))
 	if r.Score != 0 {
-		b.WriteString(fmt.Sprintf(" score=%.4f", r.Score))
+		b.WriteString(" " + colorScore(r.Score))
 	}
 	b.WriteString("\n")
 	if reason := explainResultReason(searchMode, r); reason != "" {
-		b.WriteString(fmt.Sprintf("reason: %s\n", reason))
+		b.WriteString(dim(fmt.Sprintf("reason: %s", reason)) + "\n")
 	}
 	if full {
 		b.WriteString(fmt.Sprintf("%s\n\n", strings.TrimSpace(r.Content)))
@@ -95,6 +96,20 @@ func compactPreviewLimit(content string, limit int) string {
 		return trimmed[:maxInt(0, limit-3)] + "..."
 	}
 	return trimmed
+}
+
+// colorScore tints the score by confidence: green strong, yellow moderate,
+// dim weak. ponytail: fixed thresholds, tune if score distribution shifts.
+func colorScore(score float64) string {
+	label := fmt.Sprintf("score=%.4f", score)
+	switch {
+	case score >= 0.6:
+		return green(label)
+	case score >= 0.4:
+		return yellow(label)
+	default:
+		return dim(label)
+	}
 }
 
 func minInt(a, b int) int {

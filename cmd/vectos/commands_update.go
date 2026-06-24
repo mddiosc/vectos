@@ -47,21 +47,21 @@ func runUpdateCommand(_ appContext, args []string) {
 	current := buildinfo.Version
 	latest := rel.TagName
 
-	fmt.Printf("Current version: %s\n", current)
-	fmt.Printf("Latest version:  %s\n", latest)
+	fmt.Printf("%s %s\n", dim("Current version:"), current)
+	fmt.Printf("%s %s\n", dim("Latest version: "), bold(latest))
 	fmt.Println()
 
 	if current == latest {
-		fmt.Println("✓ You are already on the latest version.")
+		fmt.Println(green("✓ You are already on the latest version."))
 		return
 	}
 	// ponytail: string compare, not semver. Equal=up-to-date is all we need;
 	// upgrade to a semver compare if downgrade detection ever matters.
 
 	if notes := strings.TrimSpace(rel.Body); notes != "" {
-		fmt.Printf("Release notes for %s:\n\n%s\n\n", latest, notes)
+		fmt.Printf("%s\n\n%s\n\n", bold(fmt.Sprintf("Release notes for %s:", latest)), notes)
 	}
-	fmt.Printf("Full changelog: %s\n\n", rel.HTMLURL)
+	fmt.Printf("%s %s\n\n", dim("Full changelog:"), cyan(rel.HTMLURL))
 
 	if !yes && !confirm(fmt.Sprintf("Update from %s to %s now?", current, latest)) {
 		fmt.Println("Update cancelled.")
@@ -71,7 +71,7 @@ func runUpdateCommand(_ appContext, args []string) {
 	if err := runInstaller(); err != nil {
 		fatalErr(fmt.Errorf("update failed: %w", err))
 	}
-	fmt.Printf("\n✓ Updated to %s. Run 'vectos version' to verify.\n", latest)
+	fmt.Printf("\n%s Run 'vectos version' to verify.\n", green(fmt.Sprintf("✓ Updated to %s.", latest)))
 }
 
 func fetchLatestRelease() (*githubRelease, error) {
