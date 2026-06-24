@@ -35,14 +35,15 @@ func TestColorScoreThresholds(t *testing.T) {
 	colorEnabled = true
 	defer func() { colorEnabled = old }()
 
-	cases := []struct {
-		score float64
-		code  string
-	}{
-		{0.7, ansiGreen},
-		{0.5, ansiYellow},
-		{0.1, ansiDim},
-	}
+	 	cases := []struct {
+	 		score float64
+	 		code  string
+	 	}{
+	 		{0.6, ansiGreen},   // boundary: >= 0.6 is green
+	 		{0.4, ansiYellow},  // boundary: >= 0.4 is yellow
+	 		{0.1, ansiDim},     // below 0.4 is dim
+	 		{-0.1, ansiDim},    // negative scores are dim
+	 	}
 	for _, c := range cases {
 		if got := colorScore(c.score); !strings.HasPrefix(got, c.code) {
 			t.Errorf("colorScore(%v) = %q, want prefix %q", c.score, got, c.code)
